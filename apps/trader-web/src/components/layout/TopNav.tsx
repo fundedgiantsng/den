@@ -1,13 +1,38 @@
 'use client';
 
 import React from 'react';
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, Menu } from 'lucide-react';
+import Image from 'next/image';
 
-export function TopNav() {
+interface TopNavProps {
+  onMobileMenuToggle?: () => void;
+}
+
+export function TopNav({ onMobileMenuToggle }: TopNavProps) {
   return (
-    <header className="h-16 px-8 border-b border-fgBorder-subtle bg-bg-surface/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between">
-      {/* Search Input (Ctrl+K) */}
-      <div className="relative w-80">
+    <header className="h-16 px-4 sm:px-6 lg:px-8 border-b border-fgBorder-subtle bg-bg-surface/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between gap-3">
+      {/* Mobile Brand & Hamburger Button */}
+      <div className="flex items-center gap-3 md:hidden">
+        <button
+          type="button"
+          onClick={onMobileMenuToggle}
+          className="p-2 rounded-xl bg-bg-card border border-fgBorder-subtle text-fgText-secondary hover:text-white"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="relative h-7 w-32">
+          <Image
+            src="/brand/logo-white.png"
+            alt="FundedGiants"
+            fill
+            className="object-contain object-left"
+            priority
+          />
+        </div>
+      </div>
+
+      {/* Desktop Search Input (Ctrl+K) */}
+      <div className="relative w-80 hidden md:block">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-fgText-muted">
           <Search className="w-4 h-4" />
         </div>
@@ -24,11 +49,11 @@ export function TopNav() {
       </div>
 
       {/* Right Controls: Notifications & Currency Indicator (Fixed NGN) */}
-      <div className="flex items-center gap-4">
-        {/* Strict NGN Currency Indicator - No Switcher */}
-        <div className="px-3 py-1 rounded-lg bg-bg-card border border-fgBorder-subtle flex items-center gap-2">
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* Strict NGN Currency Indicator */}
+        <div className="px-2.5 sm:px-3 py-1 rounded-lg bg-bg-card border border-fgBorder-subtle flex items-center gap-1.5 sm:gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span className="text-xs font-semibold text-white tracking-wide">NGN (₦)</span>
+          <span className="text-[11px] sm:text-xs font-semibold text-white tracking-wide">NGN (₦)</span>
         </div>
 
         {/* Notification Bell */}
@@ -41,11 +66,11 @@ export function TopNav() {
         </button>
 
         {/* User Avatar */}
-        <div className="flex items-center gap-2.5 pl-2 border-l border-fgBorder-subtle">
-          <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs">
+        <div className="flex items-center gap-2 sm:gap-2.5 pl-1 sm:pl-2 border-l border-fgBorder-subtle">
+          <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs">
             JD
           </div>
-          <span className="text-xs font-medium text-white hidden md:inline-block">John Doe</span>
+          <span className="text-xs font-medium text-white hidden lg:inline-block">John Doe</span>
         </div>
       </div>
     </header>

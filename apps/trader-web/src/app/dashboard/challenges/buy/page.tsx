@@ -1,293 +1,328 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Award, Zap, ShieldCheck, CheckCircle2, AlertCircle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
-import Image from 'next/image';
+import React, { useState } from 'react';
+import Link from 'next/link';
+import {
+  ArrowLeft,
+  Check,
+  ShieldCheck,
+  Wallet,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
+import { formatNaira } from '@/lib/format';
 
-interface PlanDefinition {
-  id: string;
-  title: string;
+interface PlanConfig {
+  id: 'rhino-rush' | 'phoenix-rise';
+  name: string;
   subtitle: string;
   accent: string;
-  leverage: string;
-  dailyDrawdownPercent: number;
-  maxDrawdownPercent: number;
-  profitTarget: string;
+  dailyDD: string;
+  maxDD: string;
+  target: string;
   payouts: string;
-  refundNote: string;
-  pricing: Record<string, number>;
+  leverage: string;
+  refund: string;
+  prices: Record<number, number>;
 }
 
-export default function BuyChallengePage() {
-  const [plans, setPlans] = useState<PlanDefinition[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>('rhino-rush');
+const plans: PlanConfig[] = [
+  {
+    id: 'rhino-rush',
+    name: 'Rhino Rush',
+    subtitle: '1 Step Challenge',
+    accent: 'emerald',
+    dailyDD: '4%',
+    maxDD: '10%',
+    target: '10% (2% Daily Cap)',
+    payouts: 'First: 5% | Subsequent: 2% Min',
+    leverage: '1:100',
+    refund: '100% Fee Refund at 10% total payouts',
+    prices: {
+      1000000: 27500,
+      2500000: 67500,
+      5000000: 127500,
+      10000000: 247500,
+      25000000: 487500,
+      50000000: 967500,
+    },
+  },
+  {
+    id: 'phoenix-rise',
+    name: 'Phoenix Rise',
+    subtitle: 'Instant Funding',
+    accent: 'gold',
+    dailyDD: '4%',
+    maxDD: '7%',
+    target: '10% On-Demand / 15 Days',
+    payouts: 'Daily On-Demand (Min 2%)',
+    leverage: '1:30',
+    refund: 'No refund',
+    prices: {
+      1000000: 43000,
+      2500000: 106000,
+      5000000: 209000,
+      10000000: 412000,
+      25000000: 1015000,
+      50000000: 2018000,
+    },
+  },
+];
+
+const sizes = [1000000, 2500000, 5000000, 10000000, 25000000, 50000000];
+
+export default function InDashboardBuyChallengePage() {
+  const [selectedPlan, setSelectedPlan] = useState<'rhino-rush' | 'phoenix-rise'>('rhino-rush');
   const [selectedSize, setSelectedSize] = useState<number>(5000000);
-  const [loadingPlans, setLoadingPlans] = useState(true);
-  const [purchasing, setPurchasing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successData, setSuccessData] = useState<any | null>(null);
+  const [successResult, setSuccessResult] = useState<any | null>(null);
 
-  // Available Sizes in NGN (strictly Naira)
-  const sizes = [1000000, 2500000, 5000000, 10000000, 25000000, 50000000];
+  // Available NGN Wallet Balance
+  const walletBalanceNgn = 18450000;
 
-  useEffect(() => {
-    async function fetchPlans() {
-      try {
-        const res = await fetch('http://localhost:4000/api/v1/challenges/plans');
-        const data = await res.json();
-        if (data.plans) {
-          setPlans(data.plans);
-        }
-      } catch (e: any) {
-        console.error('Failed to load plans:', e);
-      } finally {
-        setLoadingPlans(false);
-      }
-    }
-    fetchPlans();
-  }, []);
-
-  const activePlan = plans.find((p) => p.id === selectedPlanId);
-  const fee = activePlan?.pricing?.[selectedSize] || 0;
+  const currentPlan = plans.find((p) => p.id === selectedPlan)!;
+  const currentPrice = currentPlan.prices[selectedSize] || 0;
+  const hasSufficientFunds = walletBalanceNgn >= currentPrice;
 
   const handlePayFromWallet = async () => {
     setError(null);
-    setPurchasing(true);
-    setSuccessData(null);
+    setLoading(true);
 
     try {
       const res = await fetch('http://localhost:4000/api/v1/challenges/purchase-from-wallet', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // In production, session cookie is sent automatically with credentials: 'include'
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          planType: selectedPlanId,
+          planType: selectedPlan,
           accountSizeNgn: selectedSize,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to process purchase from wallet.');
+        throw new Error(data.message || 'Payment from wallet failed');
       }
 
-      setSuccessData(data);
+      setSuccessResult(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to complete wallet purchase.');
+      setError(err.message || 'Error processing wallet purchase');
     } finally {
-      setPurchasing(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-8 max-w-6xl pb-12">
-      {/* Page Header */}
+    <div className="max-w-4xl mx-auto space-y-8">
+      {/* Header */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            Direct Wallet Provisioning
-          </span>
-          <span className="text-xs text-fgText-muted">Instant SteraTrader Setup</span>
-        </div>
-        <h1 className="text-2xl md:text-3xl font-heading font-extrabold text-white tracking-tight">
-          Select Your Assessment Plan
-        </h1>
-        <p className="text-xs text-fgText-secondary mt-1">
-          Bypasses billing checkout entirely — your Central NGN Wallet balance is debited and your trading credentials are created immediately.
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs text-fgText-secondary hover:text-white mb-2"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Dashboard</span>
+        </Link>
+        <h1 className="text-3xl font-heading font-extrabold text-white">Get Funded</h1>
+        <p className="text-xs text-fgText-secondary">
+          Select your trading account type and size. Bypasses external checkout and charges your Central NGN Wallet directly.
         </p>
       </div>
 
-      {/* Plan Type Selector */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Rhino Rush (1 Step Challenge) */}
-        <div
-          onClick={() => setSelectedPlanId('rhino-rush')}
-          className={`cursor-pointer p-6 rounded-2xl border transition-all relative overflow-hidden ${
-            selectedPlanId === 'rhino-rush'
-              ? 'bg-gradient-to-b from-[#0e2118] to-bg-surface border-emerald-500 shadow-emeraldGlow'
-              : 'bg-bg-surface border-fgBorder-subtle hover:border-fgBorder-default'
-          }`}
-        >
-          {selectedPlanId === 'rhino-rush' && (
-            <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-emerald-500 text-bg-base text-[10px] font-bold uppercase tracking-wider">
-              Selected
+      {successResult ? (
+        <div className="p-8 rounded-2xl bg-bg-card border border-fgBorder-emerald text-center space-y-5 shadow-emeraldGlow">
+          <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-heading font-bold text-white">Challenge Account Provisioned!</h2>
+          <p className="text-sm text-fgText-secondary max-w-lg mx-auto">
+            Your wallet was charged <span className="text-white font-mono font-bold">{formatNaira(successResult.debitedAmountNgn)}</span>. Your SteraTrader account has been created on the live NGN broker subset.
+          </p>
+
+          <div className="p-4 rounded-xl bg-bg-surface border border-fgBorder-subtle max-w-md mx-auto text-left space-y-2 text-xs">
+            <div className="flex justify-between">
+              <span className="text-fgText-muted">Challenge ID</span>
+              <span className="font-mono text-white font-bold">{successResult.challengeNumber}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-fgText-muted">SteraTrader Login</span>
+              <span className="font-mono text-emerald-400 font-bold">
+                {successResult.tradingAccount?.accountNumber || 'Provisioning in progress...'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-fgText-muted">Platform</span>
+              <span className="text-white font-bold">SteraTrader (NGN Group)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-fgText-muted">Account Size</span>
+              <span className="text-white font-mono font-bold">{formatNaira(selectedSize)}</span>
+            </div>
+          </div>
+
+          <div className="pt-4 flex items-center justify-center gap-4">
+            <Link
+              href="/dashboard/trading-accounts"
+              className="px-6 py-2.5 rounded-xl bg-emerald-500 text-bg-base font-bold text-xs"
+            >
+              View Trading Accounts
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSuccessResult(null)}
+              className="px-6 py-2.5 rounded-xl bg-bg-card border border-fgBorder-subtle text-white font-semibold text-xs hover:border-emerald-500"
+            >
+              Purchase Another
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {/* Step 1: Select Plan */}
+          <div className="space-y-3">
+            <label className="text-xs font-heading font-bold text-white uppercase tracking-wider">
+              1. Choose Challenge Type
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {plans.map((p) => {
+                const isSelected = selectedPlan === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setSelectedPlan(p.id)}
+                    className={`p-6 rounded-2xl cursor-pointer transition-all border ${
+                      isSelected
+                        ? p.id === 'phoenix-rise'
+                          ? 'bg-bg-surface border-gold-500 ring-2 ring-gold-500/20'
+                          : 'bg-bg-surface border-emerald-500 ring-2 ring-emerald-500/20'
+                        : 'bg-bg-card border-fgBorder-subtle hover:border-fgBorder-emerald'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-lg font-heading font-extrabold text-white">{p.name}</h3>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          p.id === 'phoenix-rise'
+                            ? 'bg-gold-500/20 text-gold-400 border border-gold-500/30'
+                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        }`}
+                      >
+                        {p.subtitle}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-fgText-secondary mt-4 pt-3 border-t border-fgBorder-subtle">
+                      <div>
+                        <span className="text-fgText-muted block text-[10px]">Daily Drawdown</span>
+                        <span className="text-white font-bold">{p.dailyDD}</span>
+                      </div>
+                      <div>
+                        <span className="text-fgText-muted block text-[10px]">Max Drawdown</span>
+                        <span className="text-white font-bold">{p.maxDD}</span>
+                      </div>
+                      <div>
+                        <span className="text-fgText-muted block text-[10px]">Profit Target</span>
+                        <span className="text-emerald-400 font-bold">{p.target}</span>
+                      </div>
+                      <div>
+                        <span className="text-fgText-muted block text-[10px]">Leverage</span>
+                        <span className="text-white font-bold">{p.leverage}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Step 2: Select Size */}
+          <div className="space-y-3">
+            <label className="text-xs font-heading font-bold text-white uppercase tracking-wider">
+              2. Select Account Capital Size
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {sizes.map((s) => {
+                const isSelected = selectedSize === s;
+                const price = currentPlan.prices[s];
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSelectedSize(s)}
+                    className={`p-3.5 rounded-xl text-center border transition-all ${
+                      isSelected
+                        ? 'bg-bg-surface border-emerald-500 ring-2 ring-emerald-500/20'
+                        : 'bg-bg-card border-fgBorder-subtle hover:border-fgBorder-emerald'
+                    }`}
+                  >
+                    <span className="block text-sm font-heading font-extrabold text-white">
+                      {formatNaira(s)}
+                    </span>
+                    <span className="block text-xs font-mono text-emerald-400 font-bold mt-1">
+                      {formatNaira(price)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
+              {error}
             </div>
           )}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Award className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-heading font-bold text-white">Rhino Rush</h2>
-              <span className="text-xs text-emerald-400 font-semibold">1 Step Challenge (Challenge &rarr; Funded)</span>
-            </div>
-          </div>
-          <p className="text-xs text-fgText-secondary leading-relaxed mb-4">
-            Pass the single evaluation phase with disciplined risk management to unlock your fully funded live account.
-          </p>
-          <div className="grid grid-cols-3 gap-2 pt-3 border-t border-fgBorder-subtle text-center text-xs">
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Profit Target</span>
-              <span className="font-bold text-white">10%</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Max Loss</span>
-              <span className="font-bold text-white">10%</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Leverage</span>
-              <span className="font-bold text-emerald-400">1:100</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Phoenix Rise (Instant Funding) */}
-        <div
-          onClick={() => setSelectedPlanId('phoenix-rise')}
-          className={`cursor-pointer p-6 rounded-2xl border transition-all relative overflow-hidden ${
-            selectedPlanId === 'phoenix-rise'
-              ? 'bg-gradient-to-b from-[#241a0b] to-bg-surface border-amber-500 shadow-[0_0_25px_rgba(245,158,11,0.2)]'
-              : 'bg-bg-surface border-fgBorder-subtle hover:border-fgBorder-default'
-          }`}
-        >
-          {selectedPlanId === 'phoenix-rise' && (
-            <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-amber-500 text-bg-base text-[10px] font-bold uppercase tracking-wider">
-              Selected
-            </div>
-          )}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-              <Zap className="w-5 h-5" />
-            </div>
+          {/* Summary & Direct Wallet Payment Section */}
+          <div className="p-6 rounded-2xl bg-bg-card border border-fgBorder-emerald shadow-cardGlow flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-              <h2 className="text-lg font-heading font-bold text-white">Phoenix Rise</h2>
-              <span className="text-xs text-amber-400 font-semibold">Live / Instant Funding</span>
+              <div className="flex items-center gap-2 text-xs text-fgText-secondary">
+                <Wallet className="w-4 h-4 text-emerald-400" />
+                <span>Central NGN Wallet Balance:</span>
+                <span className="font-mono font-bold text-white">{formatNaira(walletBalanceNgn)}</span>
+              </div>
+              <div className="mt-2">
+                <span className="text-xs text-fgText-muted">Total Order Charge:</span>
+                <p className="text-3xl font-heading font-extrabold text-white">
+                  {formatNaira(currentPrice)}
+                </p>
+              </div>
             </div>
-          </div>
-          <p className="text-xs text-fgText-secondary leading-relaxed mb-4">
-            Zero evaluation phases. Direct access to a live funded trading account with immediate on-demand profit withdrawals.
-          </p>
-          <div className="grid grid-cols-3 gap-2 pt-3 border-t border-fgBorder-subtle text-center text-xs">
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Phase</span>
-              <span className="font-bold text-amber-400">Instant</span>
+
+            <div className="flex items-center gap-4">
+              {hasSufficientFunds ? (
+                <button
+                  type="button"
+                  onClick={handlePayFromWallet}
+                  disabled={loading}
+                  className="px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-bg-base font-heading font-extrabold text-sm rounded-xl transition-all shadow-emeraldGlow disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Pay from Wallet</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-red-400 flex items-center gap-1 font-semibold">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Insufficient Wallet Balance</span>
+                  </span>
+                  <Link
+                    href="/dashboard/wallet/fund"
+                    className="px-5 py-3 rounded-xl bg-bg-surface border border-emerald-500 text-emerald-400 text-xs font-bold hover:bg-emerald-500/10"
+                  >
+                    Deposit Funds
+                  </Link>
+                </div>
+              )}
             </div>
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Max Loss</span>
-              <span className="font-bold text-white">7%</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-fgText-muted block uppercase">Leverage</span>
-              <span className="font-bold text-amber-400">1:30</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Account Size Selection Buttons */}
-      <div className="p-6 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-fgText-muted block">
-          Select Account Capital (NGN)
-        </span>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {sizes.map((sz) => {
-            const isSelected = selectedSize === sz;
-            const sizeLabel =
-              sz >= 1000000 ? `₦${sz / 1000000}M` : `₦${sz.toLocaleString()}`;
-
-            return (
-              <button
-                key={sz}
-                type="button"
-                onClick={() => setSelectedSize(sz)}
-                className={`py-3 px-2 rounded-xl text-center border transition-all ${
-                  isSelected
-                    ? selectedPlanId === 'phoenix-rise'
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm font-bold'
-                      : 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm font-bold'
-                    : 'bg-bg-card border-fgBorder-subtle text-fgText-secondary hover:text-white hover:border-fgBorder-default'
-                }`}
-              >
-                <span className="text-sm block">{sizeLabel}</span>
-                <span className="text-[10px] text-fgText-muted block font-mono">
-                  {selectedPlanId === 'phoenix-rise' ? 'Instant Live' : '1-Step Target'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Purchase Confirmation Box */}
-      <div className="p-6 rounded-2xl bg-bg-surface border border-fgBorder-subtle flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="space-y-1 text-center md:text-left">
-          <span className="text-[11px] text-fgText-muted uppercase tracking-wider block">
-            Assessment & Activation Fee
-          </span>
-          <div className="flex items-baseline gap-2 justify-center md:justify-start">
-            <span className="text-3xl font-heading font-extrabold text-white font-mono">
-              ₦{fee.toLocaleString()}
-            </span>
-            <span className="text-xs text-fgText-secondary font-medium">NGN</span>
-          </div>
-          <p className="text-[11px] text-fgText-muted">
-            {selectedPlanId === 'rhino-rush'
-              ? 'Includes 100% fee refund upon reaching 10% total payouts on funded phase.'
-              : 'Direct live trading account with daily on-demand profit disbursements.'}
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={handlePayFromWallet}
-          disabled={purchasing}
-          className={`w-full md:w-auto px-8 py-4 font-bold rounded-xl flex items-center justify-center gap-3 transition-all text-sm ${
-            selectedPlanId === 'phoenix-rise'
-              ? 'bg-amber-500 hover:bg-amber-400 text-bg-base shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-              : 'bg-emerald-500 hover:bg-emerald-400 text-bg-base shadow-emeraldGlow'
-          } disabled:opacity-50`}
-        >
-          {purchasing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Provisioning SteraTrader Account...</span>
-            </>
-          ) : (
-            <>
-              <span>Pay ₦{fee.toLocaleString()} from Wallet</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Error Banner */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-400 text-xs flex items-center gap-3">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Success Notification */}
-      {successData && (
-        <div className="p-6 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs space-y-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-white">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-            <span>Account Successfully Provisioned!</span>
-          </div>
-          <p>
-            Your account credentials have been created on SteraTrader under subset{' '}
-            <span className="font-mono text-white font-semibold">FG-NGN-Standard</span>.
-          </p>
-          <div className="p-3 rounded-lg bg-bg-card font-mono text-white text-[11px] space-y-1">
-            <div>Account Login: {successData.account?.loginNumber}</div>
-            <div>Server: SteraTrader Live</div>
-            <div>Balance: ₦{selectedSize.toLocaleString()}</div>
           </div>
         </div>
       )}
