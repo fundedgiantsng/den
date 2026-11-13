@@ -2,7 +2,9 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, Phone, ArrowRight, ShieldCheck, Wallet, Copy, Award, Loader2 } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Mail, Phone, ArrowRight, ShieldCheck, Award, Zap, Users, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,163 +47,198 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between p-6 md:p-12">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-bg-card card-border-glow flex items-center justify-center">
-            <span className="text-emerald-400 font-bold text-xl font-heading">FG</span>
+    <div className="min-h-screen bg-bg-base text-white flex flex-col justify-between selection:bg-emerald-500 selection:text-black">
+      {/* Top Navbar */}
+      <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
+        <Link href="/" className="flex items-center">
+          <div className="relative h-10 w-48">
+            <Image
+              src="/brand/logo-white.png"
+              alt="FundedGiants"
+              fill
+              className="object-contain object-left"
+              priority
+            />
           </div>
-          <span className="text-xl font-heading font-extrabold tracking-tight text-white">
-            FundedGiants
-          </span>
-        </div>
+        </Link>
 
-        <div className="flex items-center gap-2 text-xs text-fgText-secondary">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-card border border-fgBorder-subtle text-xs text-fgText-secondary">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Secure & Encrypted</span>
+          <span>Strict Device Verification</span>
         </div>
-      </div>
+      </header>
 
-      {/* Main Form Center */}
-      <div className="max-w-md w-full mx-auto my-auto py-12">
-        <h1 className="text-4xl md:text-5xl font-heading font-extrabold text-white tracking-tight mb-3">
-          Welcome <span className="text-emerald-400">Back</span>
-        </h1>
-        <p className="text-sm text-fgText-secondary mb-8">
-          Access your account and take control of your trading journey.
-        </p>
-
-        {/* Auth Mode Toggle */}
-        <div className="flex rounded-xl bg-bg-card p-1 mb-6 border border-fgBorder-subtle">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthType('EMAIL');
-              setIdentifier('');
-              setError(null);
-            }}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-              authType === 'EMAIL'
-                ? 'bg-emerald-500 text-bg-base shadow-sm'
-                : 'text-fgText-secondary hover:text-white'
-            }`}
-          >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Email</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthType('PHONE');
-              setIdentifier('');
-              setError(null);
-            }}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-              authType === 'PHONE'
-                ? 'bg-emerald-500 text-bg-base shadow-sm'
-                : 'text-fgText-secondary hover:text-white'
-            }`}
-          >
-            <Phone className="w-3.5 h-3.5" />
-            <span>Phone (SMS)</span>
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
-            {error}
+      {/* Main Split Grid (Two Columns as in authoritative reference) */}
+      <main className="w-full max-w-7xl mx-auto px-6 py-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        {/* Left Column: Form & Highlights */}
+        <div className="lg:col-span-6 flex flex-col justify-center max-w-lg">
+          <div className="mb-8">
+            <span className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-block mb-3">
+              Forex & CFD Prop Firm
+            </span>
+            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold tracking-tight text-white mb-3">
+              Welcome <span className="text-emerald-400">Back</span>
+            </h1>
+            <p className="text-sm text-fgText-secondary leading-relaxed">
+              Access your account and take control of your trading journey.
+            </p>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-fgText-secondary mb-2">
-              {authType === 'EMAIL' ? 'Email Address' : 'Phone Number (e.g. +2348012345678)'}
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-fgText-muted">
-                {authType === 'EMAIL' ? <Mail className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+          {/* Mode Switcher */}
+          <div className="flex rounded-xl bg-bg-card p-1 mb-6 border border-fgBorder-subtle">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthType('EMAIL');
+                setIdentifier('');
+                setError(null);
+              }}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                authType === 'EMAIL'
+                  ? 'bg-emerald-500 text-bg-base shadow-sm font-bold'
+                  : 'text-fgText-secondary hover:text-white'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email Address</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthType('PHONE');
+                setIdentifier('');
+                setError(null);
+              }}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                authType === 'PHONE'
+                  ? 'bg-emerald-500 text-bg-base shadow-sm font-bold'
+                  : 'text-fgText-secondary hover:text-white'
+              }`}
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>Phone (SMS / WhatsApp)</span>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-fgText-secondary mb-2">
+                {authType === 'EMAIL' ? 'Email Address' : 'Phone Number'}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-fgText-muted">
+                  {authType === 'EMAIL' ? <Mail className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                </div>
+                <input
+                  type={authType === 'EMAIL' ? 'email' : 'tel'}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder={authType === 'EMAIL' ? 'youremail@example.com' : '+234 800 000 0000'}
+                  className="w-full pl-10 pr-4 py-3.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-sm placeholder-fgText-muted focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                  disabled={loading}
+                />
               </div>
-              <input
-                type={authType === 'EMAIL' ? 'email' : 'tel'}
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder={authType === 'EMAIL' ? 'youremail@example.com' : '+234 800 000 0000'}
-                className="w-full pl-10 pr-4 py-3 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-sm placeholder-fgText-muted focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                disabled={loading}
-              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 px-4 bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-emeraldGlow disabled:opacity-50 text-sm"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Sending secure OTP...</span>
+                </>
+              ) : (
+                <>
+                  <span>Continue</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Feature Badges Row */}
+          <div className="grid grid-cols-2 gap-3 mt-8 pt-6 border-t border-fgBorder-subtle">
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50">
+              <Award className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <div className="text-[11px] leading-tight">
+                <span className="font-semibold text-white block">Trading Accounts</span>
+                <span className="text-fgText-muted text-[10px]">Rhino 1-Step & Phoenix Instant</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50">
+              <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <div className="text-[11px] leading-tight">
+                <span className="font-semibold text-white block">Fast & Secure Payouts</span>
+                <span className="text-fgText-muted text-[10px]">Automated Lenco Disbursements</span>
+              </div>
             </div>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-bg-base font-semibold rounded-xl flex items-center justify-center gap-2 transition-all shadow-emeraldGlow disabled:opacity-50"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                <span>Continue</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-xs text-fgText-muted">
-            Need help?{' '}
-            <a href="mailto:support@fundedgiants.com" className="text-emerald-400 hover:underline">
-              Contact Support
-            </a>
-          </p>
-        </div>
-      </div>
-
-      {/* Feature Badges Footer */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 border-t border-fgBorder-subtle max-w-4xl mx-auto w-full">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-bg-card border border-fgBorder-emerald text-emerald-400">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-white">Prop Trading</p>
-            <p className="text-[10px] text-fgText-muted">Accounts</p>
-          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-bg-card border border-fgBorder-emerald text-emerald-400">
-            <Wallet className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-white">Fast & Secure</p>
-            <p className="text-[10px] text-fgText-muted">Payouts</p>
-          </div>
-        </div>
+        {/* Right Column: Hero Visual with Official Bull Emblem and Glowing Matrix */}
+        <div className="lg:col-span-6 hidden lg:flex items-center justify-center relative">
+          <div className="relative w-full aspect-square max-w-lg rounded-3xl p-8 bg-gradient-to-b from-bg-surface to-bg-card border border-emerald-500/20 shadow-2xl flex flex-col items-center justify-between overflow-hidden">
+            {/* Ambient Background Glows */}
+            <div className="absolute -top-20 -left-20 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-bg-card border border-fgBorder-emerald text-emerald-400">
-            <Copy className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-white">Copy Trading</p>
-            <p className="text-[10px] text-fgText-muted">Solutions</p>
-          </div>
-        </div>
+            {/* Glowing Bull Geometric Icon */}
+            <div className="relative my-auto flex flex-col items-center">
+              <div className="relative w-48 h-48 drop-shadow-[0_0_35px_rgba(16,185,129,0.35)] animate-pulse">
+                <Image
+                  src="/brand/icon.png"
+                  alt="FundedGiants Emblem"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-bg-card border border-fgBorder-emerald text-emerald-400">
-            <Award className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-white">IB Program</p>
-            <p className="text-[10px] text-fgText-muted">& Rebates</p>
+              {/* Vector Candlestick Chart Decoration */}
+              <div className="mt-8 flex items-end gap-2 h-20 opacity-80">
+                <div className="w-2.5 h-8 bg-emerald-500 rounded-sm" />
+                <div className="w-2.5 h-12 bg-emerald-400 rounded-sm" />
+                <div className="w-2.5 h-6 bg-red-400 rounded-sm" />
+                <div className="w-2.5 h-14 bg-emerald-500 rounded-sm" />
+                <div className="w-2.5 h-10 bg-emerald-400 rounded-sm" />
+                <div className="w-2.5 h-16 bg-emerald-300 rounded-sm" />
+                <div className="w-2.5 h-12 bg-emerald-500 rounded-sm" />
+                <div className="w-2.5 h-20 bg-emerald-400 rounded-sm shadow-emeraldGlow" />
+              </div>
+            </div>
+
+            {/* Tagline Box */}
+            <div className="w-full text-center py-4 px-6 rounded-2xl bg-bg-base/70 backdrop-blur-md border border-fgBorder-subtle">
+              <span className="text-xs uppercase font-extrabold tracking-widest text-emerald-400 block mb-1">
+                FundedGiants
+              </span>
+              <p className="text-xs text-fgText-secondary">
+                More Than Capital. It&apos;s a Platform.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="w-full max-w-7xl mx-auto px-6 py-6 border-t border-fgBorder-subtle flex flex-col sm:flex-row items-center justify-between text-xs text-fgText-muted gap-4">
+        <span>&copy; {new Date().getFullYear()} FundedGiants. All Rights Reserved.</span>
+        <div className="flex items-center gap-6">
+          <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
+          <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+          <Link href="/support" className="hover:text-white transition-colors">Contact Support</Link>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './modules/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ChallengesModule } from './modules/challenges/challenges.module';
+import { AdminConfigController } from './modules/admin/admin-config.controller';
 
 @Module({
   imports: [
@@ -21,5 +22,6 @@ import { ChallengesModule } from './modules/challenges/challenges.module';
     WebhooksModule,
     ChallengesModule,
   ],
+  controllers: [AdminConfigController],
 })
 export class AppModule {}
