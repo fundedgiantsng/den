@@ -6,12 +6,15 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
+import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -20,13 +23,170 @@ export class WebhooksController {
 
   constructor(
     private readonly lencoService: LencoService,
-    private readonly ninjaKycService: NinjaKycService
+    private readonly ninjaKycService: NinjaKycService,
+    private readonly steraTraderService: SteraTraderService
   ) {}
 
   /**
+   * WooCommerce Purchase Webhook
+   * Dispatched by WordPress plugin when challenge is purchased
+   */
+  @Post('woocommerce')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Receive verified completed order webhooks from WooCommerce' })
+  async handleWooCommerceWebhook(
+    @Body() payload: any,
+    @Headers('x-fundedgiants-signature') signature: string
+  ) {
+    this.logger.log(`Received WooCommerce order webhook: ${payload.order_number}`);
+
+    // 1. Verify webhook signature
+    const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
+    const computedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+
+    if (signature && signature !== computedSignature) {
+      throw new UnauthorizedException('Invalid WooCommerce webhook signature');
+    }
+
+    const orderId = payload.order_id;
+    const orderNumber = payload.order_number || `FG-ORD-${orderId}`;
+    const email = payload.billing?.email?.trim().toLowerCase();
+    const phone = payload.billing?.phone?.trim();
+    const firstName = payload.billing?.first_name?.trim();
+    const lastName = payload.billing?.last_name?.trim();
+    const accountSizeNgn = Number(payload.account_size || payload.total || 0);
+    const planSku = payload.plan_sku || 'rhino-rush-10000000';
+    const planType = planSku.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
+
+    if (!email) {
+      throw new BadRequestException('Order missing customer email address');
+    }
+
+    // 2. Prevent duplicate order processing
+    const existingOrder = await prisma.internalOrder.findFirst({
+      where: { orderNumber },
+    });
+
+    if (existingOrder) {
+      this.logger.log(`Order ${orderNumber} already processed. Skipping duplicate.`);
+      return { status: 'already_processed' };
+    }
+
+    // 3. Find or Create Customer
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, ...(phone ? [{ phone }] : [])],
+      },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email,
+          phone,
+          firstName,
+          lastName,
+          role: 'CUSTOMER',
+        },
+      });
+
+      // Create linked customer wallet
+      await prisma.customerWallet.create({
+        data: {
+          userId: user.id,
+          currency: 'NGN',
+        },
+      });
+    }
+
+    // 4. Create Internal Order & Challenge in database
+    const challengeNumber = `FG-CH-${Date.now()}`;
+    const leverage = planType === 'phoenix-rise' ? '1:30' : '1:100';
+
+    const order = await prisma.internalOrder.create({
+      data: {
+        orderNumber,
+        userId: user.id,
+        wooCommerceOrderId: Number(orderId),
+        amount: payload.total,
+        currency: 'NGN',
+        paymentMethod: payload.payment_method || 'WOOCOMMERCE_CHECKOUT',
+        paymentStatus: 'SUCCESSFUL',
+      },
+    });
+
+    // Find challenge product
+    const product = await prisma.challengeProduct.findFirst({
+      where: { skuPrefix: planType },
+    });
+
+    const challenge = await prisma.customerChallenge.create({
+      data: {
+        challengeNumber,
+        userId: user.id,
+        orderId: order.id,
+        productId: product?.id || 'prod-default',
+        type: planType === 'phoenix-rise' ? 'PHOENIX_RISE_INSTANT' : 'RHINO_RUSH_ONE_STEP',
+        status: 'PENDING_PROVISIONING',
+      },
+    });
+
+    // 5. Provision Trading Account directly on SteraTrader NGN broker subset
+    try {
+      const steraRes = await this.steraTraderService.provisionAccount({
+        userEmail: email,
+        userFullName: `${firstName || ''} ${lastName || ''}`.trim() || 'Trader',
+        userPhone: phone,
+        accountSizeNgn,
+        planType,
+        leverage,
+        reference: challengeNumber,
+      });
+
+      if (steraRes.success && steraRes.login) {
+        // Daily DD limits (Rhino: 4%, Phoenix: 4%)
+        const dailyLimit = accountSizeNgn * 0.04;
+        // Max DD limits (Rhino: 10%, Phoenix: 7%)
+        const maxLimit = planType === 'phoenix-rise' ? accountSizeNgn * 0.07 : accountSizeNgn * 0.10;
+
+        await prisma.tradingAccount.create({
+          data: {
+            accountNumber: steraRes.login,
+            userId: user.id,
+            challengeId: challenge.id,
+            platform: 'SteraTrader',
+            status: 'ACTIVE',
+            initialBalance: accountSizeNgn,
+            currentBalance: accountSizeNgn,
+            currentEquity: accountSizeNgn,
+            dailyDrawdownLimit: dailyLimit,
+            maxDrawdownLimit: maxLimit,
+          },
+        });
+
+        await prisma.customerChallenge.update({
+          where: { id: challenge.id },
+          data: { status: 'ACTIVE', startDate: new Date() },
+        });
+
+        this.logger.log(`SteraTrader Account ${steraRes.login} successfully provisioned for ${email}`);
+      }
+    } catch (steraErr: any) {
+      this.logger.error(`SteraTrader provisioning error for order ${orderNumber}: ${steraErr.message}`);
+    }
+
+    return {
+      status: 'success',
+      orderNumber,
+      challengeNumber,
+    };
+  }
+
+  /**
    * Lenco Virtual Account Funding Webhook
-   * Automatically credits user wallet upon money received
-   * https://lenco-api.readme.io/reference/webhooks
    */
   @Post('lenco')
   @HttpCode(HttpStatus.OK)
@@ -37,7 +197,6 @@ export class WebhooksController {
   ) {
     this.logger.log(`Received Lenco webhook: ${JSON.stringify(payload)}`);
 
-    // Record webhook event idempotently
     const reference = payload.data?.reference || payload.reference;
     if (!reference) {
       throw new BadRequestException('Missing transaction reference');
@@ -64,7 +223,6 @@ export class WebhooksController {
       },
     });
 
-    // Check virtual account and bind to wallet
     const accountNumber = payload.data?.virtualAccount?.accountNumber || payload.data?.accountNumber;
     const amount = Number(payload.data?.amount || 0);
 
@@ -73,11 +231,9 @@ export class WebhooksController {
     });
 
     if (!wallet) {
-      this.logger.error(`No matching wallet found for virtual account: ${accountNumber}`);
       return { status: 'wallet_not_found' };
     }
 
-    // Atomic double-entry deposit record
     await prisma.$transaction(async (tx) => {
       await tx.deposit.create({
         data: {
@@ -94,7 +250,6 @@ export class WebhooksController {
         },
       });
 
-      // Post to Double-Entry Ledger
       const entry = await tx.journalEntry.create({
         data: {
           entryNumber: `JE-DEP-${Date.now()}`,
@@ -104,7 +259,6 @@ export class WebhooksController {
         },
       });
 
-      // Fetch Ledger Accounts
       const cashAccount = await tx.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
       const walletLiabilityAccount = await tx.ledgerAccount.findFirst({
         where: { code: '2000-WALLET-LIABILITY' },
@@ -125,22 +279,17 @@ export class WebhooksController {
       });
     });
 
-    this.logger.log(`Wallet ${wallet.id} successfully credited with ₦${amount}`);
     return { status: 'success' };
   }
 
   /**
    * Ninja KYC Webhook
-   * On KYC approved: triggers Lenco dedicated virtual account creation
    */
   @Post('ninja-kyc')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Receive Ninja KYC verification results' })
   async handleNinjaWebhook(@Body() payload: any) {
-    this.logger.log(`Received Ninja KYC webhook: ${JSON.stringify(payload)}`);
-
     const reference = payload.data?.reference || payload.reference;
-    // Format: FG-KYC-{userId}
     const userId = reference?.replace('FG-KYC-', '');
 
     if (!userId) {
@@ -156,7 +305,6 @@ export class WebhooksController {
       });
 
       if (user) {
-        // Update user status
         await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -166,7 +314,6 @@ export class WebhooksController {
           },
         });
 
-        // Trigger Lenco dedicated virtual account creation if not yet assigned
         if (!user.wallet?.lencoAccountNumber) {
           const lencoRes = await this.lencoService.createVirtualAccount({
             userId: user.id,
@@ -192,7 +339,6 @@ export class WebhooksController {
                 lencoAccountReference: lencoRes.data.reference,
               },
             });
-            this.logger.log(`Assigned Lenco Virtual Account to ${user.id}: ${lencoRes.data.accountNumber}`);
           }
         }
       }
