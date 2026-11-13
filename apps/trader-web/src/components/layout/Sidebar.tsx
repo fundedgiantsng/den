@@ -9,38 +9,25 @@ import {
   Wallet,
   TrendingUp,
   Award,
-  CreditCard,
   Copy,
   Users,
   Bell,
   LifeBuoy,
   Settings,
   ShieldCheck,
-  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 
 interface NavItem {
   name: string;
   href: string;
   icon: any;
-  subItems?: { name: string; href: string; icon?: any }[];
 }
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  {
-    name: 'Wallet & Cards',
-    href: '/dashboard/wallet',
-    icon: Wallet,
-    subItems: [
-      { name: 'Wallet Overview', href: '/dashboard/wallet' },
-      { name: 'Fund Wallet', href: '/dashboard/wallet/fund' },
-      { name: 'Withdraw Funds', href: '/dashboard/wallet/withdraw' },
-      { name: 'Physical Cards', href: '/dashboard/wallet/cards', icon: CreditCard },
-    ],
-  },
+  { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
   { name: 'Trading Accounts', href: '/dashboard/trading-accounts', icon: TrendingUp },
-  { name: 'Buy Challenge', href: '/dashboard/challenges/buy', icon: Award },
   { name: 'CopyTrading', href: '/dashboard/copytrading', icon: Copy },
   { name: 'Affiliate Program', href: '/dashboard/affiliate', icon: Users },
 ];
@@ -74,66 +61,42 @@ export function Sidebar() {
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isParentActive =
-              pathname === item.href ||
-              (item.subItems && item.subItems.some((s) => pathname.startsWith(s.href)));
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
 
             return (
-              <div key={item.name} className="space-y-1">
-                <Link
-                  href={item.href}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
-                    isParentActive
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                      : 'text-fgText-secondary hover:text-white hover:bg-bg-card'
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
+                  isActive
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'text-fgText-secondary hover:text-white hover:bg-bg-card'
+                }`}
+              >
+                <Icon
+                  className={`w-4 h-4 transition-colors ${
+                    isActive ? 'text-emerald-400' : 'text-fgText-muted group-hover:text-white'
                   }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={`w-4 h-4 transition-colors ${
-                        isParentActive
-                          ? 'text-emerald-400'
-                          : 'text-fgText-muted group-hover:text-white'
-                      }`}
-                    />
-                    <span>{item.name}</span>
-                  </div>
-                  {item.subItems && (
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 text-fgText-muted transition-transform ${
-                        isParentActive ? 'rotate-180 text-emerald-400' : ''
-                      }`}
-                    />
-                  )}
-                </Link>
-
-                {/* Submenu for Wallet & Cards */}
-                {item.subItems && isParentActive && (
-                  <div className="pl-9 pr-2 py-1 space-y-1">
-                    {item.subItems.map((sub) => {
-                      const isSubActive = pathname === sub.href;
-                      const SubIcon = sub.icon;
-                      return (
-                        <Link
-                          key={sub.name}
-                          href={sub.href}
-                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                            isSubActive
-                              ? 'text-emerald-400 bg-emerald-500/15 font-semibold'
-                              : 'text-fgText-muted hover:text-white hover:bg-bg-card/50'
-                          }`}
-                        >
-                          {SubIcon && <SubIcon className="w-3 h-3" />}
-                          <span>{sub.name}</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                />
+                <span>{item.name}</span>
+              </Link>
             );
           })}
         </nav>
+
+        {/* Buy Challenge Action Button right below Affiliate tab */}
+        <div className="mt-4 px-1">
+          <Link
+            href="/dashboard/challenges/buy"
+            className="w-full py-2.5 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-bg-base font-heading font-extrabold text-xs shadow-lg flex items-center justify-between transition-all group"
+          >
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-bg-base" />
+              <span>Buy Challenge</span>
+            </div>
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
       </div>
 
       {/* Secondary Bottom Links */}

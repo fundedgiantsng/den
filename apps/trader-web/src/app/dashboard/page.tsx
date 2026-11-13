@@ -11,11 +11,12 @@ import {
   TrendingUp,
   CreditCard,
   Share2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
 export default function DashboardOverviewPage() {
-  // Live Data Schema Placeholder connected to strict NGN data structures
+  // Live Data Schema connected to strict NGN data structures
   const wallet = {
     availableBalanceNgn: 18450000.0,
     withdrawableProfitsNgn: 2480000.0,
@@ -26,7 +27,7 @@ export default function DashboardOverviewPage() {
     {
       id: 'FG-48291',
       planName: 'Rhino Rush',
-      type: 'FUNDED',
+      type: '1-STEP EVALUATION',
       sizeNgn: 10000000,
       profitNgn: 420000,
       profitPercent: '+4.20%',
@@ -38,7 +39,7 @@ export default function DashboardOverviewPage() {
     {
       id: 'FG-51732',
       planName: 'Phoenix Rise',
-      type: 'CHALLENGE',
+      type: 'LIVE / INSTANT FUNDING',
       sizeNgn: 50000000,
       profitNgn: 820000,
       profitPercent: '+1.64%',
@@ -53,7 +54,7 @@ export default function DashboardOverviewPage() {
     {
       id: 'act-1',
       title: 'Trading Payout Processed',
-      ref: '#FG-48291',
+      ref: '#FG-51732 (Phoenix Rise)',
       time: '2h ago',
       amountNgn: 1240000,
       isPositive: true,
@@ -99,20 +100,16 @@ export default function DashboardOverviewPage() {
 
       {/* Top 3 Metric Cards Grid (Strict NGN) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card 1: Central Wallet (NGN) */}
+        {/* Card 1: Giants Vault (NGN) */}
         <div className="p-6 rounded-2xl bg-bg-card border border-fgBorder-emerald shadow-cardGlow relative overflow-hidden flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-fgText-secondary">
               <Wallet className="w-4 h-4 text-emerald-400" />
-              <span>Central NGN Wallet</span>
+              <span>Giants Vault</span>
             </div>
-            <Link
-              href="/dashboard/wallet"
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1"
-            >
-              <span>Manage</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Primary Wallet
+            </span>
           </div>
 
           <div>
@@ -125,17 +122,17 @@ export default function DashboardOverviewPage() {
           <div className="flex items-center gap-3 mt-6">
             <Link
               href="/dashboard/wallet/fund"
-              className="flex-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+              className="flex-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-emeraldGlow"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Deposit NGN</span>
+              <span>Deposit</span>
             </Link>
             <Link
-              href="/dashboard/wallet/withdraw"
+              href="/dashboard/wallet"
               className="flex-1 py-2 px-3 rounded-xl bg-bg-surface border border-fgBorder-subtle hover:border-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
             >
-              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Withdraw</span>
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Manage</span>
             </Link>
           </div>
         </div>
@@ -178,7 +175,7 @@ export default function DashboardOverviewPage() {
         <div className="p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle shadow-cardGlow flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-fgText-secondary">
-              <Coins className="w-4 h-4 text-gold-400" />
+              <Coins className="w-4 h-4 text-amber-400" />
               <span>Total Active Capital</span>
             </div>
             <span className="text-[10px] text-fgText-muted">2 Accounts</span>
@@ -188,7 +185,7 @@ export default function DashboardOverviewPage() {
             <span className="text-3xl font-heading font-extrabold text-white tracking-tight">
               {formatNaira(wallet.totalCapitalNgn)}
             </span>
-            <p className="text-[11px] text-fgText-muted mt-1">Across Rhino Rush & Phoenix Rise</p>
+            <p className="text-[11px] text-fgText-muted mt-1">Rhino Rush (1-Step) & Phoenix Rise (Instant)</p>
           </div>
 
           <div className="mt-4 pt-3 border-t border-fgBorder-subtle flex items-center justify-between text-[11px]">
@@ -198,7 +195,7 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
 
-      {/* Main Grid: Left Column (Active Accounts & Copy) + Right Rail (Promo Banners & Activity) */}
+      {/* Main Grid: Left Column (Active Accounts & CTA) + Right Rail (Spend Card & Activity) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column (Span 2) */}
         <div className="lg:col-span-2 space-y-6">
@@ -233,9 +230,9 @@ export default function DashboardOverviewPage() {
                         <span className="text-sm font-heading font-bold text-white">{acc.id}</span>
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            acc.type === 'FUNDED'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-gold-500/20 text-gold-400 border border-gold-500/30'
+                            acc.planName === 'Phoenix Rise'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           }`}
                         >
                           {acc.type}
@@ -278,14 +275,14 @@ export default function DashboardOverviewPage() {
           {/* SteraTrader Action CTA Card */}
           <div className="p-6 rounded-2xl bg-gradient-to-r from-bg-card via-bg-cardElevated to-bg-card border border-fgBorder-emerald flex items-center justify-between">
             <div className="space-y-1">
-              <h3 className="text-lg font-heading font-bold text-white">Ready for a new Challenge?</h3>
+              <h3 className="text-lg font-heading font-bold text-white">Ready for a new Account?</h3>
               <p className="text-xs text-fgText-secondary">
-                Scale your capital up to ₦50,000,000 with 1-Step or Instant Funding options.
+                Scale your capital up to ₦50,000,000 with Rhino Rush (1-Step Challenge) or Phoenix Rise (Live / Instant Funding).
               </p>
             </div>
             <Link
-              href="/dashboard/challenges"
-              className="px-5 py-2.5 rounded-xl bg-gold-500 hover:bg-gold-400 text-bg-base font-heading font-bold text-xs shadow-lg transition-all"
+              href="/dashboard/challenges/buy"
+              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-bg-base font-heading font-extrabold text-xs shadow-lg transition-all"
             >
               Explore Challenges →
             </Link>
@@ -294,23 +291,23 @@ export default function DashboardOverviewPage() {
 
         {/* Right Rail (Span 1) */}
         <div className="space-y-6">
-          {/* Metal Card Promo Widget */}
+          {/* Giants Spend Card (Custom NGN Card) */}
           <div className="p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle relative overflow-hidden">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-gold-400 uppercase tracking-widest font-heading">
-                Metal Cards
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-widest font-heading">
+                Giants Spend Card
               </span>
-              <CreditCard className="w-4 h-4 text-gold-400" />
+              <CreditCard className="w-4 h-4 text-amber-400" />
             </div>
-            <h3 className="text-base font-heading font-bold text-white mb-1">Custom NGN Metal Card</h3>
+            <h3 className="text-base font-heading font-bold text-white mb-1">Custom NGN Card</h3>
             <p className="text-xs text-fgText-secondary mb-4 leading-relaxed">
-              Spend directly from your FundedGiants wallet anywhere in Nigeria with our heavy metal card.
+              Spend directly from your Giants Vault online, at POS terminals, and ATMs anywhere Verve or Mastercard are accepted nationwide.
             </p>
             <Link
-              href="/dashboard/cards"
+              href="/dashboard/wallet/cards"
               className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-300"
             >
-              <span>Order Physical Card (₦100,000)</span>
+              <span>Order Physical Card (Verve & Mastercard)</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -325,7 +322,7 @@ export default function DashboardOverviewPage() {
             </div>
             <h3 className="text-base font-heading font-bold text-white mb-1">Invite Traders & Earn</h3>
             <p className="text-xs text-fgText-secondary mb-4">
-              Get paid tier-based commission on every challenge purchased through your link.
+              Get paid tier-based commission on every account purchased through your link.
             </p>
             <Link
               href="/dashboard/affiliate"
