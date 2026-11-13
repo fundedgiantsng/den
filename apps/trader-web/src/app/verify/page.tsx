@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, ArrowRight, ArrowLeft, MessageSquare, Loader2, Edit3 } from 'lucide-react';
 
-export default function VerifyOtpPage() {
+function VerifyOtpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const identifier = searchParams.get('identifier') || '';
@@ -257,5 +257,19 @@ export default function VerifyOtpPage() {
         FundedGiants Platform &copy; {new Date().getFullYear()}. All Rights Reserved.
       </div>
     </div>
+  );
+}
+
+export default function VerifyOtpPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-fgBg-base flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-fgPrimary animate-spin" />
+        </div>
+      }
+    >
+      <VerifyOtpContent />
+    </Suspense>
   );
 }

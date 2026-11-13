@@ -2,7 +2,8 @@ import {
   Injectable,
   BadRequestException,
   UnauthorizedException,
-  TooManyRequestsException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
@@ -42,8 +43,9 @@ export class AuthService {
     });
 
     if (recentOtp) {
-      throw new TooManyRequestsException(
-        `Please wait ${this.cooldownSeconds} seconds before requesting a new code.`
+      throw new HttpException(
+        `Please wait ${this.cooldownSeconds} seconds before requesting a new code.`,
+        HttpStatus.TOO_MANY_REQUESTS
       );
     }
 
@@ -142,8 +144,9 @@ export class AuthService {
     });
 
     if (recentOtp) {
-      throw new TooManyRequestsException(
-        `Please wait ${this.cooldownSeconds} seconds before requesting a WhatsApp OTP.`
+      throw new HttpException(
+        `Please wait ${this.cooldownSeconds} seconds before requesting a WhatsApp OTP.`,
+        HttpStatus.TOO_MANY_REQUESTS
       );
     }
 
