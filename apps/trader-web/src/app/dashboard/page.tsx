@@ -27,7 +27,8 @@ export default function DashboardOverviewPage() {
     {
       id: 'FG-48291',
       planName: 'Rhino Rush',
-      type: '1-STEP EVALUATION',
+      planType: 'RHINO_RUSH',
+      currentPhase: 'Funded', // Dynamically displays 'Challenge' or 'Funded'
       sizeNgn: 10000000,
       profitNgn: 420000,
       profitPercent: '+4.20%',
@@ -39,7 +40,8 @@ export default function DashboardOverviewPage() {
     {
       id: 'FG-51732',
       planName: 'Phoenix Rise',
-      type: 'LIVE / INSTANT FUNDING',
+      planType: 'PHOENIX_RISE',
+      currentPhase: 'Instant Funding', // Strictly Instant Funding
       sizeNgn: 50000000,
       profitNgn: 820000,
       profitPercent: '+1.64%',
@@ -229,13 +231,15 @@ export default function DashboardOverviewPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-heading font-bold text-white">{acc.id}</span>
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-tight uppercase ${
                             acc.planName === 'Phoenix Rise'
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
+                              : acc.currentPhase === 'Funded'
+                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
+                              : 'bg-blue-500/15 text-blue-300 border border-blue-500/25'
                           }`}
                         >
-                          {acc.type}
+                          {acc.currentPhase}
                         </span>
                       </div>
                       <p className="text-xs text-fgText-muted mt-0.5">
