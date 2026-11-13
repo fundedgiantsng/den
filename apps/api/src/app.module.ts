@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './modules/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { ChallengesModule } from './modules/challenges/challenges.module';
 
 @Module({
   imports: [
@@ -13,11 +14,12 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 100, // 100 requests per minute
+        limit: 100,
       },
     ]),
     AuthModule,
     WebhooksModule,
+    ChallengesModule,
   ],
 })
 export class AppModule {}
