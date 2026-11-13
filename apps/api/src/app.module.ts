@@ -5,6 +5,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ChallengesModule } from './modules/challenges/challenges.module';
 import { AdminConfigController } from './modules/admin/admin-config.controller';
+import { RiskEngineModule } from './modules/risk/risk-engine.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AdminConfigController } from './modules/admin/admin-config.controller';
     AuthModule,
     WebhooksModule,
     ChallengesModule,
+    RiskEngineModule,
   ],
   controllers: [AdminConfigController],
 })

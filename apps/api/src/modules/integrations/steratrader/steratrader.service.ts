@@ -19,6 +19,15 @@ export interface SteraTraderAccountResponse {
   error?: string;
 }
 
+export interface SteraTraderAccountMetrics {
+  accountNumber: string;
+  balance: number;
+  equity: number;
+  startingDayEquity: number;
+  openTradesCount: number;
+  openTradesProfit: number;
+}
+
 @Injectable()
 export class SteraTraderService {
   private readonly logger = new Logger(SteraTraderService.name);
@@ -87,6 +96,43 @@ export class SteraTraderService {
         success: false,
         error: err.message,
       };
+    }
+  }
+
+  /**
+   * Query live balance, equity, and open positions for an account
+   */
+  async fetchAccountMetrics(accountNumber: string): Promise<SteraTraderAccountMetrics | null> {
+    if (!this.apiKey) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/metrics`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        this.logger.warn(`Failed to fetch metrics for account ${accountNumber}: HTTP ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json();
+      return {
+        accountNumber,
+        balance: Number(data.balance),
+        equity: Number(data.equity),
+        startingDayEquity: Number(data.startingDayEquity || data.balance),
+        openTradesCount: Number(data.openTradesCount || 0),
+        openTradesProfit: Number(data.openTradesProfit || 0),
+      };
+    } catch (err: any) {
+      this.logger.error(`Error querying SteraTrader metrics for ${accountNumber}: ${err.message}`);
+      return null;
     }
   }
 
