@@ -1,0 +1,660 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// 1. Identity, Users, RBAC & OTP Challenges
+// -------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  SUPPORT
+  RISK_ANALYST
+  FINANCE_OPERATOR
+  FINANCE_APPROVER
+  COMPLIANCE_OPERATOR
+  AFFILIATE_MANAGER
+  CARD_OPERATIONS
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum KycStatus {
+  UNVERIFIED
+  PENDING
+  APPROVED
+  REJECTED
+  REVERIFICATION_REQUESTED
+}
+
+enum AuthChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum OtpStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  FAILED
+}
+
+model User {
+  id                String       @id @default(uuid())
+  email             String?      @unique
+  phone             String?      @unique
+  firstName         String?
+  lastName          String?
+  role              UserRole     @default(CUSTOMER)
+  kycStatus         KycStatus    @default(UNVERIFIED)
+  isSuspended       Boolean      @default(false)
+  suspensionReason  String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  // Relationships
+  sessions          Session[]
+  otpChallenges     OtpChallenge[]
+  wallet            CustomerWallet?
+  challenges        CustomerChallenge[]
+  tradingAccounts   TradingAccount[]
+  orders            InternalOrder[]
+  bankAccounts      CustomerBankAccount[]
+  cardOrders        CardOrder[]
+  physicalCards     PhysicalCard[]
+  affiliateProfile  AffiliateProfile?
+  referredBy        AffiliateReferral?  @relation("ReferredUser")
+  auditEvents       AuditEvent[]
+  kycRecords        KycRecord[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+}
+
+model Session {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String    @unique
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id              String      @id @default(uuid())
+  userId          String?
+  identifier      String      // Email or E.164 Phone
+  channel         AuthChannel // EMAIL, SMS, WHATSAPP
+  codeHash        String
+  attempts        Int         @default(0)
+  maxAttempts     Int         @default(5)
+  expiresAt       DateTime
+  status          OtpStatus   @default(PENDING)
+  providerCost    Decimal?    @db.Decimal(12, 4)
+  customerCharge  Decimal?    @db.Decimal(12, 2)
+  providerMessageId String?
+  deliveryReport  String?
+  createdAt       DateTime    @default(now())
+  verifiedAt      DateTime?
+
+  user            User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([identifier, status])
+  @@index([createdAt])
+}
+
+model KycRecord {
+  id                 String     @id @default(uuid())
+  userId             String
+  provider           String     @default("Ninja")
+  externalReference  String?    @unique
+  status             KycStatus  @default(PENDING)
+  rejectionReason    String?
+  providerPayload    Json?
+  verifiedAt         DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// -------------------------------------------------------------
+// 2. Double-Entry Financial Ledger & Wallets
+// -------------------------------------------------------------
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum TransactionType {
+  DEPOSIT_LENCO_VIRTUAL
+  DEPOSIT_CRYPTO_USDT
+  CHALLENGE_PURCHASE
+  TRADER_EARNINGS_PAYOUT
+  AFFILIATE_COMMISSION_PAYOUT
+  CARD_ISSUANCE_FEE
+  CARD_CUSTOMIZATION_FEE
+  CARD_MAINTENANCE_FEE
+  CARD_SPEND_AUTH
+  CARD_SPEND_SETTLEMENT
+  OTP_DELIVERY_FEE
+  SERVICE_FEE
+  ADJUSTMENT
+}
+
+model LedgerAccount {
+  id          String         @id @default(uuid())
+  code        String         @unique // e.g. 1000-CASH-LENCO, 2000-CUSTOMER-WALLET-LIABILITY
+  name        String
+  type        AccountType
+  currency    String         @default("NGN")
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+
+  journalLines JournalLine[]
+}
+
+model JournalEntry {
+  id               String          @id @default(uuid())
+  entryNumber      String          @unique // Sequential identifier
+  transactionType  TransactionType
+  reference        String          // Unique external/internal correlation ID
+  narration        String
+  postedAt         DateTime        @default(now())
+  isReversed       Boolean         @default(false)
+  reversedEntryId  String?
+
+  lines            JournalLine[]
+
+  @@index([reference])
+  @@index([postedAt])
+}
+
+model JournalLine {
+  id               String        @id @default(uuid())
+  journalEntryId   String
+  accountId        String
+  debit            Decimal       @default(0) @db.Decimal(18, 4)
+  credit           Decimal       @default(0) @db.Decimal(18, 4)
+  currency         String        @default("NGN")
+
+  journalEntry     JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account          LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+model CustomerWallet {
+  id                   String     @id @default(uuid())
+  userId               String     @unique
+  currency             String     @default("NGN")
+  
+  // Dedicated Lenco Virtual Bank Account
+  lencoVirtualBankName String?
+  lencoAccountName     String?
+  lencoAccountNumber   String?    @unique
+  lencoAccountReference String?   @unique
+
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deposits             Deposit[]
+  withdrawals          Withdrawal[]
+
+  @@index([userId])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  REVERSED
+}
+
+model Deposit {
+  id               String         @id @default(uuid())
+  walletId         String
+  reference        String         @unique // Lenco payment reference
+  amount           Decimal        @db.Decimal(18, 2)
+  currency         String         @default("NGN")
+  status           PaymentStatus  @default(PENDING)
+  senderAccount    String?
+  senderBank       String?
+  senderName       String?
+  rawWebhookData   Json?
+  reconciled       Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  wallet           CustomerWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([reference])
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  PENDING_REVIEW
+  APPROVED
+  PROCESSING
+  PAID
+  REJECTED
+  FAILED
+}
+
+model Withdrawal {
+  id                   String           @id @default(uuid())
+  walletId             String
+  bankAccountId        String
+  reference            String           @unique
+  amount               Decimal          @db.Decimal(18, 2)
+  fee                  Decimal          @default(0) @db.Decimal(18, 2)
+  netAmount            Decimal          @db.Decimal(18, 2)
+  currency             String           @default("NGN")
+  status               WithdrawalStatus @default(REQUESTED)
+  lencoDisbursementRef String?
+  approvedBy           String?
+  approvedAt           DateTime?
+  rejectionReason      String?
+  reconciled           Boolean          @default(false)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  wallet               CustomerWallet   @relation(fields: [walletId], references: [id])
+  bankAccount          CustomerBankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@index([walletId])
+  @@index([status])
+}
+
+model CustomerBankAccount {
+  id             String       @id @default(uuid())
+  userId         String
+  bankName       String
+  bankCode       String
+  accountNumber  String
+  accountName    String
+  isVerified     Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawals    Withdrawal[]
+
+  @@unique([userId, accountNumber, bankCode])
+}
+
+// -------------------------------------------------------------
+// 3. Centralized Fee Engine & Physical Cards
+// -------------------------------------------------------------
+
+enum FeeCategory {
+  SMS_OTP
+  WHATSAPP_OTP
+  CARD_ISSUANCE_STANDARD
+  CARD_CUSTOMIZATION_SURCHARGE
+  CARD_MAINTENANCE
+  TRANSACTION_FEE
+  WITHDRAWAL_FEE
+}
+
+model FeeConfiguration {
+  id          String      @id @default(uuid())
+  category    FeeCategory @unique
+  name        String
+  description String?
+  fixedAmount Decimal     @default(0) @db.Decimal(18, 2)
+  percentage  Decimal     @default(0) @db.Decimal(5, 2)
+  currency    String      @default("NGN")
+  isActive    Boolean     @default(true)
+  updatedBy   String?
+  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime    @default(now())
+}
+
+enum CardStatus {
+  PENDING_APPROVAL
+  ORDER_PLACED
+  IN_PRODUCTION
+  SHIPPED
+  DELIVERED
+  ACTIVE
+  FROZEN
+  BLOCKED
+  CANCELLED
+}
+
+model CardOrder {
+  id                   String     @id @default(uuid())
+  userId               String
+  cardholderName       String
+  isCustomDesign       Boolean    @default(false)
+  customDesignAssetUrl String?
+  standardTemplateId   String?
+  deliveryAddress      Json       // Full structured address
+  issuanceFee          Decimal    @db.Decimal(18, 2)
+  customizationFee     Decimal    @default(0) @db.Decimal(18, 2)
+  totalCharged         Decimal    @db.Decimal(18, 2)
+  isComplimentary      Boolean    @default(false)
+  waivedAmount         Decimal    @default(0) @db.Decimal(18, 2)
+  waiverReason         String?
+  waivedBy             String?
+  status               CardStatus @default(PENDING_APPROVAL)
+  fulfillmentTracking  String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  user                 User       @relation(fields: [userId], references: [id])
+  physicalCard         PhysicalCard?
+
+  @@index([userId])
+}
+
+model PhysicalCard {
+  id                   String       @id @default(uuid())
+  userId               String
+  cardOrderId          String       @unique
+  maskedPan            String       // e.g. 5399 **** **** 1234
+  issuerReference      String       @unique
+  status               CardStatus   @default(ACTIVE)
+  dailySpendLimit      Decimal      @default(500000) @db.Decimal(18, 2)
+  monthlySpendLimit    Decimal      @default(5000000) @db.Decimal(18, 2)
+  frozenAt             DateTime?
+  blockedAt            DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  user                 User         @relation(fields: [userId], references: [id])
+  order                CardOrder    @relation(fields: [cardOrderId], references: [id])
+  transactions         CardTransaction[]
+
+  @@index([userId])
+}
+
+model CardTransaction {
+  id                 String       @id @default(uuid())
+  cardId             String
+  issuerReference    String       @unique
+  merchantName       String
+  merchantCategory   String?
+  amount             Decimal      @db.Decimal(18, 2)
+  fee                Decimal      @default(0) @db.Decimal(18, 2)
+  currency           String       @default("NGN")
+  status             PaymentStatus @default(SUCCESSFUL)
+  authCode           String?
+  reconciled         Boolean      @default(false)
+  transactionTime    DateTime
+  createdAt          DateTime     @default(now())
+
+  card               PhysicalCard @relation(fields: [cardId], references: [id])
+
+  @@index([cardId])
+  @@index([issuerReference])
+}
+
+// -------------------------------------------------------------
+// 4. Commerce, Orders & Challenges
+// -------------------------------------------------------------
+
+enum ChallengeType {
+  RHINO_RUSH_ONE_STEP
+  PHOENIX_RISE_INSTANT
+}
+
+enum ChallengeStatus {
+  PENDING_PROVISIONING
+  ACTIVE
+  PASSED
+  FAILED
+  COMPLETED
+}
+
+model ChallengeProduct {
+  id                   String        @id @default(uuid())
+  sku                  String        @unique // e.g. rhino-rush-1000000
+  skuPrefix            String        // rhino-rush or phoenix-rise
+  name                 String        // Rhino Rush - 1 Step
+  type                 ChallengeType
+  accountSize          Decimal       @db.Decimal(18, 2) // 1,000,000 to 50,000,000
+  priceNgn             Decimal       @db.Decimal(18, 2) // Standard product price in NGN
+  dailyDrawdownPercent Decimal       @db.Decimal(5, 2)  // 4%
+  maxDrawdownPercent   Decimal       @db.Decimal(5, 2)  // 10% or 7%
+  profitTargetPercent  Decimal       @db.Decimal(5, 2)  // 10%
+  leverage             String        // 1:100 or 1:30
+  profitSplit          String        // 80:20
+  isActive             Boolean       @default(true)
+  wooCommerceProductId Int?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  challenges           CustomerChallenge[]
+}
+
+model InternalOrder {
+  id                   String        @id @default(uuid())
+  orderNumber          String        @unique // e.g. FG-ORD-10023
+  userId               String
+  wooCommerceOrderId   Int?          @unique
+  amount               Decimal       @db.Decimal(18, 2)
+  currency             String        @default("NGN")
+  paymentMethod        String        // WALLET, WOOCOMMERCE_CHECKOUT, etc.
+  paymentStatus        PaymentStatus @default(PENDING)
+  paymentReference     String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  user                 User          @relation(fields: [userId], references: [id])
+  challenges           CustomerChallenge[]
+
+  @@index([userId])
+  @@index([orderNumber])
+}
+
+model CustomerChallenge {
+  id                   String          @id @default(uuid())
+  challengeNumber      String          @unique // e.g. FG-CH-8291
+  userId               String
+  orderId              String
+  productId            String
+  type                 ChallengeType
+  status               ChallengeStatus @default(PENDING_PROVISIONING)
+  ruleVersion          String          @default("1.0")
+  startDate            DateTime?
+  endDate              DateTime?
+  passedAt             DateTime?
+  failedAt             DateTime?
+  failureReason        String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  user                 User            @relation(fields: [userId], references: [id])
+  order                InternalOrder   @relation(fields: [orderId], references: [id])
+  product              ChallengeProduct @relation(fields: [productId], references: [id])
+  tradingAccount       TradingAccount?
+  riskEvents           RiskEvent[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// 5. SteraTrader Accounts & Risk Engine
+// -------------------------------------------------------------
+
+enum TradingAccountStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+model TradingAccount {
+  id                     String               @id @default(uuid())
+  accountNumber          String               @unique // e.g. FG-48291 (SteraTrader login)
+  userId                 String
+  challengeId            String               @unique
+  platform               String               @default("SteraTrader")
+  status                 TradingAccountStatus @default(PROVISIONING)
+  initialBalance         Decimal              @db.Decimal(18, 2)
+  currentBalance         Decimal              @db.Decimal(18, 2)
+  currentEquity          Decimal              @db.Decimal(18, 2)
+  totalProfit            Decimal              @default(0) @db.Decimal(18, 2)
+  dailyDrawdownLimit     Decimal              @db.Decimal(18, 2)
+  maxDrawdownLimit       Decimal              @db.Decimal(18, 2)
+  lastSyncedAt           DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  user                   User                 @relation(fields: [userId], references: [id])
+  challenge              CustomerChallenge    @relation(fields: [challengeId], references: [id])
+  tradeRecords           TradeRecord[]
+  riskEvents             RiskEvent[]
+
+  @@index([userId])
+  @@index([accountNumber])
+}
+
+model TradeRecord {
+  id               String         @id @default(uuid())
+  tradingAccountId String
+  externalTradeId  String         @unique // SteraTrader trade ticket
+  symbol           String         // e.g. XAUUSD, EURUSD
+  direction        String         // BUY, SELL
+  volume           Decimal        @db.Decimal(10, 2)
+  openPrice        Decimal        @db.Decimal(18, 5)
+  closePrice       Decimal?       @db.Decimal(18, 5)
+  stopLoss         Decimal?       @db.Decimal(18, 5)
+  takeProfit       Decimal?       @db.Decimal(18, 5)
+  profit           Decimal?       @db.Decimal(18, 2)
+  openedAt         DateTime
+  closedAt         DateTime?
+  createdAt        DateTime       @default(now())
+
+  tradingAccount   TradingAccount @relation(fields: [tradingAccountId], references: [id])
+
+  @@index([tradingAccountId])
+}
+
+model RiskEvent {
+  id               String            @id @default(uuid())
+  challengeId      String
+  tradingAccountId String
+  eventType        String            // DAILY_DD_BREACH, MAX_DD_BREACH, TARGET_REACHED
+  description      String
+  severity         String            // INFO, WARNING, CRITICAL
+  snapshotBalance  Decimal           @db.Decimal(18, 2)
+  snapshotEquity   Decimal           @db.Decimal(18, 2)
+  createdAt        DateTime          @default(now())
+
+  challenge        CustomerChallenge @relation(fields: [challengeId], references: [id])
+  tradingAccount   TradingAccount    @relation(fields: [tradingAccountId], references: [id])
+
+  @@index([challengeId])
+  @@index([tradingAccountId])
+}
+
+// -------------------------------------------------------------
+// 6. Affiliate System
+// -------------------------------------------------------------
+
+model AffiliateProfile {
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  referralCode       String              @unique // e.g. GIANTS-782
+  totalReferrals     Int                 @default(0)
+  totalCommissions   Decimal             @default(0) @db.Decimal(18, 2)
+  withdrawnCommissions Decimal           @default(0) @db.Decimal(18, 2)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  user               User                @relation(fields: [userId], references: [id])
+  referrals          AffiliateReferral[]
+  commissions        AffiliateCommission[]
+}
+
+model AffiliateReferral {
+  id                 String              @id @default(uuid())
+  affiliateProfileId String
+  referredUserId     String              @unique
+  createdAt          DateTime            @default(now())
+
+  affiliateProfile   AffiliateProfile    @relation(fields: [affiliateProfileId], references: [id])
+  referredUser       User                @relation("ReferredUser", fields: [referredUserId], references: [id])
+  commissions        AffiliateCommission[]
+
+  @@index([affiliateProfileId])
+}
+
+model AffiliateCommission {
+  id                 String              @id @default(uuid())
+  affiliateProfileId String
+  referralId         String
+  orderNumber        String
+  amount             Decimal             @db.Decimal(18, 2)
+  currency           String              @default("NGN")
+  status             PaymentStatus       @default(PENDING)
+  createdAt          DateTime            @default(now())
+
+  affiliateProfile   AffiliateProfile    @relation(fields: [affiliateProfileId], references: [id])
+  referral           AffiliateReferral   @relation(fields: [referralId], references: [id])
+
+  @@index([affiliateProfileId])
+}
+
+// -------------------------------------------------------------
+// 7. Operations & Security Audit
+// -------------------------------------------------------------
+
+model AuditEvent {
+  id          String   @id @default(uuid())
+  userId      String?
+  adminId     String?
+  action      String   // e.g. FEE_WAIVER_GRANTED, MANUAL_RISK_OVERRIDE, USER_SUSPENDED
+  resource    String
+  resourceId  String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id             String        @id @default(uuid())
+  provider       String        // LENCO, NINJA, WOOCOMMERCE, ROBASE
+  eventId        String?       @unique
+  eventType      String
+  payload        Json
+  signature      String?
+  isVerified     Boolean       @default(false)
+  isProcessed    Boolean       @default(false)
+  processingError String?
+  createdAt      DateTime      @default(now())
+
+  @@index([provider, eventType])
+  @@index([isProcessed])
+}
