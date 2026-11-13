@@ -61,7 +61,11 @@ export function Sidebar() {
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+            // Exact match for dashboard root, prefix match for specific subroutes
+            const isActive =
+              item.href === '/dashboard'
+                ? pathname === '/dashboard'
+                : pathname === item.href || pathname.startsWith(item.href + '/');
 
             return (
               <Link

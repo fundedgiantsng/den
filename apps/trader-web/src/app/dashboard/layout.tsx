@@ -75,7 +75,10 @@ export default function DashboardLayout({
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-bg-surface/90 backdrop-blur-md border-t border-fgBorder-subtle md:hidden flex items-center justify-around py-2 px-1">
         {mobileNavItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          const isActive =
+            item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname === item.href || pathname.startsWith(item.href + '/');
           return (
             <Link
               key={item.name}
