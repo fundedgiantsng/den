@@ -7,14 +7,14 @@ import {
   LayoutDashboard,
   Wallet,
   TrendingUp,
+  Award,
+  CreditCard,
   Copy,
   Users,
-  Award,
   Bell,
   LifeBuoy,
   Settings,
   ShieldCheck,
-  CreditCard,
 } from 'lucide-react';
 
 const navItems = [
@@ -39,7 +39,7 @@ export function Sidebar() {
   return (
     <aside className="w-64 h-screen sticky top-0 flex flex-col justify-between bg-bg-surface border-r border-fgBorder-subtle p-4 select-none">
       <div>
-        {/* Brand Header */}
+        {/* Brand Header: Clean FundedGiants without any subtitle */}
         <Link href="/dashboard" className="flex items-center gap-3 px-3 py-4 mb-4">
           <div className="w-9 h-9 rounded-xl bg-bg-card card-border-glow flex items-center justify-center">
             <span className="text-emerald-400 font-bold text-lg font-heading">FG</span>
@@ -48,7 +48,6 @@ export function Sidebar() {
             <span className="text-lg font-heading font-extrabold tracking-tight text-white block leading-tight">
               FundedGiants
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono tracking-wider">PROPRIETARY TRADING</span>
           </div>
         </Link>
 
