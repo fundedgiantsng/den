@@ -285,6 +285,89 @@ export default function AffiliateProgramPage() {
         </div>
       </div>
 
+      {/* Balance Cards & Transfer to Giants Vault (Positioned at Top) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* Available Commission */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-emerald shadow-cardGlow flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
+              <span className="uppercase tracking-wider font-semibold">Available Partner Earnings</span>
+              <Coins className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-white">
+              {formatNaira(affiliateData.availableCommissionNgn)}
+            </div>
+            <p className="text-[11px] text-fgText-secondary mt-1">Ready for instant transfer to Giants Vault</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleTransferToVault}
+            disabled={transferring || affiliateData.availableCommissionNgn <= 0}
+            className="mt-5 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center justify-center gap-1.5 shadow-emeraldGlow transition-all disabled:opacity-50"
+          >
+            {transferring ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Transferring to Vault...</span>
+              </>
+            ) : (
+              <>
+                <span>Transfer to Giants Vault</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Total Referred Traders */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle shadow-cardGlow flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
+              <span className="uppercase tracking-wider font-semibold">Active Referrals</span>
+              <Users className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-emerald-400">
+              {affiliateData.totalReferrals}
+            </div>
+            <p className="text-[11px] text-fgText-secondary mt-1">Traders registered with @{affiliateData.username}</p>
+          </div>
+
+          <div className="mt-5 pt-3 border-t border-fgBorder-subtle flex items-center justify-between text-xs">
+            <span className="text-fgText-muted">Recurring Payout Share:</span>
+            <span className="font-heading font-bold text-amber-400">3% Lifetime</span>
+          </div>
+        </div>
+
+        {/* Lifetime Earnings */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle shadow-cardGlow flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+          <div>
+            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
+              <span className="uppercase tracking-wider font-semibold">Lifetime Commission Earned</span>
+              <TrendingUp className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-white">
+              {formatNaira(affiliateData.totalCommissionsNgn)}
+            </div>
+            <p className="text-[11px] text-fgText-secondary mt-1">Cumulative CPA + Payout earnings</p>
+          </div>
+
+          <div className="mt-5 pt-3 border-t border-fgBorder-subtle flex items-center justify-between text-xs">
+            <span className="text-fgText-muted">Total Transferred to Vault:</span>
+            <span className="font-mono text-emerald-400 font-semibold">
+              {formatNaira(affiliateData.withdrawnCommissionsNgn)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {transferSuccess && (
+        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-3">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>{transferSuccess}</span>
+        </div>
+      )}
+
       {/* Program Compensation Structure (Two Core Pillars) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Pillar 1: 10% CPA Upfront */}
@@ -604,89 +687,6 @@ export default function AffiliateProgramPage() {
           </div>
         </div>
       </div>
-
-      {/* Balance Cards & Transfer to Giants Vault */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Available Commission */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-emerald shadow-cardGlow flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
-              <span className="uppercase tracking-wider font-semibold">Available Partner Earnings</span>
-              <Coins className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-white">
-              {formatNaira(affiliateData.availableCommissionNgn)}
-            </div>
-            <p className="text-[11px] text-fgText-secondary mt-1">Ready for instant transfer to Giants Vault</p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleTransferToVault}
-            disabled={transferring || affiliateData.availableCommissionNgn <= 0}
-            className="mt-5 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center justify-center gap-1.5 shadow-emeraldGlow transition-all disabled:opacity-50"
-          >
-            {transferring ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Transferring to Vault...</span>
-              </>
-            ) : (
-              <>
-                <span>Transfer to Giants Vault</span>
-                <ArrowUpRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Total Referred Traders */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle shadow-cardGlow flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
-              <span className="uppercase tracking-wider font-semibold">Active Referrals</span>
-              <Users className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-emerald-400">
-              {affiliateData.totalReferrals}
-            </div>
-            <p className="text-[11px] text-fgText-secondary mt-1">Traders registered with @{affiliateData.username}</p>
-          </div>
-
-          <div className="mt-5 pt-3 border-t border-fgBorder-subtle flex items-center justify-between text-xs">
-            <span className="text-fgText-muted">Recurring Payout Share:</span>
-            <span className="font-heading font-bold text-amber-400">3% Lifetime</span>
-          </div>
-        </div>
-
-        {/* Lifetime Earnings */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-bg-card border border-fgBorder-subtle shadow-cardGlow flex flex-col justify-between sm:col-span-2 lg:col-span-1">
-          <div>
-            <div className="flex items-center justify-between mb-3 text-xs text-fgText-muted">
-              <span className="uppercase tracking-wider font-semibold">Lifetime Commission Earned</span>
-              <TrendingUp className="w-4 h-4 text-amber-400" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-heading font-extrabold text-white">
-              {formatNaira(affiliateData.totalCommissionsNgn)}
-            </div>
-            <p className="text-[11px] text-fgText-secondary mt-1">Cumulative CPA + Payout earnings</p>
-          </div>
-
-          <div className="mt-5 pt-3 border-t border-fgBorder-subtle flex items-center justify-between text-xs">
-            <span className="text-fgText-muted">Total Transferred to Vault:</span>
-            <span className="font-mono text-emerald-400 font-semibold">
-              {formatNaira(affiliateData.withdrawnCommissionsNgn)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {transferSuccess && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-3">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span>{transferSuccess}</span>
-        </div>
-      )}
 
       {/* Inflow Ledger History */}
       <div className="p-6 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-4">
