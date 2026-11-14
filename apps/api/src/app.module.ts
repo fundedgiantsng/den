@@ -6,6 +6,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ChallengesModule } from './modules/challenges/challenges.module';
 import { AdminConfigController } from './modules/admin/admin-config.controller';
 import { RiskEngineModule } from './modules/risk/risk-engine.module';
+import { AffiliateModule } from './modules/affiliate/affiliate.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { RiskEngineModule } from './modules/risk/risk-engine.module';
     WebhooksModule,
     ChallengesModule,
     RiskEngineModule,
+    AffiliateModule,
   ],
   controllers: [AdminConfigController],
 })
