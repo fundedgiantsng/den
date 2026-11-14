@@ -48,41 +48,41 @@ export class CertificatesService {
 
     // Scale font size dynamically to fit within available space
     const cleanName = params.recipientName.trim().toUpperCase();
-    const nameFontSize = cleanName.length > 28 ? 22 : cleanName.length > 20 ? 26 : 32;
+    const nameFontSize = cleanName.length > 28 ? 22 : cleanName.length > 20 ? 26 : 30;
 
     const overlaySvg = `
       <svg width="1024" height="723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
-              font-family: 'Cinzel', serif, Georgia, 'Times New Roman';
-              font-weight: 700;
-              fill: #f5a623;
-              letter-spacing: 2px;
+              font-family: 'Plus Jakarta Sans', 'Montserrat', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-weight: 800;
+              fill: #FFFFFF;
+              letter-spacing: 2.5px;
             }
             .date-text {
-              font-family: 'Space Grotesk', sans-serif, Arial;
+              font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
               font-weight: 700;
-              fill: #e8f5e9;
-              letter-spacing: 1px;
+              fill: #FFFFFF;
+              letter-spacing: 0.5px;
             }
             .cert-id {
-              font-family: 'Space Grotesk', monospace, Courier;
+              font-family: 'Courier New', 'Consolas', monospace;
               font-weight: 700;
-              fill: #00f59b;
-              letter-spacing: 1.5px;
+              fill: #FFFFFF;
+              letter-spacing: 1px;
             }
           </style>
         </defs>
 
-        <!-- Trader Name stamped directly above the name wavy line -->
-        <text x="110" y="340" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
+        <!-- Trader Name stamped cleanly raised above name line to fit space -->
+        <text x="110" y="330" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
 
-        <!-- Issue Date -->
-        <text x="165" y="646" font-size="16" class="date-text">${issueDate}</text>
+        <!-- Issue Date (enlarged, bold white) -->
+        <text x="168" y="643" font-size="17" class="date-text">${issueDate}</text>
 
-        <!-- Certificate Validation ID -->
-        <text x="110" y="680" font-size="12" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
+        <!-- Certificate Validation ID (enlarged, bold white) -->
+        <text x="110" y="684" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
       </svg>
     `;
 
@@ -109,12 +109,22 @@ export class CertificatesService {
   }
 
   /**
+   * Format currency values to thousands notation (e.g. ₦1,000,000 -> ₦1,000k, ₦658,000 -> ₦658k)
+   * Always rounded up to the closest K
+   */
+  private formatK(amount: number): string {
+    const kVal = Math.ceil(amount / 1000);
+    return `₦${kVal.toLocaleString('en-US')}k`;
+  }
+
+  /**
    * Stamp & generate Payout Certificate
    */
   async generatePayoutCertificate(params: {
     recipientName: string;
     amountNgn: number;
     accountNumber: string;
+    totalProfitNgn?: number;
     userEmail?: string;
     payoutReference?: string;
     date?: string;
@@ -131,55 +141,88 @@ export class CertificatesService {
       maximumFractionDigits: 2,
     })}`;
 
+    // Calculate splits for the glowing jewel throne badges:
+    // If total profit not provided, assume 80% trader tier baseline (amountNgn / 0.8)
+    const totalProfit = params.totalProfitNgn || (params.amountNgn > 0 ? Math.round(params.amountNgn / 0.8) : 850000);
+    const traderSplit = params.amountNgn;
+    const companySplit = Math.max(0, totalProfit - traderSplit);
+
+    const totalProfitK = this.formatK(totalProfit);
+    const traderSplitK = this.formatK(traderSplit);
+    const companySplitK = this.formatK(companySplit);
+
     const templatePath = path.join(this.templatesDir, 'payout-certificate-template.jpg');
     const fileName = `${certificateId}.jpg`;
     const outputPath = path.join(this.generatedDir, fileName);
 
     const cleanName = params.recipientName.trim().toUpperCase();
-    const nameFontSize = cleanName.length > 28 ? 22 : cleanName.length > 20 ? 26 : 32;
+    const nameFontSize = cleanName.length > 28 ? 22 : cleanName.length > 20 ? 26 : 30;
 
     const overlaySvg = `
       <svg width="1024" height="723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
-              font-family: 'Cinzel', serif, Georgia, 'Times New Roman';
-              font-weight: 700;
-              fill: #ffffff;
-              letter-spacing: 2px;
+              font-family: 'Plus Jakarta Sans', 'Montserrat', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-weight: 800;
+              fill: #FFFFFF;
+              letter-spacing: 2.5px;
             }
             .profit-split {
-              font-family: 'Space Grotesk', sans-serif, Arial;
+              font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
               font-weight: 800;
-              fill: #00f59b;
-              letter-spacing: 1.5px;
-            }
-            .date-text {
-              font-family: 'Space Grotesk', sans-serif, Arial;
-              font-weight: 700;
-              fill: #e8f5e9;
+              fill: #FFFFFF;
               letter-spacing: 1px;
             }
-            .cert-id {
-              font-family: 'Space Grotesk', monospace, Courier;
+            .date-text {
+              font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
               font-weight: 700;
-              fill: #f5a623;
-              letter-spacing: 1.5px;
+              fill: #FFFFFF;
+              letter-spacing: 0.5px;
+            }
+            .cert-id {
+              font-family: 'Courier New', 'Consolas', monospace;
+              font-weight: 700;
+              fill: #FFFFFF;
+              letter-spacing: 1px;
+            }
+            .pill-text {
+              font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
+              font-size: 12.5px;
+              font-weight: 700;
+              fill: #A7F3D0;
+              letter-spacing: 0.5px;
             }
           </style>
         </defs>
 
-        <!-- Trader Name stamped above name line -->
-        <text x="110" y="475" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
+        <!-- 1. Trader Name right below 'Proudly Presented To:' raised above wavy line at y=371 -->
+        <text x="110" y="356" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
 
-        <!-- Profit Split amount approved -->
-        <text x="110" y="625" font-size="30" class="profit-split">${formattedAmount}</text>
+        <!-- 2. Profit Split full approved amount right below 'Profit Split' raised above wavy line at y=484 -->
+        <text x="110" y="470" font-size="28" class="profit-split">${formattedAmount}</text>
 
-        <!-- Issue Date -->
-        <text x="160" y="730" font-size="16" class="date-text">${issueDate}</text>
+        <!-- 3. Date right below Profit Split section, placed on Date line at y=531 -->
+        <text x="160" y="527" font-size="16" class="date-text">${issueDate}</text>
 
-        <!-- Certificate Validation ID -->
-        <text x="110" y="700" font-size="12" class="cert-id">PAYOUT ID: ${certificateId}</text>
+        <!-- 4. Certificate Validation ID in bold white -->
+        <text x="110" y="575" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
+
+        <!-- 5. Chair Glowing Jewel Badges -->
+        <!-- Top Right Badge: Total Profit ($6,980 replacement) -->
+        <rect x="765" y="555" width="106" height="26" rx="13" fill="#041712" stroke="#10B981" stroke-opacity="0.4" stroke-width="1.2"/>
+        <circle cx="778" cy="568" r="3.5" fill="#10B981"/>
+        <text x="789" y="572" class="pill-text">${totalProfitK}</text>
+
+        <!-- Left Badge: Trader Profit Split ($4,886 replacement) -->
+        <rect x="640" y="624" width="106" height="26" rx="13" fill="#041712" stroke="#10B981" stroke-opacity="0.4" stroke-width="1.2"/>
+        <circle cx="653" cy="637" r="3.5" fill="#10B981"/>
+        <text x="664" y="641" class="pill-text">${traderSplitK}</text>
+
+        <!-- Bottom Right Badge: Company Split ($2,094 replacement) -->
+        <rect x="800" y="638" width="106" height="26" rx="13" fill="#041712" stroke="#10B981" stroke-opacity="0.4" stroke-width="1.2"/>
+        <circle cx="813" cy="651" r="3.5" fill="#10B981"/>
+        <text x="824" y="655" class="pill-text">${companySplitK}</text>
       </svg>
     `;
 
