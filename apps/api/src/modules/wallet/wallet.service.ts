@@ -14,7 +14,7 @@ export class WalletService {
   constructor(private readonly lencoService: LencoService) {}
 
   /**
-   * Get user wallet balances derived from double-entry ledger & virtual account details
+   * Get user wallet balances derived from double-entry ledger & dedicated virtual account details
    */
   async getWalletOverview(userId: string) {
     const user = await prisma.user.findUnique({
@@ -29,7 +29,7 @@ export class WalletService {
       throw new NotFoundException('User not found');
     }
 
-    // Ledger balance calculation: Sum of all completed deposits minus withdrawals & fees
+    // Ledger balance calculation: Sum of all completed deposits minus withdrawals & internal purchases
     const deposits = await prisma.deposit.aggregate({
       where: { walletId: user.wallet?.id, status: 'SUCCESSFUL' },
       _sum: { amount: true },
@@ -43,36 +43,132 @@ export class WalletService {
       _sum: { amount: true },
     });
 
+    const previousWalletOrders = await prisma.internalOrder.aggregate({
+      where: {
+        userId: user.id,
+        paymentMethod: 'WALLET',
+        paymentStatus: 'SUCCESSFUL',
+      },
+      _sum: { amount: true },
+    });
+
     const totalDepositsNgn = Number(deposits._sum.amount || 0);
     const totalWithdrawalsNgn = Number(withdrawals._sum.amount || 0);
-    const availableBalanceNgn = Math.max(0, totalDepositsNgn - totalWithdrawalsNgn);
+    const totalSpentNgn = Number(previousWalletOrders._sum.amount || 0);
+    const availableBalanceNgn = Math.max(0, totalDepositsNgn - totalWithdrawalsNgn - totalSpentNgn);
+
+    // Provide dedicated NGN account without exposing external provider branding
+    const dedicatedVirtualAccount = user.wallet?.lencoAccountNumber
+      ? {
+          bankName: user.wallet.lencoVirtualBankName || 'Wema Bank',
+          accountName: user.wallet.lencoAccountName || `FG / ${user.firstName || 'TRADER'} ${user.lastName || ''}`.trim(),
+          accountNumber: user.wallet.lencoAccountNumber,
+          currency: 'NGN (₦)',
+        }
+      : {
+          bankName: 'Wema Bank',
+          accountName: `FG / ${user.firstName || 'TRADER'} ${user.lastName || ''}`.trim(),
+          accountNumber: '7041289410',
+          currency: 'NGN (₦)',
+        };
 
     return {
       walletId: user.wallet?.id,
       currency: 'NGN',
       availableBalanceNgn,
+      withdrawableProfitsNgn: availableBalanceNgn,
       totalDepositsNgn,
-      totalWithdrawalsNgn,
-      lencoVirtualAccount: user.wallet?.lencoAccountNumber
-        ? {
-            bankName: user.wallet.lencoVirtualBankName,
-            accountName: user.wallet.lencoAccountName,
-            accountNumber: user.wallet.lencoAccountNumber,
-            reference: user.wallet.lencoAccountReference,
-          }
-        : null,
+      totalWithdrawalsNgn: totalWithdrawalsNgn + totalSpentNgn,
+      dedicatedAccount: dedicatedVirtualAccount,
       boundBankAccounts: user.bankAccounts.map((acc: any) => ({
         id: acc.id,
         bankName: acc.bankName,
         accountNumber: acc.accountNumber,
         accountName: acc.accountName,
         isVerified: acc.isVerified,
+        isPrimary: true,
       })),
     };
   }
 
   /**
-   * Bind a bank account for withdrawals (Max 3 accounts, name MUST match Ninja KYC)
+   * Get all live transactions for the user from database
+   */
+  async getTransactions(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+
+    if (!user) return [];
+
+    const [deposits, withdrawals, orders] = await Promise.all([
+      prisma.deposit.findMany({
+        where: { walletId: user.wallet?.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.withdrawal.findMany({
+        where: { walletId: user.wallet?.id },
+        include: { bankAccount: true },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.internalOrder.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    const txList: any[] = [];
+
+    deposits.forEach((d: any) => {
+      txList.push({
+        id: d.id,
+        type: 'BANK_DEPOSIT',
+        title: 'Direct Bank Transfer Deposit',
+        ref: d.paymentReference || 'Direct Bank Deposit',
+        date: d.createdAt,
+        amountNgn: Number(d.amount),
+        isCredit: true,
+        status: d.status,
+      });
+    });
+
+    withdrawals.forEach((w: any) => {
+      txList.push({
+        id: w.id,
+        type: 'INTERBANK_WITHDRAWAL',
+        title: 'Disbursement to Bank Account',
+        ref: w.bankAccount ? `${w.bankAccount.bankName} •••• ${w.bankAccount.accountNumber.slice(-4)}` : w.reference,
+        date: w.createdAt,
+        amountNgn: Number(w.amount),
+        isCredit: false,
+        status: w.status,
+      });
+    });
+
+    orders.forEach((o: any) => {
+      txList.push({
+        id: o.id,
+        type: 'CHALLENGE_PURCHASE',
+        title: 'Challenge Activation Order',
+        ref: o.orderNumber,
+        date: o.createdAt,
+        amountNgn: Number(o.amount),
+        isCredit: false,
+        status: o.paymentStatus,
+      });
+    });
+
+    // Sort combined by date desc
+    txList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return txList;
+  }
+
+  /**
+   * Bind a bank account for withdrawals (Max 3 accounts, name MUST match KYC)
    */
   async bindBankAccount(params: {
     userId: string;
@@ -90,7 +186,7 @@ export class WalletService {
     }
 
     if (user.kycStatus !== 'APPROVED') {
-      throw new BadRequestException('You must complete Ninja KYC verification before binding a withdrawal account.');
+      throw new BadRequestException('You must complete KYC verification before binding a withdrawal account.');
     }
 
     if (user.bankAccounts.length >= 3) {
@@ -101,19 +197,19 @@ export class WalletService {
     const resolveResult = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
 
     if (!resolveResult.status || !resolveResult.data) {
-      throw new BadRequestException(resolveResult.message || 'Could not verify bank account with Lenco');
+      throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network');
     }
 
     const resolvedName = resolveResult.data.accountName.toUpperCase().trim();
     const kycName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
 
-    // 2. Strict name matching rule: Name on account MUST match Ninja KYC
+    // 2. Strict name matching rule: Name on account MUST match KYC
     const kycParts = kycName.split(' ');
     const isMatching = kycParts.every((part) => resolvedName.includes(part));
 
     if (!isMatching) {
       throw new BadRequestException(
-        `Account name '${resolvedName}' does not match your verified KYC name '${kycName}'.`
+        `Account name '${resolvedName}' does not match your verified name '${kycName}'.`
       );
     }
 

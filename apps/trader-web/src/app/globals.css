@@ -3,42 +3,91 @@
 @tailwind utilities;
 
 :root {
-  --bg-base: #050B08;
-  --bg-surface: #08120D;
-  --bg-card: #0B1712;
-  --emerald-primary: #10B981;
+  --bg: #060c09;
+  --bg-dark: #020403;
+  --card: #0a1210;
+  --card-elevated: #0e1a12;
+  --bd: rgba(255, 255, 255, 0.08);
+  --bd-hover: rgba(34, 197, 94, 0.25);
+  --txt: #eef4f0;
+  --mt: #94a3b8;
+  --g: #22c55e;
+  --gg: rgba(34, 197, 94, 0.15);
+  --b: #38bdf8;
+  --bgx: rgba(56, 189, 248, 0.15);
+  --au: #f59e0b;
+  --aug: rgba(245, 158, 11, 0.15);
 }
 
 body {
-  background-color: var(--bg-base);
-  color: #EEF4F0;
+  background-color: var(--bg);
+  color: var(--txt);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Fluid Modular Typography & Metric scaling */
-.fluid-metric-amount {
-  font-size: clamp(1.15rem, 1.8vw + 0.5rem, 1.85rem);
-  line-height: 1.15;
-  letter-spacing: -0.03em;
+/* Vault Theme Modular Aesthetics */
+.fg-card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  transition: all 0.25s ease-out;
 }
 
-.fluid-card-title {
-  font-size: clamp(0.75rem, 0.4vw + 0.65rem, 0.9rem);
+.fg-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
-.fluid-card-padding {
-  padding: clamp(0.75rem, 1vw + 0.4rem, 1.35rem);
+.fg-card-elevated {
+  background: var(--card-elevated);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
 }
 
-/* Custom Cyberpunk Matrix & Glow Utilities */
-.candlestick-glow {
-  background: radial-gradient(circle at 70% 30%, rgba(16, 185, 129, 0.18), transparent 60%);
+/* Amount font sizing - compact, elegant, disciplined */
+.fg-metric-amount {
+  font-size: clamp(1.2rem, 1.4vw + 0.5rem, 1.65rem);
+  line-height: 1.2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.card-border-glow {
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  backdrop-filter: blur(8px);
+.fg-sub-amount {
+  font-size: clamp(0.95rem, 0.9vw + 0.4rem, 1.2rem);
+  line-height: 1.25;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+}
+
+/* Custom glow backdrops matching WordPress pricing table */
+.glow-emerald {
+  box-shadow: 0 0 24px var(--gg);
+}
+
+.glow-blue {
+  box-shadow: 0 0 24px var(--bgx);
+}
+
+.glow-gold {
+  box-shadow: 0 0 24px var(--aug);
+}
+
+/* Custom input styling for coupons and banking fields */
+.fg-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 0.88rem;
+  transition: all 0.2s ease-out;
+}
+
+.fg-input:focus {
+  border-color: var(--g);
+  background: rgba(0, 0, 0, 0.4);
+  outline: none;
 }

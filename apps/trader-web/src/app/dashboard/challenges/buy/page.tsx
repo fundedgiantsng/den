@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -10,6 +10,9 @@ import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
+  Tag,
+  Users,
+  Sparkles,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -17,12 +20,13 @@ interface PlanConfig {
   id: 'rhino-rush' | 'phoenix-rise';
   name: string;
   subtitle: string;
-  accent: string;
+  accent: 'blue' | 'gold';
   dailyDD: string;
   maxDD: string;
   target: string;
   payouts: string;
   leverage: string;
+  profitSplit: string;
   refund: string;
   prices: Record<number, number>;
 }
@@ -32,12 +36,13 @@ const plans: PlanConfig[] = [
     id: 'rhino-rush',
     name: 'Rhino Rush',
     subtitle: '1 Step Challenge',
-    accent: 'emerald',
+    accent: 'blue',
     dailyDD: '4%',
     maxDD: '10%',
     target: '10% (2% Daily Cap)',
-    payouts: 'First: 5% | Subsequent: 2% Min',
+    payouts: 'First: 5% | Daily: 2% Min',
     leverage: '1:100',
+    profitSplit: '80:20',
     refund: '100% Fee Refund at 10% total payouts',
     prices: {
       1000000: 27500,
@@ -58,6 +63,7 @@ const plans: PlanConfig[] = [
     target: '10% On-Demand / 15 Days',
     payouts: 'Daily On-Demand (Min 2%)',
     leverage: '1:30',
+    profitSplit: 'Up to 80:20',
     refund: 'No refund',
     prices: {
       1000000: 43000,
@@ -75,16 +81,86 @@ const sizes = [1000000, 2500000, 5000000, 10000000, 25000000, 50000000];
 export default function InDashboardBuyChallengePage() {
   const [selectedPlan, setSelectedPlan] = useState<'rhino-rush' | 'phoenix-rise'>('rhino-rush');
   const [selectedSize, setSelectedSize] = useState<number>(5000000);
-  const [loading, setLoading] = useState(false);
+
+  // Dual Coupon Input States
+  const [affiliateCode, setAffiliateCode] = useState<string>('');
+  const [discountCode, setDiscountCode] = useState<string>('');
+
+  // Coupon Validation Results
+  const [validationResult, setValidationResult] = useState<{
+    subtotalNgn: number;
+    siteCoupon: { code: string; isValid: boolean; discountPercent: number; discountNgn: number; message: string };
+    affiliateCoupon: { code: string; username: string; isValid: boolean; discountPercent: number; discountNgn: number; message: string };
+    totalDiscountNgn: number;
+    finalTotalNgn: number;
+  } | null>(null);
+
+  const [isValidating, setIsValidating] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<any | null>(null);
 
-  // Available NGN Wallet Balance
-  const walletBalanceNgn = 18450000;
+  // Live Wallet Balance
+  const [walletBalanceNgn, setWalletBalanceNgn] = useState<number>(18450000);
 
   const currentPlan = plans.find((p) => p.id === selectedPlan)!;
   const currentPrice = currentPlan.prices[selectedSize] || 0;
-  const hasSufficientFunds = walletBalanceNgn >= currentPrice;
+
+  // Fetch live wallet balance on mount
+  useEffect(() => {
+    fetch('http://localhost:4000/api/v1/wallet/overview', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.availableBalanceNgn === 'number') {
+          setWalletBalanceNgn(data.availableBalanceNgn);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Debounced Coupon Validation
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(async () => {
+      if (!affiliateCode.trim() && !discountCode.trim()) {
+        setValidationResult(null);
+        return;
+      }
+
+      setIsValidating(true);
+      try {
+        const res = await fetch('http://localhost:4000/api/v1/challenges/validate-coupons', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            planType: selectedPlan,
+            accountSizeNgn: selectedSize,
+            siteCouponCode: discountCode.trim() || undefined,
+            affiliateCode: affiliateCode.trim() || undefined,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setValidationResult(data);
+        }
+      } catch (err) {
+        console.error('Coupon validation error:', err);
+      } finally {
+        setIsValidating(false);
+      }
+    }, 500);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [selectedPlan, selectedSize, affiliateCode, discountCode]);
+
+  const finalTotalNgn = validationResult ? validationResult.finalTotalNgn : currentPrice;
+  const hasSufficientFunds = walletBalanceNgn >= finalTotalNgn;
 
   const handlePayFromWallet = async () => {
     setError(null);
@@ -98,230 +174,384 @@ export default function InDashboardBuyChallengePage() {
         body: JSON.stringify({
           planType: selectedPlan,
           accountSizeNgn: selectedSize,
+          siteCouponCode: discountCode.trim() || undefined,
+          affiliateCode: affiliateCode.trim() || undefined,
         }),
       });
 
       const data = await res.json();
+
       if (!res.ok) {
-        throw new Error(data.message || 'Payment from wallet failed');
+        throw new Error(data.message || 'Payment processing failed');
       }
 
       setSuccessResult(data);
+      // Update local wallet balance state
+      setWalletBalanceNgn((prev) => Math.max(0, prev - finalTotalNgn));
     } catch (err: any) {
-      setError(err.message || 'Error processing wallet purchase');
+      setError(err.message || 'Payment could not be processed');
     } finally {
       setLoading(false);
     }
   };
 
+  const fmtSizeLabel = (n: number) => {
+    return n >= 1000000 ? `₦${n / 1000000}M` : `₦${(n / 1000).toLocaleString()}k`;
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Header */}
-      <div>
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-xs text-fgText-secondary hover:text-white mb-2"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Dashboard</span>
-        </Link>
-        <h1 className="text-3xl font-heading font-extrabold text-white">Get Funded</h1>
-        <p className="text-xs text-fgText-secondary">
-          Select your trading account type and size. Bypasses external checkout and charges your Central NGN Wallet directly.
-        </p>
+    <div className="max-w-6xl mx-auto space-y-6 pb-12 w-full">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard"
+            className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-fgText-secondary hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-heading font-extrabold text-white flex items-center gap-2">
+              <span>Funding</span>
+              <span className={selectedPlan === 'phoenix-rise' ? 'text-amber-400' : 'text-sky-400'}>
+                Pathway
+              </span>
+            </h1>
+            <p className="text-xs text-fgText-secondary">
+              Select your Nigerian trading pathway and account size to activate instantly from Giants Vault.
+            </p>
+          </div>
+        </div>
+
+        {/* Giants Vault Pill */}
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0e1a12] border border-white/[0.08]">
+          <Wallet className="w-4 h-4 text-emerald-400" />
+          <div className="text-right">
+            <div className="text-[10px] text-fgText-secondary uppercase tracking-wider font-semibold">Giants Vault</div>
+            <div className="text-xs font-mono font-bold text-white">{formatNaira(walletBalanceNgn)}</div>
+          </div>
+        </div>
       </div>
 
       {successResult ? (
-        <div className="p-8 rounded-2xl bg-bg-card border border-fgBorder-emerald text-center space-y-5 shadow-emeraldGlow">
-          <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
-            <CheckCircle2 className="w-8 h-8" />
+        <div className="fg-card p-6 sm:p-8 text-center max-w-xl mx-auto space-y-5 border-emerald-500/30">
+          <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+            <CheckCircle2 className="w-7 h-7" />
           </div>
-          <h2 className="text-2xl font-heading font-bold text-white">Challenge Account Provisioned!</h2>
-          <p className="text-sm text-fgText-secondary max-w-lg mx-auto">
-            Your wallet was charged <span className="text-white font-mono font-bold">{formatNaira(successResult.debitedAmountNgn)}</span>. Your SteraTrader account has been created on the live NGN broker subset.
-          </p>
-
-          <div className="p-4 rounded-xl bg-bg-surface border border-fgBorder-subtle max-w-md mx-auto text-left space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-fgText-muted">Challenge ID</span>
-              <span className="font-mono text-white font-bold">{successResult.challengeNumber}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-fgText-muted">SteraTrader Login</span>
-              <span className="font-mono text-emerald-400 font-bold">
-                {successResult.tradingAccount?.accountNumber || 'Provisioning in progress...'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-fgText-muted">Platform</span>
-              <span className="text-white font-bold">SteraTrader (NGN Group)</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-fgText-muted">Account Size</span>
-              <span className="text-white font-mono font-bold">{formatNaira(selectedSize)}</span>
-            </div>
+          <div>
+            <h2 className="text-xl font-heading font-extrabold text-white">Challenge Activated Successfully!</h2>
+            <p className="text-xs text-fgText-secondary mt-1">
+              Your trading account has been provisioned and linked to your dashboard.
+            </p>
           </div>
 
-          <div className="pt-4 flex items-center justify-center gap-4">
+          <div className="bg-[#0e1a12] rounded-xl p-4 text-left border border-white/[0.08] space-y-2.5 text-xs font-mono">
+            <div className="flex justify-between border-b border-white/[0.06] pb-2">
+              <span className="text-fgText-secondary">Order Reference:</span>
+              <span className="text-white font-bold">{successResult.orderNumber}</span>
+            </div>
+            <div className="flex justify-between border-b border-white/[0.06] pb-2">
+              <span className="text-fgText-secondary">Challenge ID:</span>
+              <span className="text-white font-bold">{successResult.challengeNumber}</span>
+            </div>
+            <div className="flex justify-between border-b border-white/[0.06] pb-2">
+              <span className="text-fgText-secondary">Debited from Vault:</span>
+              <span className="text-emerald-400 font-bold">{formatNaira(successResult.debitedAmountNgn)}</span>
+            </div>
+            {successResult.tradingAccount && (
+              <div className="flex justify-between pt-1">
+                <span className="text-fgText-secondary">SteraTrader Login:</span>
+                <span className="text-white font-bold">{successResult.tradingAccount.accountNumber}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2">
             <Link
-              href="/dashboard/trading-accounts"
-              className="px-6 py-2.5 rounded-xl bg-emerald-500 text-bg-base font-bold text-xs"
+              href="/dashboard"
+              className="flex-1 py-2.5 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider transition-colors text-center"
             >
-              View Trading Accounts
+              Go to Trading Dashboard
             </Link>
             <button
-              type="button"
-              onClick={() => setSuccessResult(null)}
-              className="px-6 py-2.5 rounded-xl bg-bg-card border border-fgBorder-subtle text-white font-semibold text-xs hover:border-emerald-500"
+              onClick={() => {
+                setSuccessResult(null);
+                setAffiliateCode('');
+                setDiscountCode('');
+                setValidationResult(null);
+              }}
+              className="py-2.5 px-4 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-white text-xs font-semibold transition-colors"
             >
-              Purchase Another
+              Buy Another
             </button>
           </div>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Step 1: Select Plan */}
-          <div className="space-y-3">
-            <label className="text-xs font-heading font-bold text-white uppercase tracking-wider">
-              1. Choose Challenge Type
-            </label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {plans.map((p) => {
-                const isSelected = selectedPlan === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelectedPlan(p.id)}
-                    className={`p-6 rounded-2xl cursor-pointer transition-all border ${
-                      isSelected
-                        ? p.id === 'phoenix-rise'
-                          ? 'bg-bg-surface border-gold-500 ring-2 ring-gold-500/20'
-                          : 'bg-bg-surface border-emerald-500 ring-2 ring-emerald-500/20'
-                        : 'bg-bg-card border-fgBorder-subtle hover:border-fgBorder-emerald'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-lg font-heading font-extrabold text-white">{p.name}</h3>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          p.id === 'phoenix-rise'
-                            ? 'bg-gold-500/20 text-gold-400 border border-gold-500/30'
-                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column: Plan & Size Selection + Dual Coupons */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* 1. Plan Types */}
+            <div className="fg-card p-5 space-y-3">
+              <div className="text-[11px] font-bold text-fgText-secondary uppercase tracking-wider">
+                1. Select Challenge Type
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {plans.map((p) => {
+                  const isActive = selectedPlan === p.id;
+                  const isGold = p.accent === 'gold';
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPlan(p.id)}
+                      type="button"
+                      className={`p-3.5 rounded-xl border text-center transition-all ${
+                        isActive
+                          ? isGold
+                            ? 'bg-amber-500 text-black border-white shadow-[0_0_20px_rgba(245,158,11,0.25)]'
+                            : 'bg-sky-500 text-black border-white shadow-[0_0_20px_rgba(56,189,248,0.25)]'
+                          : 'bg-white/[0.03] border-white/[0.08] text-white hover:border-white/20 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="text-sm font-heading font-extrabold uppercase leading-tight">{p.name}</div>
+                      <div
+                        className={`text-[11px] font-semibold mt-1 ${
+                          isActive ? 'text-black/80' : isGold ? 'text-amber-400' : 'text-sky-400'
                         }`}
                       >
                         {p.subtitle}
-                      </span>
-                    </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs text-fgText-secondary mt-4 pt-3 border-t border-fgBorder-subtle">
-                      <div>
-                        <span className="text-fgText-muted block text-[10px]">Daily Drawdown</span>
-                        <span className="text-white font-bold">{p.dailyDD}</span>
-                      </div>
-                      <div>
-                        <span className="text-fgText-muted block text-[10px]">Max Drawdown</span>
-                        <span className="text-white font-bold">{p.maxDD}</span>
-                      </div>
-                      <div>
-                        <span className="text-fgText-muted block text-[10px]">Profit Target</span>
-                        <span className="text-emerald-400 font-bold">{p.target}</span>
-                      </div>
-                      <div>
-                        <span className="text-fgText-muted block text-[10px]">Leverage</span>
-                        <span className="text-white font-bold">{p.leverage}</span>
-                      </div>
-                    </div>
+            {/* 2. Account Sizes */}
+            <div className="fg-card p-5 space-y-3">
+              <div className="text-[11px] font-bold text-fgText-secondary uppercase tracking-wider">
+                2. Select Account Capital
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                {sizes.map((s) => {
+                  const isActive = selectedSize === s;
+                  const isGold = selectedPlan === 'phoenix-rise';
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setSelectedSize(s)}
+                      type="button"
+                      className={`py-3 px-2 rounded-lg border text-center font-bold text-xs font-mono transition-all ${
+                        isActive
+                          ? isGold
+                            ? 'bg-amber-500 text-black border-white shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                            : 'bg-sky-500 text-black border-white shadow-[0_0_15px_rgba(56,189,248,0.25)]'
+                          : 'bg-white/[0.03] border-white/[0.08] text-fgText-primary hover:border-white/20 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      {fmtSizeLabel(s)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Dual Coupons & Partnerships */}
+            <div className="fg-card p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-bold text-fgText-secondary uppercase tracking-wider flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>3. Coupons & Partnerships</span>
+                </div>
+                {isValidating && (
+                  <span className="text-[10px] text-fgText-secondary flex items-center gap-1 font-mono">
+                    <Loader2 className="w-3 h-3 animate-spin text-emerald-400" /> Validating...
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Field 1: Affiliate Code */}
+                <div>
+                  <label className="block text-[10px] font-bold text-fgText-secondary uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    <span>Affiliate Code</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={affiliateCode}
+                    onChange={(e) => setAffiliateCode(e.target.value)}
+                    placeholder="Enter affiliate ID"
+                    className="fg-input font-mono uppercase"
+                  />
+                  {validationResult?.affiliateCoupon?.message && (
+                    <p
+                      className={`text-[11px] mt-1 font-medium ${
+                        validationResult.affiliateCoupon.isValid ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {validationResult.affiliateCoupon.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* Field 2: Site Discount Coupon */}
+                <div>
+                  <label className="block text-[10px] font-bold text-fgText-secondary uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <Tag className="w-3 h-3" />
+                    <span>Discount Coupon</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={discountCode}
+                    onChange={(e) => setDiscountCode(e.target.value)}
+                    placeholder="Enter coupon code"
+                    className="fg-input font-mono uppercase"
+                  />
+                  {validationResult?.siteCoupon?.message && (
+                    <p
+                      className={`text-[11px] mt-1 font-medium ${
+                        validationResult.siteCoupon.isValid ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {validationResult.siteCoupon.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Order Summary & Instant Checkout */}
+          <div className="lg:col-span-5">
+            <div className="fg-card p-5 sm:p-6 space-y-4 lg:sticky lg:top-4">
+              {/* Product Title */}
+              <div className="border-b border-white/[0.08] pb-3">
+                <div className="text-[10px] text-fgText-secondary uppercase tracking-wider font-semibold">
+                  Selected Program
+                </div>
+                <div className="text-sm font-heading font-extrabold text-white uppercase mt-0.5">
+                  {currentPlan.name} • {currentPlan.subtitle} — {fmtSizeLabel(selectedSize)}
+                </div>
+              </div>
+
+              {/* Trading Condition Metrics */}
+              <div className="grid grid-cols-2 gap-2.5 text-xs border-b border-white/[0.08] pb-3">
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Profit Target</span>
+                  <span className="font-bold text-white font-mono">{currentPlan.target}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Payouts</span>
+                  <span className="font-bold text-white font-mono">{currentPlan.payouts}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Daily Drawdown</span>
+                  <span className="font-bold text-white font-mono">
+                    {formatNaira(selectedSize * 0.04)} ({currentPlan.dailyDD})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Max Drawdown</span>
+                  <span className="font-bold text-white font-mono">
+                    {formatNaira(selectedSize * (selectedPlan === 'phoenix-rise' ? 0.07 : 0.1))} ({currentPlan.maxDD})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Leverage</span>
+                  <span className="font-bold text-white font-mono">{currentPlan.leverage}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-fgText-secondary uppercase block">Profit Split</span>
+                  <span className="font-bold text-white font-mono">{currentPlan.profitSplit}</span>
+                </div>
+              </div>
+
+              {/* Price Calculation Rows */}
+              <div className="space-y-1.5 text-xs font-mono">
+                <div className="flex justify-between text-fgText-secondary">
+                  <span>Subtotal:</span>
+                  <span className="text-white">{formatNaira(currentPrice)}</span>
+                </div>
+
+                {validationResult?.siteCoupon?.isValid && validationResult.siteCoupon.discountNgn > 0 && (
+                  <div className="flex justify-between text-emerald-400">
+                    <span>Site Promo (-{validationResult.siteCoupon.discountPercent}%):</span>
+                    <span>-{formatNaira(validationResult.siteCoupon.discountNgn)}</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                )}
 
-          {/* Step 2: Select Size */}
-          <div className="space-y-3">
-            <label className="text-xs font-heading font-bold text-white uppercase tracking-wider">
-              2. Select Account Capital Size
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {sizes.map((s) => {
-                const isSelected = selectedSize === s;
-                const price = currentPlan.prices[s];
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSelectedSize(s)}
-                    className={`p-3.5 rounded-xl text-center border transition-all ${
-                      isSelected
-                        ? 'bg-bg-surface border-emerald-500 ring-2 ring-emerald-500/20'
-                        : 'bg-bg-card border-fgBorder-subtle hover:border-fgBorder-emerald'
-                    }`}
-                  >
-                    <span className="block text-sm font-heading font-extrabold text-white">
-                      {formatNaira(s)}
-                    </span>
-                    <span className="block text-xs font-mono text-emerald-400 font-bold mt-1">
-                      {formatNaira(price)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                {validationResult?.affiliateCoupon?.isValid && validationResult.affiliateCoupon.discountNgn > 0 && (
+                  <div className="flex justify-between text-emerald-400">
+                    <span>Affiliate Discount (-{validationResult.affiliateCoupon.discountPercent}%):</span>
+                    <span>-{formatNaira(validationResult.affiliateCoupon.discountNgn)}</span>
+                  </div>
+                )}
 
-          {error && (
-            <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
-              {error}
-            </div>
-          )}
-
-          {/* Summary & Direct Wallet Payment Section */}
-          <div className="p-6 rounded-2xl bg-bg-card border border-fgBorder-emerald shadow-cardGlow flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2 text-xs text-fgText-secondary">
-                <Wallet className="w-4 h-4 text-emerald-400" />
-                <span>Central NGN Wallet Balance:</span>
-                <span className="font-mono font-bold text-white">{formatNaira(walletBalanceNgn)}</span>
+                <div className="flex justify-between items-baseline pt-2 border-t border-white/[0.08]">
+                  <span className="text-xs uppercase font-bold text-white">Final Total:</span>
+                  <span className="text-lg font-bold font-mono text-white tracking-tight">
+                    {formatNaira(finalTotalNgn)}
+                  </span>
+                </div>
               </div>
-              <div className="mt-2">
-                <span className="text-xs text-fgText-muted">Total Order Charge:</span>
-                <p className="text-3xl font-heading font-extrabold text-white">
-                  {formatNaira(currentPrice)}
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-4">
+              {/* Vault Balance Status */}
+              <div className="p-3 rounded-lg bg-[#0e1a12] border border-white/[0.08] text-xs space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-fgText-secondary">Giants Vault Available:</span>
+                  <span className="font-mono font-bold text-white">{formatNaira(walletBalanceNgn)}</span>
+                </div>
+                {!hasSufficientFunds && (
+                  <div className="text-[11px] text-amber-400 flex items-center gap-1 pt-1 font-sans">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Insufficient balance. Deposit funds into Giants Vault to proceed.</span>
+                  </div>
+                )}
+              </div>
+
+              {error && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Action Button */}
               {hasSufficientFunds ? (
                 <button
-                  type="button"
                   onClick={handlePayFromWallet}
                   disabled={loading}
-                  className="px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-bg-base font-heading font-extrabold text-sm rounded-xl transition-all shadow-emeraldGlow disabled:opacity-50 flex items-center gap-2"
+                  type="button"
+                  className={`w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                    selectedPlan === 'phoenix-rise'
+                      ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-[0_0_20px_rgba(245,158,11,0.25)]'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(34,197,94,0.25)]'
+                  }`}
                 >
                   {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Provisioning SteraTrader Account...</span>
+                    </>
                   ) : (
                     <>
-                      <span>Pay from Wallet</span>
-                      <Check className="w-4 h-4" />
+                      <Wallet className="w-4 h-4" />
+                      <span>Pay from Giants Vault • {formatNaira(finalTotalNgn)}</span>
                     </>
                   )}
                 </button>
               ) : (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-red-400 flex items-center gap-1 font-semibold">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>Insufficient Wallet Balance</span>
-                  </span>
-                  <Link
-                    href="/dashboard/wallet/fund"
-                    className="px-5 py-3 rounded-xl bg-bg-surface border border-emerald-500 text-emerald-400 text-xs font-bold hover:bg-emerald-500/10"
-                  >
-                    Deposit Funds
-                  </Link>
-                </div>
+                <Link
+                  href="/dashboard/wallet?tab=DEPOSIT"
+                  className="w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-all text-center"
+                >
+                  Deposit into Giants Vault
+                </Link>
               )}
+
+              <p className="text-[10px] text-fgText-secondary text-center leading-relaxed">
+                One-time activation fee • Instant SteraTrader credentials • {currentPlan.profitSplit} Split
+              </p>
             </div>
           </div>
         </div>

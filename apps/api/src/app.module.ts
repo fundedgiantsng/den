@@ -7,6 +7,7 @@ import { ChallengesModule } from './modules/challenges/challenges.module';
 import { AdminConfigController } from './modules/admin/admin-config.controller';
 import { RiskEngineModule } from './modules/risk/risk-engine.module';
 import { AffiliateModule } from './modules/affiliate/affiliate.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AffiliateModule } from './modules/affiliate/affiliate.module';
     ChallengesModule,
     RiskEngineModule,
     AffiliateModule,
+    WalletModule,
   ],
   controllers: [AdminConfigController],
 })

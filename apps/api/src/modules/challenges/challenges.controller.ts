@@ -13,7 +13,7 @@ import { Request } from 'express';
 import { prisma } from '@fundedgiants/database';
 import * as crypto from 'crypto';
 import { ChallengesService } from './challenges.service';
-import { PurchaseFromWalletDto } from './dto/purchase.dto';
+import { PurchaseFromWalletDto, ValidateCouponsDto } from './dto/purchase.dto';
 
 @ApiTags('Challenges')
 @Controller('challenges')
@@ -26,17 +26,35 @@ export class ChallengesController {
     return this.challengesService.getAvailablePlans();
   }
 
+  @Post('validate-coupons')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Validate site discount coupon and affiliate referral code' })
+  validateCoupons(@Body() dto: ValidateCouponsDto) {
+    return this.challengesService.validateCoupons(dto);
+  }
+
+  @Get('my-accounts')
+  @ApiOperation({ summary: 'Get trading accounts and customer challenges for current user' })
+  async getMyAccounts(@Req() req: Request) {
+    const userId = await this.resolveUserId(req);
+    return this.challengesService.getUserAccounts(userId);
+  }
+
   @Post('purchase-from-wallet')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Purchase challenge directly from user NGN wallet balance' })
   async purchaseFromWallet(@Body() dto: PurchaseFromWalletDto, @Req() req: Request) {
-    // Extract session from cookie or authorization header
+    const userId = await this.resolveUserId(req);
+    return this.challengesService.purchaseFromWallet(userId, dto);
+  }
+
+  private async resolveUserId(req: Request): Promise<string> {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
     if (!token) {
-      // For development / local demo fallback to first customer if no cookie set
+      // Fallback for development/testing if no cookie set
       const demoUser = await prisma.user.findFirst({ where: { role: 'CUSTOMER' } });
       if (!demoUser) throw new UnauthorizedException('Authentication required');
-      return this.challengesService.purchaseFromWallet(demoUser.id, dto);
+      return demoUser.id;
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -49,6 +67,6 @@ export class ChallengesController {
       throw new UnauthorizedException('Session expired or invalid');
     }
 
-    return this.challengesService.purchaseFromWallet(session.user.id, dto);
+    return session.user.id;
   }
 }

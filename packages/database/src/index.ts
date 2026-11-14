@@ -6,9 +6,16 @@ declare global {
   var prismaGlobal: PrismaClient | undefined;
 }
 
+const defaultDbUrl = 'postgresql://fg_admin:fg_secret_password@localhost:5432/fundedgiants_dev?schema=public';
+
 export const prisma =
   globalThis.prismaGlobal ??
   new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL || defaultDbUrl,
+      },
+    },
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
