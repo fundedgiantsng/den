@@ -27,6 +27,9 @@ export class AffiliateService {
     let profile = await prisma.affiliateProfile.findUnique({
       where: { userId },
       include: {
+        coupons: {
+          orderBy: { createdAt: 'desc' },
+        },
         referrals: {
           include: {
             referredUser: {
@@ -62,6 +65,7 @@ export class AffiliateService {
           withdrawnCommissions: 0,
         },
         include: {
+          coupons: true,
           referrals: {
             include: {
               referredUser: {
@@ -104,6 +108,17 @@ export class AffiliateService {
         withdrawnCommissionsNgn: Number(profile.withdrawnCommissions),
         availableCommissionNgn: availableCommission > 0 ? availableCommission : 0,
       },
+      coupons: profile.coupons.map((c) => ({
+        id: c.id,
+        code: c.code,
+        discountPercent: Number(c.discountPercent),
+        maxUsage: c.maxUsage || 0,
+        usageCount: c.usageCount,
+        remainingUses: Math.max(0, (c.maxUsage || 0) - c.usageCount),
+        isActive: c.isActive && (!c.maxUsage || c.usageCount < c.maxUsage),
+        netCpaPercent: Math.max(0, AffiliateService.BASE_CPA_RATE - Number(c.discountPercent)),
+        createdAt: c.createdAt,
+      })),
       referrals: profile.referrals.map((r) => ({
         id: r.id,
         date: r.createdAt,
@@ -120,7 +135,119 @@ export class AffiliateService {
   }
 
   /**
-   * Update affiliate discount code share (0% to 10% deducted from their 10% CPA)
+   * Create a sitewide unique custom discount code for this affiliate with usage limit
+   */
+  async createCustomDiscountCode(params: {
+    userId: string;
+    code: string;
+    discountPercent: number;
+    maxUsage: number;
+  }) {
+    const profile = await prisma.affiliateProfile.findUnique({
+      where: { userId: params.userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Affiliate profile not found');
+    }
+
+    const cleanCode = params.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+
+    if (!cleanCode || cleanCode.length < 3 || cleanCode.length > 20) {
+      throw new BadRequestException('Discount code must be between 3 and 20 alphanumeric characters.');
+    }
+
+    const discount = Number(params.discountPercent);
+    if (isNaN(discount) || discount < 1 || discount > 10) {
+      throw new BadRequestException('Discount percentage must be between 1% and 10%.');
+    }
+
+    const usageLimit = parseInt(String(params.maxUsage), 10);
+    if (isNaN(usageLimit) || usageLimit < 1 || usageLimit > 1000) {
+      throw new BadRequestException('User usage limit must be between 1 and 1000 users.');
+    }
+
+    // Check sitewide uniqueness against existing Coupons
+    const existingCoupon = await prisma.coupon.findUnique({
+      where: { code: cleanCode },
+    });
+
+    if (existingCoupon) {
+      throw new BadRequestException(`The code '${cleanCode}' is already taken. Please choose a different unique code.`);
+    }
+
+    // Also check against existing referral handles
+    const existingHandle = await prisma.affiliateProfile.findFirst({
+      where: { referralCode: { equals: cleanCode, mode: 'insensitive' } },
+    });
+
+    if (existingHandle && existingHandle.id !== profile.id) {
+      throw new BadRequestException(`The code '${cleanCode}' matches an existing trader handle. Please choose another.`);
+    }
+
+    // Create the coupon
+    const coupon = await prisma.coupon.create({
+      data: {
+        code: cleanCode,
+        discountPercent: discount,
+        maxUsage: usageLimit,
+        usageCount: 0,
+        isActive: true,
+        affiliateProfileId: profile.id,
+      },
+    });
+
+    const netCpa = AffiliateService.BASE_CPA_RATE - discount;
+
+    this.logger.log(`Created custom discount code ${cleanCode} (${discount}% off, max ${usageLimit} users, net CPA ${netCpa}%) for affiliate ${profile.id}`);
+
+    return {
+      success: true,
+      message: `Discount code '${cleanCode}' created successfully! You earn ${netCpa}% net CPA on each usage.`,
+      coupon: {
+        id: coupon.id,
+        code: coupon.code,
+        discountPercent: Number(coupon.discountPercent),
+        maxUsage: coupon.maxUsage,
+        usageCount: coupon.usageCount,
+        remainingUses: coupon.maxUsage! - coupon.usageCount,
+        isActive: coupon.isActive,
+        netCpaPercent: netCpa,
+        createdAt: coupon.createdAt,
+      },
+    };
+  }
+
+  /**
+   * Return all discount codes created by this affiliate
+   */
+  async getMyDiscountCodes(userId: string) {
+    const profile = await prisma.affiliateProfile.findUnique({
+      where: { userId },
+      include: {
+        coupons: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!profile) return [];
+
+    return profile.coupons.map((c) => ({
+      id: c.id,
+      code: c.code,
+      discountPercent: Number(c.discountPercent),
+      maxUsage: c.maxUsage || 0,
+      usageCount: c.usageCount,
+      remainingUses: Math.max(0, (c.maxUsage || 0) - c.usageCount),
+      isActive: c.isActive && (!c.maxUsage || c.usageCount < c.maxUsage),
+      netCpaPercent: Math.max(0, AffiliateService.BASE_CPA_RATE - Number(c.discountPercent)),
+      createdAt: c.createdAt,
+    }));
+  }
+
+  /**
+   * Update affiliate default discount code share (0% to 10% deducted from their 10% CPA)
    */
   async updateDiscountShare(userId: string, discountPercent: number) {
     if (discountPercent < 0 || discountPercent > 10) {

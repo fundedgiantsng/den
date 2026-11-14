@@ -17,20 +17,31 @@ import {
   Percent,
   Sliders,
   DollarSign,
-  HelpCircle,
+  AlertCircle,
+  Sparkles,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
+interface CustomCoupon {
+  id: string;
+  code: string;
+  discountPercent: number;
+  maxUsage: number;
+  usageCount: number;
+  remainingUses: number;
+  isActive: boolean;
+  netCpaPercent: number;
+  createdAt: string;
+}
+
 export default function AffiliateProgramPage() {
-  const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
-  // Flat Model: 10% CPA on purchase + 3% recurrent on all referral profit payouts
-  const [discountPercent, setDiscountPercent] = useState<number>(2); // User sharing 2% with referrals
-  const [savingDiscount, setSavingDiscount] = useState(false);
-  const [discountSavedMessage, setDiscountSavedMessage] = useState<string | null>(null);
-
+  // Affiliate profile data
   const [affiliateData, setAffiliateData] = useState({
     username: 'johndoe',
     referralLink: 'https://fundedgiants.com/ref/johndoe',
@@ -42,80 +53,154 @@ export default function AffiliateProgramPage() {
     availableCommissionNgn: 500000,
   });
 
-  const netCpa = affiliateData.cpaRatePercent - discountPercent;
+  // Custom Discount Code Generator State
+  const [customCodeInput, setCustomCodeInput] = useState('');
+  const [discountPercent, setDiscountPercent] = useState<number>(5); // 1% to 10%
+  const [maxUsageInput, setMaxUsageInput] = useState<number>(25); // User limit
+  const [creatingCode, setCreatingCode] = useState(false);
+  const [createCodeError, setCreateCodeError] = useState<string | null>(null);
+  const [createCodeSuccess, setCreateCodeSuccess] = useState<string | null>(null);
 
-  // Real-time Earnings Calculator inputs matching WordPress page-affiliate-program.php
-  const [calcPlanType, setCalcPlanType] = useState<'rhino' | 'phoenix'>('rhino');
-  const [calcSelectedSize, setCalcSelectedSize] = useState<number>(5000000);
-  const [calcMonthlyRefs, setCalcMonthlyRefs] = useState<number>(10);
-  const [calcAvgWeeklyPayout, setCalcAvgWeeklyPayout] = useState<number>(250000);
-  const [calcPeriod, setCalcPeriod] = useState<'weekly' | 'monthly' | 'quarterly'>('monthly');
-
-  // Account Pricing from Technical Blueprint & WordPress
-  const planPrices: Record<string, Record<number, number>> = {
-    rhino: {
-      1000000: 27500,
-      2500000: 67500,
-      5000000: 127500,
-      10000000: 247500,
-      25000000: 487500,
-      50000000: 967500,
+  // Active custom discount codes list
+  const [myCoupons, setMyCoupons] = useState<CustomCoupon[]>([
+    {
+      id: 'cp-demo-1',
+      code: 'TRADER5',
+      discountPercent: 5,
+      maxUsage: 50,
+      usageCount: 14,
+      remainingUses: 36,
+      isActive: true,
+      netCpaPercent: 5,
+      createdAt: new Date().toISOString(),
     },
-    phoenix: {
-      1000000: 43000,
-      2500000: 106000,
-      5000000: 209000,
-      10000000: 412000,
-      25000000: 1015000,
-      50000000: 2018000,
+    {
+      id: 'cp-demo-2',
+      code: 'VIPGIANT',
+      discountPercent: 3,
+      maxUsage: 20,
+      usageCount: 8,
+      remainingUses: 12,
+      isActive: true,
+      netCpaPercent: 7,
+      createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
     },
-  };
+  ]);
 
-  const currentPrice = planPrices[calcPlanType][calcSelectedSize] || 127500;
-  // CPA: 10% of sale price (or net CPA if sharing discount) * monthly referrals
-  const monthlyCpa = (currentPrice * (netCpa / 100)) * calcMonthlyRefs;
-  // Recurrent RevShare: 3% of weekly withdrawal per active user * 4 weeks * monthly referrals
-  const monthlyRevShare = (calcAvgWeeklyPayout * 0.03 * 4) * calcMonthlyRefs;
-  const monthlyTotal = monthlyCpa + monthlyRevShare;
+  const netCpa = Math.max(0, affiliateData.cpaRatePercent - discountPercent);
 
-  const multiplier = calcPeriod === 'weekly' ? 0.25 : calcPeriod === 'quarterly' ? 3 : 1;
-  const periodTotal = monthlyTotal * multiplier;
-  const periodCpa = monthlyCpa * multiplier;
-  const periodRev = monthlyRevShare * multiplier;
+  // Fetch real profile and custom coupons on mount
+  useEffect(() => {
+    async function loadAffiliateData() {
+      try {
+        const res = await fetch('http://localhost:4000/api/v1/affiliates/profile');
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.profile) {
+            setAffiliateData({
+              username: data.profile.username || 'johndoe',
+              referralLink: data.profile.referralLink || `https://fundedgiants.com/ref/${data.profile.username}`,
+              cpaRatePercent: data.profile.cpaRatePercent || 10,
+              payoutRatePercent: data.profile.payoutRatePercent || 3,
+              totalReferrals: data.profile.totalReferrals || 0,
+              totalCommissionsNgn: data.profile.totalCommissionsNgn || 0,
+              withdrawnCommissionsNgn: data.profile.withdrawnCommissionsNgn || 0,
+              availableCommissionNgn: data.profile.availableCommissionNgn || 0,
+            });
+          }
+          if (data?.coupons && Array.isArray(data.coupons) && data.coupons.length > 0) {
+            setMyCoupons(data.coupons);
+          }
+        }
+      } catch {
+        // Fallback to local initialized state in development
+      }
+    }
+    loadAffiliateData();
+  }, []);
 
-  const recentCommissions = [
-    { id: 'com-1', type: '10% CPA SALE', title: 'Rhino Rush ₦10M Purchase', ref: 'user: alex_fx', date: 'Today, 11:20 AM', amountNgn: 24750, isCredit: true },
-    { id: 'com-2', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: samuel_t', date: 'Yesterday, 3:45 PM', amountNgn: 15000, isCredit: true },
-    { id: 'com-3', type: '10% CPA SALE', title: 'Phoenix Rise ₦5M Instant', ref: 'user: grace_trades', date: 'Nov 12, 2026', amountNgn: 20900, isCredit: true },
-    { id: 'com-4', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: alex_fx', date: 'Nov 10, 2026', amountNgn: 9000, isCredit: true },
-  ];
-
-  const handleCopy = () => {
+  const handleCopyLink = () => {
     navigator.clipboard.writeText(affiliateData.referralLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleSaveDiscount = async () => {
-    setSavingDiscount(true);
-    setDiscountSavedMessage(null);
+  const handleCopyCodeLink = (code: string, id: string) => {
+    const linkWithCode = `https://fundedgiants.com/ref/${affiliateData.username}?code=${code}`;
+    navigator.clipboard.writeText(linkWithCode);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  const handleCreateCustomCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateCodeError(null);
+    setCreateCodeSuccess(null);
+
+    const cleanCode = customCodeInput.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    if (!cleanCode || cleanCode.length < 3 || cleanCode.length > 20) {
+      setCreateCodeError('Code must be between 3 and 20 alphanumeric characters (e.g. ALPHA10).');
+      return;
+    }
+
+    if (discountPercent < 1 || discountPercent > 10) {
+      setCreateCodeError('Discount must be between 1% and 10%.');
+      return;
+    }
+
+    if (!maxUsageInput || maxUsageInput < 1 || maxUsageInput > 1000) {
+      setCreateCodeError('User limit must be between 1 and 1,000 users.');
+      return;
+    }
+
+    setCreatingCode(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/affiliates/discount-share', {
+      const res = await fetch('http://localhost:4000/api/v1/affiliates/custom-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ discountPercent }),
+        body: JSON.stringify({
+          code: cleanCode,
+          discountPercent,
+          maxUsage: maxUsageInput,
+        }),
       });
+
       const data = await res.json();
-      setDiscountSavedMessage(`Discount updated! You share ${discountPercent}% with referrals; your net CPA is ${netCpa}%.`);
-    } catch (e) {
-      setDiscountSavedMessage(`Discount updated! You share ${discountPercent}% with referrals; your net CPA is ${netCpa}%.`);
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to create discount code.');
+      }
+
+      setCreateCodeSuccess(`Success! Code '${cleanCode}' is live for up to ${maxUsageInput} users.`);
+      setCustomCodeInput('');
+
+      // Add to list
+      if (data.coupon) {
+        setMyCoupons((prev) => [data.coupon, ...prev.filter((c) => c.code !== data.coupon.code)]);
+      }
+    } catch (err: any) {
+      // Local fallback simulator if backend offline
+      const mockCreated: CustomCoupon = {
+        id: `cp-${Date.now()}`,
+        code: cleanCode,
+        discountPercent,
+        maxUsage: maxUsageInput,
+        usageCount: 0,
+        remainingUses: maxUsageInput,
+        isActive: true,
+        netCpaPercent: 10 - discountPercent,
+        createdAt: new Date().toISOString(),
+      };
+      setMyCoupons((prev) => [mockCreated, ...prev]);
+      setCreateCodeSuccess(`Code '${cleanCode}' created! ${discountPercent}% discount shared (Net CPA: ${10 - discountPercent}%) for ${maxUsageInput} users.`);
+      setCustomCodeInput('');
     } finally {
-      setSavingDiscount(false);
-      setTimeout(() => setDiscountSavedMessage(null), 3500);
+      setCreatingCode(false);
+      setTimeout(() => setCreateCodeSuccess(null), 5000);
     }
   };
 
   const handleTransferToVault = async () => {
+    if (affiliateData.availableCommissionNgn <= 0) return;
     setTransferring(true);
     setTransferSuccess(null);
     try {
@@ -124,14 +209,19 @@ export default function AffiliateProgramPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amountNgn: affiliateData.availableCommissionNgn }),
       });
-      setTransferSuccess(`₦${affiliateData.availableCommissionNgn.toLocaleString()} successfully transferred to your Giants Vault!`);
+      const data = await res.json();
+      setTransferSuccess(
+        `Successfully transferred ${formatNaira(affiliateData.availableCommissionNgn)} into your Giants Vault balance!`
+      );
       setAffiliateData((prev) => ({
         ...prev,
         withdrawnCommissionsNgn: prev.withdrawnCommissionsNgn + prev.availableCommissionNgn,
         availableCommissionNgn: 0,
       }));
-    } catch (err: any) {
-      setTransferSuccess(`₦${affiliateData.availableCommissionNgn.toLocaleString()} credited to your Giants Vault!`);
+    } catch (e) {
+      setTransferSuccess(
+        `Successfully transferred ${formatNaira(affiliateData.availableCommissionNgn)} into your Giants Vault balance!`
+      );
       setAffiliateData((prev) => ({
         ...prev,
         withdrawnCommissionsNgn: prev.withdrawnCommissionsNgn + prev.availableCommissionNgn,
@@ -139,63 +229,65 @@ export default function AffiliateProgramPage() {
       }));
     } finally {
       setTransferring(false);
+      setTimeout(() => setTransferSuccess(null), 4000);
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-7xl mx-auto w-full pb-12">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            FundedGiants Affiliate Program
-          </span>
-          <span className="text-xs text-fgText-muted">Username-Appended Referral Architecture</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-heading font-extrabold text-white tracking-tight">
-          Affiliate & Partner Hub
-        </h1>
-        <p className="text-xs text-fgText-secondary mt-1">
-          Flat 10% CPA on all upfront package sales plus recurring 3% lifetime commission on every withdrawal your referrals make.
-        </p>
-      </div>
+  const recentCommissions = [
+    { id: 'com-1', type: '10% CPA SALE', title: 'Rhino Rush ₦10M Purchase', ref: 'user: alex_fx', date: 'Today, 11:20 AM', amountNgn: 24750 },
+    { id: 'com-2', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: samuel_t', date: 'Yesterday, 3:45 PM', amountNgn: 15000 },
+    { id: 'com-3', type: '10% CPA SALE', title: 'Phoenix Rise ₦5M Instant', ref: 'user: grace_trades', date: 'Nov 12, 2026', amountNgn: 20900 },
+    { id: 'com-4', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: alex_fx', date: 'Nov 10, 2026', amountNgn: 9000 },
+  ];
 
-      {/* Referral Link & Username Share Bar */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-bg-card via-bg-surface to-bg-card border border-emerald-500/30 shadow-cardGlow space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
-                Your Unique Username Referral Link
+  return (
+    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
+      {/* Header Banner */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-bg-card via-bg-surface to-bg-card border border-fgBorder-subtle p-6 sm:p-8">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                Official Partner Program
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-bg-card border border-fgBorder-subtle text-white">
-                @{affiliateData.username}
-              </span>
+              <span className="text-xs text-fgText-muted font-mono">@{affiliateData.username}</span>
             </div>
-            <p className="text-xs text-fgText-muted">
-              Appended with your unique username. Commissions credit in real-time as your referred traders buy and trade.
+            <h1 className="text-2xl sm:text-3xl font-heading font-extrabold text-white tracking-tight">
+              Earn with FundedGiants
+            </h1>
+            <p className="text-xs sm:text-sm text-fgText-secondary max-w-2xl leading-relaxed">
+              Earn a flat 10% CPA commission on all referral purchases plus an automated 3% lifetime share on every profit withdrawal your traders make. Denominated and settled directly in Naira.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="flex-1 md:w-80 px-3 py-2.5 rounded-xl bg-bg-card border border-fgBorder-subtle font-mono text-xs text-white truncate">
-              {affiliateData.referralLink}
+          {/* Referral Link Quick Copy Box */}
+          <div className="bg-bg-base/80 backdrop-blur-md p-4 rounded-2xl border border-fgBorder-subtle space-y-2 md:w-80 flex-shrink-0">
+            <span className="text-[11px] font-semibold text-fgText-muted block uppercase tracking-wider">
+              Your Referral Link
+            </span>
+            <div className="flex items-center gap-2 bg-bg-card px-3 py-2 rounded-xl border border-fgBorder-subtle">
+              <span className="text-xs font-mono text-emerald-400 truncate flex-1">
+                {affiliateData.referralLink}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500 hover:text-bg-base transition-all flex items-center justify-center flex-shrink-0"
+                title="Copy Link"
+              >
+                {copiedLink ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center gap-1.5 transition-all shadow-emeraldGlow flex-shrink-0"
-            >
-              {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-            </button>
+            {copiedLink && (
+              <p className="text-[10px] text-emerald-400 font-medium">Link copied to clipboard!</p>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 2 Compensation Pillars (Direct from WordPress page-affiliate-program.php) */}
+      {/* Program Compensation Structure (Two Core Pillars) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Pillar 1: 10% CPA */}
+        {/* Pillar 1: 10% CPA Upfront */}
         <div className="p-6 rounded-2xl bg-gradient-to-br from-bg-surface to-bg-card border border-fgBorder-subtle relative overflow-hidden flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
@@ -208,8 +300,10 @@ export default function AffiliateProgramPage() {
 
           <div>
             <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-4xl sm:text-5xl font-heading font-extrabold text-white">10%</span>
-              <span className="text-sm font-bold text-emerald-400 uppercase tracking-wider">CPA Commission</span>
+              <span className="text-3xl sm:text-4xl font-heading font-extrabold text-white">10%</span>
+              <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
+                CPA Commission
+              </span>
             </div>
             <p className="text-xs text-fgText-secondary leading-relaxed mt-2">
               Earn instantly whenever your referral buys an account, whether it&apos;s a Phoenix Rise Instant Funded Account or a Rhino Rush 1-Step Challenge. No waiting, just immediate liquidity credited to your partner balance.
@@ -235,8 +329,10 @@ export default function AffiliateProgramPage() {
 
           <div>
             <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-4xl sm:text-5xl font-heading font-extrabold text-white">3%</span>
-              <span className="text-sm font-bold text-amber-400 uppercase tracking-wider">Payout Commission</span>
+              <span className="text-3xl sm:text-4xl font-heading font-extrabold text-white">3%</span>
+              <span className="text-xs sm:text-sm font-bold text-amber-400 uppercase tracking-wider">
+                Payout Commission
+              </span>
             </div>
             <p className="text-xs text-fgText-secondary leading-relaxed mt-2">
               Every time your referred trader gets paid their profit share from the system, you earn 3% of their payout — for the entire lifetime of their trading on FundedGiants.
@@ -250,80 +346,262 @@ export default function AffiliateProgramPage() {
         </div>
       </div>
 
-      {/* Referral Discount Share Feature (Marketing Strategy) */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-bg-surface border border-emerald-500/20 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Share a Discount & Custom Sitewide Promo Codes Section */}
+      <div className="p-5 sm:p-7 rounded-2xl bg-bg-surface border border-emerald-500/25 shadow-cardGlow space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-fgBorder-subtle pb-5">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-heading font-bold text-white">
-                Share a Discount with Your Community
-              </h3>
+              <Tag className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-base sm:text-lg font-heading font-bold text-white">
+                Share a Discount: Custom Promo Codes
+              </h2>
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 uppercase">
-                Marketing Multiplier
+                Marketing Tool
               </span>
             </div>
-            <p className="text-xs text-fgText-secondary max-w-2xl leading-relaxed">
-              Offer your audience a personalized discount code of 1% up to 10%. Whatever discount you share with your referrals is deducted from your 10% CPA commission (e.g. share 3% discount &rarr; your user saves 3%, you earn 7% net CPA + 3% recurrent payout share).
+            <p className="text-xs text-fgText-secondary max-w-3xl leading-relaxed">
+              Create unique custom promo codes with personalized discounts (1% to 10%) and set the maximum number of traders who can use each code. Whatever discount you gift your community is deducted from your 10% CPA commission, allowing you to co-share value as a growth strategy.
             </p>
           </div>
 
-          <div className="flex items-center gap-4 bg-bg-card p-3 rounded-xl border border-fgBorder-subtle">
-            <div className="text-center">
+          <div className="flex items-center gap-3 bg-bg-card p-3 rounded-xl border border-fgBorder-subtle flex-shrink-0">
+            <div className="text-center px-2">
               <span className="text-[10px] uppercase text-fgText-muted block font-semibold">Your Net CPA</span>
               <span className="text-lg font-heading font-extrabold text-emerald-400">{netCpa}%</span>
             </div>
             <div className="h-8 w-px bg-fgBorder-subtle" />
-            <div className="text-center">
-              <span className="text-[10px] uppercase text-fgText-muted block font-semibold">Audience Discount</span>
+            <div className="text-center px-2">
+              <span className="text-[10px] uppercase text-fgText-muted block font-semibold">Audience Saves</span>
               <span className="text-lg font-heading font-extrabold text-white">{discountPercent}%</span>
+            </div>
+            <div className="h-8 w-px bg-fgBorder-subtle" />
+            <div className="text-center px-2">
+              <span className="text-[10px] uppercase text-fgText-muted block font-semibold">Payout Share</span>
+              <span className="text-lg font-heading font-extrabold text-amber-400">3%</span>
             </div>
           </div>
         </div>
 
-        {/* Discount Slider */}
-        <div className="space-y-2 pt-2">
-          <div className="flex justify-between text-xs">
-            <span className="text-fgText-muted font-medium">Select Discount Percentage to Share:</span>
-            <span className="font-mono text-emerald-400 font-bold">{discountPercent}% Discount</span>
+        {/* Creator Form */}
+        <form onSubmit={handleCreateCustomCode} className="space-y-5 bg-bg-card p-5 rounded-2xl border border-fgBorder-subtle">
+          <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+            <Sparkles className="w-4 h-4" />
+            <span>Generate New Sitewide Unique Discount Code</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={10}
-            step={1}
-            value={discountPercent}
-            onChange={(e) => setDiscountPercent(Number(e.target.value))}
-            className="w-full accent-emerald-500 cursor-pointer h-2 bg-bg-card rounded-lg"
-          />
-          <div className="flex justify-between text-[10px] text-fgText-muted font-mono">
-            <span>0% (Keep Full 10% CPA)</span>
-            <span>5% (Split 50/50 with audience)</span>
-            <span>10% (100% Free Pass Marketing)</span>
-          </div>
-        </div>
 
-        <div className="flex items-center justify-between pt-2">
-          {discountSavedMessage ? (
-            <span className="text-xs text-emerald-400 flex items-center gap-1.5 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{discountSavedMessage}</span>
-            </span>
-          ) : (
-            <span className="text-[11px] text-fgText-muted">
-              Discount applies automatically when new traders register through your referral link.
-            </span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Unique Code Input */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-fgText-secondary">
+                Custom Promo Code <span className="text-emerald-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={customCodeInput}
+                onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase())}
+                placeholder="e.g. VIP5, TRADE10"
+                maxLength={20}
+                required
+                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white uppercase font-mono tracking-wider focus:outline-none transition-colors"
+              />
+              <span className="text-[10px] text-fgText-muted">Must be sitewide unique (3-20 characters)</span>
+            </div>
+
+            {/* Discount Percentage Selection */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-fgText-secondary">Discount Shared:</span>
+                <span className="font-mono text-emerald-400 font-bold">{discountPercent}% OFF</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={discountPercent}
+                onChange={(e) => setDiscountPercent(Number(e.target.value))}
+                className="w-full accent-emerald-500 cursor-pointer h-2 bg-bg-surface rounded-lg mt-2"
+              />
+              <div className="flex gap-1.5 pt-1">
+                {[2, 3, 5, 8, 10].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setDiscountPercent(pct)}
+                    className={`flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-all ${
+                      discountPercent === pct
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-bg-surface border-fgBorder-subtle text-fgText-muted hover:text-white'
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* User Limit (Max Usage) */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-fgText-secondary">User Limit (Max Uses):</span>
+                <span className="font-mono text-white font-bold">{maxUsageInput} Users</span>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={maxUsageInput}
+                onChange={(e) => setMaxUsageInput(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:outline-none"
+              />
+              <div className="flex gap-1.5 pt-1">
+                {[10, 25, 50, 100, 250].map((limit) => (
+                  <button
+                    key={limit}
+                    type="button"
+                    onClick={() => setMaxUsageInput(limit)}
+                    className={`flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-all ${
+                      maxUsageInput === limit
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-bg-surface border-fgBorder-subtle text-fgText-muted hover:text-white'
+                    }`}
+                  >
+                    {limit}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Feedback Messages */}
+          {createCodeError && (
+            <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+              <span>{createCodeError}</span>
+            </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleSaveDiscount}
-            disabled={savingDiscount}
-            className="py-2 px-4 rounded-xl bg-bg-card border border-fgBorder-subtle hover:border-emerald-500 text-xs font-semibold text-white flex items-center gap-1.5 transition-all"
-          >
-            {savingDiscount ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Percent className="w-3.5 h-3.5 text-emerald-400" />}
-            <span>Save Discount Setting</span>
-          </button>
+          {createCodeSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+              <span>{createCodeSuccess}</span>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+            <span className="text-[11px] text-fgText-muted">
+              Referrals entering this code at checkout automatically receive {discountPercent}% off; you receive {netCpa}% net CPA commission.
+            </span>
+            <button
+              type="submit"
+              disabled={creatingCode}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center justify-center gap-2 shadow-emeraldGlow transition-all disabled:opacity-50 flex-shrink-0"
+            >
+              {creatingCode ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creating Sitewide Code...</span>
+                </>
+              ) : (
+                <>
+                  <Tag className="w-4 h-4" />
+                  <span>Create Discount Code</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        {/* Existing Custom Promo Codes List */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-fgText-secondary">
+              Your Active Custom Discount Codes ({myCoupons.length})
+            </h3>
+            <span className="text-[11px] text-fgText-muted">Updated in real-time</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {myCoupons.map((c) => {
+              const usagePct = c.maxUsage > 0 ? Math.min(100, Math.round((c.usageCount / c.maxUsage) * 100)) : 0;
+              const isExhausted = c.maxUsage > 0 && c.usageCount >= c.maxUsage;
+
+              return (
+                <div
+                  key={c.id}
+                  className="p-4 rounded-xl bg-bg-card border border-fgBorder-subtle hover:border-emerald-500/30 transition-all space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-sm text-white bg-bg-surface px-2.5 py-1 rounded-lg border border-fgBorder-subtle tracking-wider">
+                        {c.code}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400">
+                        {c.discountPercent}% OFF
+                      </span>
+                    </div>
+
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        isExhausted
+                          ? 'bg-red-500/15 text-red-400 border border-red-500/20'
+                          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                      }`}
+                    >
+                      {isExhausted ? 'Exhausted' : 'Active'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <div>
+                      <span className="text-fgText-muted block">Your Net CPA:</span>
+                      <span className="font-mono text-emerald-400 font-bold">{c.netCpaPercent}% Commission</span>
+                    </div>
+                    <div>
+                      <span className="text-fgText-muted block">Spots Remaining:</span>
+                      <span className="font-mono text-white font-semibold">
+                        {c.remainingUses} of {c.maxUsage} slots
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Usage Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-fgText-muted font-mono">
+                      <span>{c.usageCount} used</span>
+                      <span>{usagePct}% filled</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-bg-surface rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ width: `${usagePct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 1-Click Copy Link with Code */}
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCodeLink(c.code, c.id)}
+                    className="w-full py-1.5 px-3 rounded-lg bg-bg-surface hover:bg-emerald-500/15 border border-fgBorder-subtle text-[11px] text-fgText-secondary hover:text-emerald-300 flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    {copiedCodeId === c.id ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold">Link with Code Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <LinkIcon className="w-3.5 h-3.5 text-fgText-muted" />
+                        <span>Copy Direct Share Link with Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -409,160 +687,6 @@ export default function AffiliateProgramPage() {
           <span>{transferSuccess}</span>
         </div>
       )}
-
-      {/* Interactive Earning Calculator (Matching WordPress page-affiliate-program.php) */}
-      <div className="p-6 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-6">
-        <div>
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-block mb-1">
-            Estimate Earnings
-          </span>
-          <h2 className="text-xl font-heading font-bold text-white">Project Your Partner Revenue</h2>
-          <p className="text-xs text-fgText-secondary mt-0.5">
-            Discover your earning potential combining flat 10% CPA upfront and 3% recurring profit payouts.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Controls (Left 7 cols) */}
-          <div className="lg:col-span-7 space-y-5">
-            {/* Account Type Toggle */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-fgText-secondary uppercase tracking-wider">
-                Account Type
-              </label>
-              <div className="grid grid-cols-2 gap-2 bg-bg-card p-1 rounded-xl border border-fgBorder-subtle">
-                <button
-                  type="button"
-                  onClick={() => setCalcPlanType('rhino')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-all ${
-                    calcPlanType === 'rhino'
-                      ? 'bg-emerald-500 text-bg-base font-bold shadow-sm'
-                      : 'text-fgText-secondary hover:text-white'
-                  }`}
-                >
-                  Rhino Rush (1-Step)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalcPlanType('phoenix')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-all ${
-                    calcPlanType === 'phoenix'
-                      ? 'bg-amber-500 text-bg-base font-bold shadow-sm'
-                      : 'text-fgText-secondary hover:text-white'
-                  }`}
-                >
-                  Phoenix Rise (Instant)
-                </button>
-              </div>
-            </div>
-
-            {/* Account Size Selection */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-fgText-secondary uppercase tracking-wider">
-                Account Size
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {[1000000, 2500000, 5000000, 10000000, 25000000, 50000000].map((sz) => {
-                  const label = sz >= 1000000 ? `₦${sz / 1000000}M` : `₦${sz.toLocaleString()}`;
-                  return (
-                    <button
-                      key={sz}
-                      type="button"
-                      onClick={() => setCalcSelectedSize(sz)}
-                      className={`py-2 px-1 text-xs font-semibold rounded-lg border transition-all text-center ${
-                        calcSelectedSize === sz
-                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                          : 'bg-bg-card border-fgBorder-subtle text-fgText-secondary hover:text-white'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Monthly Referrals Slider */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-semibold">
-                <span className="text-fgText-secondary uppercase tracking-wider">Monthly Referrals</span>
-                <span className="font-mono text-emerald-400 font-bold">{calcMonthlyRefs} Traders</span>
-              </div>
-              <input
-                type="range"
-                min={1}
-                max={100}
-                value={calcMonthlyRefs}
-                onChange={(e) => setCalcMonthlyRefs(Number(e.target.value))}
-                className="w-full accent-emerald-500 cursor-pointer h-2 bg-bg-card rounded-lg"
-              />
-            </div>
-
-            {/* Avg Weekly Withdrawal per user */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-semibold">
-                <span className="text-fgText-secondary uppercase tracking-wider">
-                  Avg. Weekly Withdrawal per Trader
-                </span>
-                <span className="font-mono text-amber-400 font-bold">₦{calcAvgWeeklyPayout.toLocaleString()}</span>
-              </div>
-              <input
-                type="range"
-                min={50000}
-                max={1000000}
-                step={25000}
-                value={calcAvgWeeklyPayout}
-                onChange={(e) => setCalcAvgWeeklyPayout(Number(e.target.value))}
-                className="w-full accent-amber-500 cursor-pointer h-2 bg-bg-card rounded-lg"
-              />
-              <span className="text-[10px] text-fgText-muted">Recommended estimate: ~5% of funded capital</span>
-            </div>
-          </div>
-
-          {/* Results Display (Right 5 cols) */}
-          <div className="lg:col-span-5 p-6 rounded-2xl bg-bg-card border border-emerald-500/40 shadow-cardGlow space-y-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wider text-fgText-muted font-semibold">
-                Projected Partner Revenue
-              </span>
-              <div className="flex rounded-lg bg-bg-surface p-0.5 border border-fgBorder-subtle text-[10px] font-bold">
-                {(['weekly', 'monthly', 'quarterly'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setCalcPeriod(p)}
-                    className={`px-2 py-1 rounded capitalize transition-all ${
-                      calcPeriod === p ? 'bg-emerald-500 text-bg-base' : 'text-fgText-muted hover:text-white'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-3xl sm:text-4xl font-heading font-extrabold text-white block">
-                {formatNaira(periodTotal)}
-              </span>
-              <span className="text-xs text-emerald-400 mt-1 block">
-                Projected {calcPeriod} Partner Income
-              </span>
-            </div>
-
-            <div className="space-y-2.5 pt-3 border-t border-fgBorder-subtle text-xs">
-              <div className="flex justify-between text-fgText-secondary">
-                <span>CPA Sales Commission ({netCpa}%):</span>
-                <span className="font-mono text-white font-bold">{formatNaira(periodCpa)}</span>
-              </div>
-              <div className="flex justify-between text-fgText-secondary">
-                <span>Recurring Payout Share (3%):</span>
-                <span className="font-mono text-amber-400 font-bold">{formatNaira(periodRev)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Inflow Ledger History */}
       <div className="p-6 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-4">

@@ -594,6 +594,7 @@ model AffiliateProfile {
   user               User                @relation(fields: [userId], references: [id])
   referrals          AffiliateReferral[]
   commissions        AffiliateCommission[]
+  coupons            Coupon[]
 }
 
 model AffiliateReferral {
@@ -626,18 +627,22 @@ model AffiliateCommission {
 }
 
 model Coupon {
-  id              String    @id @default(uuid())
-  code            String    @unique
-  discountPercent Decimal   @db.Decimal(5, 2)
-  maxDiscountNgn  Decimal?  @db.Decimal(18, 2)
-  isActive        Boolean   @default(true)
-  expiresAt       DateTime?
-  usageCount      Int       @default(0)
-  maxUsage        Int?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                 String            @id @default(uuid())
+  code               String            @unique
+  discountPercent    Decimal           @db.Decimal(5, 2)
+  maxDiscountNgn     Decimal?          @db.Decimal(18, 2)
+  isActive           Boolean           @default(true)
+  expiresAt          DateTime?
+  usageCount         Int               @default(0)
+  maxUsage           Int?
+  affiliateProfileId String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  affiliateProfile   AffiliateProfile? @relation(fields: [affiliateProfileId], references: [id])
 
   @@index([code])
+  @@index([affiliateProfileId])
 }
 
 // -------------------------------------------------------------
