@@ -447,13 +447,13 @@ export default function InDashboardBuyChallengePage() {
                 <div>
                   <span className="text-[10px] text-fgText-secondary uppercase block">Daily Drawdown</span>
                   <span className="font-bold text-white font-mono">
-                    {formatNaira(selectedSize * 0.04)} {currentPlan.dailyDD}
+                    {formatNaira(selectedSize * 0.04)} ({currentPlan.dailyDD})
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-fgText-secondary uppercase block">Max Drawdown</span>
                   <span className="font-bold text-white font-mono">
-                    {formatNaira(selectedSize * (selectedPlan === 'phoenix-rise' ? 0.07 : 0.1))} {currentPlan.maxDD}
+                    {formatNaira(selectedSize * (selectedPlan === 'phoenix-rise' ? 0.07 : 0.1))} ({currentPlan.maxDD})
                   </span>
                 </div>
                 <div>
