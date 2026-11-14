@@ -73,32 +73,33 @@ export class CertificatesService {
     const cleanName = this.toTitleCase(params.recipientName);
 
     // Granular scan: line begins at x=113, ends at x=581 (width = 468px), y=348
+    // Font: exact typography of 'Giants', normal weight (not bold), font-size 64
     const overlaySvg = `
       <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
               font-family: 'Plus Jakarta Sans', 'Inter', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-weight: 800;
+              font-weight: 500;
               fill: #FFFFFF;
             }
             .date-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-weight: 700;
+              font-weight: 500;
               fill: #FFFFFF;
               letter-spacing: 0.5px;
             }
             .cert-id {
               font-family: 'Courier New', 'Consolas', monospace;
-              font-weight: 700;
+              font-weight: 600;
               fill: #FFFFFF;
               letter-spacing: 1px;
             }
           </style>
         </defs>
 
-        <!-- Trader Name scaled across full 468px line width -->
-        <text x="113" y="336" font-size="52" class="trader-name" textLength="468" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
+        <!-- Trader Name scaled across full 468px line width in Title Case, not bold -->
+        <text x="113" y="336" font-size="64" class="trader-name" textLength="468" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
 
         <!-- Issue Date (enlarged, bold white) -->
         <text x="168" y="643" font-size="17" class="date-text">${issueDate}</text>
@@ -196,47 +197,48 @@ export class CertificatesService {
     // Granular scan:
     // Name line begins at x=106, ends at x=569 (width = 463px), y=371
     // Profit Split line begins at x=105, ends at x=575 (width = 470px), y=484
+    // Font: exact typography of 'Giants', normal weight (not bold), scaled to fill line
     const overlaySvg = `
       <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
               font-family: 'Plus Jakarta Sans', 'Inter', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-weight: 800;
+              font-weight: 500;
               fill: #FFFFFF;
             }
             .profit-split {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-weight: 800;
+              font-weight: 600;
               fill: #FFFFFF;
             }
             .date-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-weight: 700;
+              font-weight: 500;
               fill: #FFFFFF;
               letter-spacing: 0.5px;
             }
             .cert-id {
               font-family: 'Courier New', 'Consolas', monospace;
-              font-weight: 700;
+              font-weight: 600;
               fill: #FFFFFF;
               letter-spacing: 1px;
             }
             .pill-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-size: 13px;
-              font-weight: 800;
-              fill: #A7F3D0;
+              font-size: 14px;
+              font-weight: 700;
+              fill: #E6FFFA;
               letter-spacing: 0.5px;
             }
           </style>
         </defs>
 
-        <!-- 1. Trader Name scaled across full 463px line width -->
-        <text x="106" y="358" font-size="52" class="trader-name" textLength="463" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
+        <!-- 1. Trader Name scaled across full 463px line width in Title Case, not bold -->
+        <text x="106" y="358" font-size="64" class="trader-name" textLength="463" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
 
         <!-- 2. Profit Split full amount scaled across full 470px line width -->
-        <text x="105" y="472" font-size="54" class="profit-split" textLength="470" lengthAdjust="spacingAndGlyphs">${formattedAmount}</text>
+        <text x="105" y="472" font-size="60" class="profit-split" textLength="470" lengthAdjust="spacingAndGlyphs">${formattedAmount}</text>
 
         <!-- 3. Date right below Profit Split section, placed on Date line at y=531 -->
         <text x="160" y="527" font-size="16" class="date-text">${issueDate}</text>
@@ -244,21 +246,21 @@ export class CertificatesService {
         <!-- 4. Certificate ID right below Date line -->
         <text x="110" y="562" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
 
-        <!-- 5. Throne Jewel Badges (Exact-Cover Dimensions) -->
-        <!-- Top Right Badge: Total Profit (Replaces $6,980 at 752..866, y: 554..584) -->
-        <rect x="748" y="552" width="122" height="32" rx="16" fill="#02120e" stroke="#10B981" stroke-opacity="0.6" stroke-width="1.4"/>
-        <circle cx="766" cy="568" r="4" fill="#10B981"/>
-        <text x="778" y="573" class="pill-text">${totalProfitK}</text>
+        <!-- 5. Throne Jewel Badges (GENEROUS OVER-SIZED PILLS - 100% COVERAGE) -->
+        <!-- Top Right Badge: Total Profit (Covers $6,980 with generous margins) -->
+        <rect x="740" y="546" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="760" cy="565" r="4.5" fill="#10B981"/>
+        <text x="774" y="570" class="pill-text">${totalProfitK}</text>
 
-        <!-- Left Badge: Trader Split (Replaces $4,886 at 635..745, y: 610..638) -->
-        <rect x="632" y="608" width="120" height="32" rx="16" fill="#02120e" stroke="#10B981" stroke-opacity="0.6" stroke-width="1.4"/>
-        <circle cx="650" cy="624" r="4" fill="#10B981"/>
-        <text x="662" y="629" class="pill-text">${traderSplitK}</text>
+        <!-- Left Badge: Trader Split (Covers $4,886 with generous margins) -->
+        <rect x="622" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="642" cy="621" r="4.5" fill="#10B981"/>
+        <text x="656" y="626" class="pill-text">${traderSplitK}</text>
 
-        <!-- Bottom Right Badge: Company Split (Replaces $2,094 at 795..905, y: 610..638) -->
-        <rect x="792" y="608" width="120" height="32" rx="16" fill="#02120e" stroke="#10B981" stroke-opacity="0.6" stroke-width="1.4"/>
-        <circle cx="810" cy="624" r="4" fill="#10B981"/>
-        <text x="822" y="629" class="pill-text">${companySplitK}</text>
+        <!-- Bottom Right Badge: Company Split (Covers $2,094 with generous margins) -->
+        <rect x="784" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="804" cy="621" r="4.5" fill="#10B981"/>
+        <text x="818" y="626" class="pill-text">${companySplitK}</text>
       </svg>
     `;
 

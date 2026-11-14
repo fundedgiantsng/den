@@ -5,13 +5,9 @@ import Image from 'next/image';
 import {
   Award,
   Download,
-  ExternalLink,
-  ShieldCheck,
   Calendar,
   Maximize2,
-  X,
-  FileCheck2,
-  Sparkles
+  X
 } from 'lucide-react';
 
 interface CertificateItem {
@@ -241,25 +237,14 @@ export default function CertificatesPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 pt-1 border-t border-white/[0.04]">
+                  <div className="pt-2 border-t border-white/[0.04]">
                     <a
                       href={cert.certificateUrl}
                       download={`${cert.id}.jpg`}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#10B981] hover:bg-[#0ea371] text-[#060B11] font-bold text-xs transition-all shadow-sm active:scale-[0.98]"
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#10B981] hover:bg-[#0ea371] text-[#060B11] font-bold text-xs transition-all shadow-sm active:scale-[0.98]"
                     >
-                      <Download className="h-3 w-3" />
-                      Download
-                    </a>
-
-                    <a
-                      href="http://fundedgiants.local/#payouts"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.08] text-xs font-semibold transition-all"
-                      title="Verify on Live Public Ledger"
-                    >
-                      <ExternalLink className="h-3 w-3 text-[#10B981]" />
-                      Verify
+                      <Download className="h-3.5 w-3.5" />
+                      Download High-Res JPEG
                     </a>
                   </div>
                 </div>
@@ -268,29 +253,6 @@ export default function CertificatesPage() {
           })}
         </div>
       )}
-
-      {/* Verification Ledger Notice Card */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-[#091218] border border-white/[0.08] flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-[#10B981]" />
-            <h3 className="text-sm font-bold text-white">Cryptographically Timestamped & Publicly Tracked</h3>
-          </div>
-          <p className="text-xs text-gray-400 max-w-2xl leading-relaxed">
-            Every FundedGiants certificate is assigned a unique alphanumeric ID synchronized with the live WordPress
-            payout tracker. Prospective firms and peers can verify authentic issuance in real time on the official homepage.
-          </p>
-        </div>
-        <a
-          href="http://fundedgiants.local/#payouts"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-[#10B981]/40 text-[#10B981] font-semibold text-xs whitespace-nowrap transition-colors shrink-0"
-        >
-          Open Public Payout Ledger
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-      </div>
 
       {/* Fullscreen Zoom Modal */}
       {selectedPreview && (
