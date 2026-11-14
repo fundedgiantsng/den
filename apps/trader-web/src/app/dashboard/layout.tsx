@@ -92,13 +92,13 @@ export default function DashboardLayout({
             </Link>
           );
         })}
-        {/* Mobile Buy Challenge Action Button */}
+        {/* Mobile Buy New Account Action Button */}
         <Link
           href="/dashboard/challenges/buy"
-          className="flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-[10px] font-bold text-amber-400"
+          className="flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-[10px] font-bold text-[#f5a623]"
         >
-          <Award className="w-4 h-4 text-amber-400" />
-          <span>Buy Plan</span>
+          <Award className="w-4 h-4 text-[#f5a623]" />
+          <span>Buy New Account</span>
         </Link>
       </nav>
     </div>

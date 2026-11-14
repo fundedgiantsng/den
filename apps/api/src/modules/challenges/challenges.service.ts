@@ -69,8 +69,9 @@ export class ChallengesService implements OnModuleInit {
           leverage: '1:100',
           dailyDrawdownPercent: 4,
           maxDrawdownPercent: 10,
+          drawdownType: 'Static Equity-Based (No Trailing)',
           profitTarget: '10% (2% Daily Cap)',
-          payouts: 'First Payout: 5% | Daily Payouts: 2% Min',
+          payouts: 'Tiered 50% -> 60% -> 70% -> 80% (Min 2%)',
           refundNote: '100% Fee Refund at 10% total payouts',
           pricing: PLAN_PRICING_TABLE['rhino-rush'],
         },
@@ -82,8 +83,9 @@ export class ChallengesService implements OnModuleInit {
           leverage: '1:30',
           dailyDrawdownPercent: 4,
           maxDrawdownPercent: 7,
-          profitTarget: '10% On-Demand or 15 Days (Min 2%)',
-          payouts: 'Daily On-Demand (Min 2%)',
+          drawdownType: 'Static Equity-Based (No Trailing)',
+          profitTarget: '1st Payout: 10% Target | Subsequent: 2% Min',
+          payouts: 'Tiered 60% (<15d) / 50% (15d+) -> 60% -> 70% -> 80%',
           refundNote: 'No refund',
           pricing: PLAN_PRICING_TABLE['phoenix-rise'],
         },
@@ -538,12 +540,57 @@ export class ChallengesService implements OnModuleInit {
       const dailyDrawdownLimitNgn = initialSize * 0.04;
       const maxDrawdownLimitNgn = isPhoenix ? initialSize * 0.07 : initialSize * 0.10;
 
-      // Payout eligibility (Phoenix: >=2%, Rhino Funded: >=5% first or >=2% subsequent)
+      // Count previous payouts and determine tiered payout split & minimum profit threshold
+      const previousPayoutsCount = await prisma.riskEvent.count({
+        where: {
+          tradingAccountId: acc.id,
+          eventType: 'AUTOMATED_PAYOUT_APPROVED',
+        },
+      });
+      const payoutNumber = previousPayoutsCount + 1;
+
+      let minPayoutPercent = 2.0;
+      let traderSplitPercent = 80;
+
+      if (isPhoenix) {
+        if (payoutNumber === 1) {
+          minPayoutPercent = 10.0;
+          const challengeStartDate = acc.challenge?.createdAt || acc.createdAt || new Date();
+          const daysSinceStart = Math.max(
+            1,
+            Math.floor((Date.now() - new Date(challengeStartDate).getTime()) / (1000 * 60 * 60 * 24))
+          );
+          traderSplitPercent = daysSinceStart < 15 ? 60 : 50;
+        } else if (payoutNumber === 2) {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 60;
+        } else if (payoutNumber === 3) {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 70;
+        } else {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 80;
+        }
+      } else {
+        if (payoutNumber === 1) {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 50;
+        } else if (payoutNumber === 2) {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 60;
+        } else if (payoutNumber === 3) {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 70;
+        } else {
+          minPayoutPercent = 2.0;
+          traderSplitPercent = 80;
+        }
+      }
+
       const isFundedPhase = isPhoenix || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED';
-      const minPayoutPercent = isPhoenix ? 2 : 5;
       const isPayoutEligible = isFundedPhase && profitPercent >= minPayoutPercent;
-      const traderProfitSplitNgn = profitNgn > 0 ? profitNgn * 0.8 : 0;
-      const firmProfitSplitNgn = profitNgn > 0 ? profitNgn * 0.2 : 0;
+      const traderProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * (traderSplitPercent / 100)) : 0;
+      const firmProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)) : 0;
 
       return {
         id: acc.accountNumber,
@@ -568,6 +615,9 @@ export class ChallengesService implements OnModuleInit {
         maxLossHeadroomNgn: maxDrawdownLimitNgn,
         isPayoutEligible,
         minPayoutPercent,
+        payoutNumber,
+        traderSplitPercent,
+        profitSplitRatio: `${traderSplitPercent}:${100 - traderSplitPercent}`,
         traderProfitSplitNgn,
         firmProfitSplitNgn,
         tradingDays: 1,
@@ -622,8 +672,11 @@ export class ChallengesService implements OnModuleInit {
       maxLossHeadroomNgn: maxLimit - maxLoss,
       isPayoutEligible: true,
       minPayoutPercent: 2,
-      traderProfitSplitNgn: profitNgn * 0.8,
-      firmProfitSplitNgn: profitNgn * 0.2,
+      payoutNumber: 1,
+      traderSplitPercent: isPhoenix ? 60 : 50,
+      profitSplitRatio: isPhoenix ? '60:40' : '50:50',
+      traderProfitSplitNgn: Math.floor(profitNgn * (isPhoenix ? 0.6 : 0.5)),
+      firmProfitSplitNgn: Math.floor(profitNgn * (isPhoenix ? 0.4 : 0.5)),
       tradingDays: isPhoenix ? 6 : 14,
       status: 'Active',
       leverage: isPhoenix ? '1:30' : '1:100',
@@ -712,6 +765,27 @@ export class ChallengesService implements OnModuleInit {
         reconciled: true,
       },
     });
+
+    // Record Risk Event for audit and payout tier tracking
+    const tradingAcc = await prisma.tradingAccount.findFirst({
+      where: {
+        OR: [{ accountNumber: accountId }, { id: accountId }],
+      },
+    });
+
+    if (tradingAcc) {
+      await prisma.riskEvent.create({
+        data: {
+          challengeId: tradingAcc.challengeId,
+          tradingAccountId: tradingAcc.id,
+          eventType: 'AUTOMATED_PAYOUT_APPROVED',
+          description: `Profit payout #${details.payoutNumber || 1} of ₦${requestedPayout.toLocaleString()} (${details.profitSplitRatio || 'Tiered'} split) disbursed to Giants Vault.`,
+          severity: 'INFO',
+          snapshotBalance: tradingAcc.currentBalance,
+          snapshotEquity: tradingAcc.currentEquity,
+        },
+      });
+    }
 
     this.logger.log(`Profit payout of ₦${requestedPayout.toLocaleString()} credited to Giants Vault for user ${userId} (ref: ${reference})`);
 

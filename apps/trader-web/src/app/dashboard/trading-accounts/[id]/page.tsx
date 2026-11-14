@@ -70,8 +70,11 @@ export default function AccountAnalyticsTerminalPage() {
     maxLossHeadroomNgn: 750000,
     isPayoutEligible: true,
     minPayoutPercent: 2,
-    traderProfitSplitNgn: 336000,
-    firmProfitSplitNgn: 84000,
+    payoutNumber: 1,
+    traderSplitPercent: 50,
+    profitSplitRatio: '50:50',
+    traderProfitSplitNgn: 210000,
+    firmProfitSplitNgn: 210000,
     tradingDays: 14,
     status: 'Active',
     leverage: '1:100',
@@ -270,16 +273,16 @@ export default function AccountAnalyticsTerminalPage() {
           </span>
         </div>
 
-        {/* Payout Split 80% */}
+        {/* Payout Split Tiered */}
         <div className="p-5 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-1.5 shadow-xl">
           <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-            Your Payout Share (80%)
+            Your Payout Share ({account.traderSplitPercent || (isPhoenix ? 60 : 50)}%)
           </span>
           <div className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
             {formatNaira(account.traderProfitSplitNgn)}
           </div>
           <span className="text-[11px] text-fgText-muted font-mono block">
-            Firm Split (20%): {formatNaira(account.firmProfitSplitNgn)}
+            Firm Split ({100 - (account.traderSplitPercent || (isPhoenix ? 60 : 50))}%): {formatNaira(account.firmProfitSplitNgn)}
           </span>
         </div>
 
@@ -335,7 +338,7 @@ export default function AccountAnalyticsTerminalPage() {
                 Maximum Drawdown ({isPhoenix ? '7%' : '10%'} Limit)
               </span>
             </div>
-            <span className="text-[10px] font-mono text-amber-400">Overall Loss Barrier</span>
+            <span className="text-[10px] font-mono text-amber-400">Static Barrier (No Trailing)</span>
           </div>
 
           <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">

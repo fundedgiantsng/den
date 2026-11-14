@@ -35,6 +35,10 @@ export interface PayoutEligibilityResult {
   currentProfit: number;
   profitPercent: number;
   withdrawableProfitNgn: number;
+  payoutNumber: number;
+  traderSplitPercent: number;
+  profitSplitRatio: string;
+  minRequiredPercent: number;
   openTradesCount: number;
   reason?: string;
   breakdown: {
@@ -387,6 +391,10 @@ export class RiskEngineService {
         currentProfit: Number(account.totalProfit),
         profitPercent: 0,
         withdrawableProfitNgn: 0,
+        payoutNumber: 1,
+        traderSplitPercent: 50,
+        profitSplitRatio: '50:50',
+        minRequiredPercent: 2.0,
         openTradesCount: 0,
         reason: 'Phase 1 Evaluation account profits are virtual challenge metrics and cannot be withdrawn.',
         breakdown: {
@@ -406,9 +414,67 @@ export class RiskEngineService {
     const netProfit = Math.max(0, currentEquity - initialBal);
     const profitPercent = (netProfit / initialBal) * 100;
 
+    // Count previous automated payouts approved for this account
+    const previousPayoutsCount = await prisma.riskEvent.count({
+      where: {
+        tradingAccountId: account.id,
+        eventType: 'AUTOMATED_PAYOUT_APPROVED',
+      },
+    });
+    const payoutNumber = previousPayoutsCount + 1;
+
+    // Determine Tiered Split and Minimum Profit Threshold based on program rules
+    let minThresholdPercent = 2.0;
+    let traderSplitPercent = 80;
+
+    if (isPhoenix) {
+      if (payoutNumber === 1) {
+        // Phoenix Rise 1st Payout: Sole criteria is 10% net profit
+        minThresholdPercent = 10.0;
+        const challengeStartDate = account.challenge?.createdAt || account.createdAt || new Date();
+        const daysSinceStart = Math.max(
+          1,
+          Math.floor((Date.now() - new Date(challengeStartDate).getTime()) / (1000 * 60 * 60 * 24))
+        );
+        // < 15 days: 60:40 | >= 15 days: 50:50
+        traderSplitPercent = daysSinceStart < 15 ? 60 : 50;
+      } else if (payoutNumber === 2) {
+        // Phoenix Rise 2nd Payout: 2% min gain, 60:40 split
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 60;
+      } else if (payoutNumber === 3) {
+        // Phoenix Rise 3rd Payout: 2% min gain, 70:30 split
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 70;
+      } else {
+        // Phoenix Rise 4th & subsequent: 2% min gain, 80:20 split lifetime
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 80;
+      }
+    } else {
+      // Rhino Rush (Funded Stage): Tiered Payout Rules (No Trailing Drawdown)
+      if (payoutNumber === 1) {
+        // 1st Payout: 2% min gain, 50:50 split
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 50;
+      } else if (payoutNumber === 2) {
+        // 2nd Payout: 2% min gain, 60:40 split
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 60;
+      } else if (payoutNumber === 3) {
+        // 3rd Payout: 2% min gain, 70:30 split
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 70;
+      } else {
+        // 4th & subsequent: 2% min gain, 80:20 split lifetime
+        minThresholdPercent = 2.0;
+        traderSplitPercent = 80;
+      }
+    }
+
+    const profitSplitRatio = `${traderSplitPercent}:${100 - traderSplitPercent}`;
+
     // Rule A: Minimum profit threshold
-    // Phoenix Rise: 2% on-demand. Rhino Rush: 5% on first payout, 2% on subsequent.
-    const minThresholdPercent = 2.0;
     const minimumProfitMet = profitPercent >= minThresholdPercent;
 
     // Rule B: Zero open trades
@@ -429,13 +495,15 @@ export class RiskEngineService {
     }
 
     const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && consistencyRuleMet;
-    const traderProfitSplit = isEligible ? Math.floor(netProfit * 0.80) : 0;
+    const traderProfitSplit = isEligible ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
 
     let failureReason: string | undefined;
     if (!zeroOpenTradesMet) {
       failureReason = `Account has ${openTradesCount} open position(s). All positions must be closed before payout.`;
     } else if (!minimumProfitMet) {
-      failureReason = `Current profit is ${profitPercent.toFixed(1)}% (₦${netProfit.toLocaleString()}), below the required ${minThresholdPercent}% minimum gain.`;
+      failureReason = isPhoenix && payoutNumber === 1
+        ? `Phoenix Rise 1st payout requires 10.0% net profit. Current gain is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}).`
+        : `Current profit is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}), below the required ${minThresholdPercent}% minimum gain.`;
     } else if (!consistencyRuleMet) {
       failureReason = 'Profit consistency rule breached: A single trade exceeded 50% of total profit.';
     } else if (!noActiveBreachesMet) {
@@ -450,6 +518,10 @@ export class RiskEngineService {
       currentProfit: netProfit,
       profitPercent,
       withdrawableProfitNgn: traderProfitSplit,
+      payoutNumber,
+      traderSplitPercent,
+      profitSplitRatio,
+      minRequiredPercent: minThresholdPercent,
       openTradesCount,
       reason: failureReason,
       breakdown: {
@@ -557,7 +629,7 @@ export class RiskEngineService {
           challengeId: account.challengeId,
           tradingAccountId: account.id,
           eventType: 'AUTOMATED_PAYOUT_APPROVED',
-          description: `Automated payout of ₦${payoutAmount.toLocaleString()} approved by Risk Engine and credited to Giants Vault.`,
+          description: `Automated payout #${eligibility.payoutNumber} of ₦${payoutAmount.toLocaleString()} (${eligibility.profitSplitRatio} tiered split) approved by Risk Engine and credited to Giants Vault.`,
           severity: 'INFO',
           snapshotBalance: account.currentBalance,
           snapshotEquity: account.currentEquity,
@@ -569,16 +641,19 @@ export class RiskEngineService {
 
     this.totalAutomatedPayoutsApproved++;
     this.logger.log(
-      `AUTOMATED PAYOUT SUCCESS: ₦${payoutAmount.toLocaleString()} credited to user ${user.id} (${account.accountNumber}). Ref: ${reference}`
+      `AUTOMATED PAYOUT SUCCESS: ₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber}, ${eligibility.profitSplitRatio}) credited to user ${user.id} (${account.accountNumber}). Ref: ${reference}`
     );
 
     return {
       success: true,
       reference,
       amountNgn: payoutAmount,
+      payoutNumber: eligibility.payoutNumber,
+      profitSplitRatio: eligibility.profitSplitRatio,
+      traderSplitPercent: eligibility.traderSplitPercent,
       depositedToWallet: true,
       accountNumber: account.accountNumber,
-      message: `₦${payoutAmount.toLocaleString()} has been approved and instantly disbursed to your Giants Vault.`,
+      message: `₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber} payout, ${eligibility.profitSplitRatio} split) has been approved and instantly disbursed to your Giants Vault.`,
     };
   }
 

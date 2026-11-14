@@ -735,7 +735,7 @@ export default function GiantsVaultPage() {
               href="/dashboard/challenges/buy"
               className="w-full py-2.5 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <span>Explore Trading Accounts</span>
+              <span>Buy New Account</span>
               <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
             </Link>
           </div>

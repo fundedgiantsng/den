@@ -278,20 +278,20 @@ export default function DashboardOverviewPage() {
               </Link>
             </div>
 
-            {/* Stacked Full-Width Account Rows */}
-            <div className="space-y-3">
+            {/* Stacked Full-Width Account Rows (Compact Height & Sleek Spacing) */}
+            <div className="space-y-2.5">
               {activeAccounts.map((acc) => (
                 <Link
                   key={acc.id}
                   href={`/dashboard/trading-accounts/${acc.id}`}
-                  className="block rounded-xl bg-black/40 border border-white/[0.06] p-4 hover:border-emerald-500/40 hover:bg-white/[0.02] transition-all group"
+                  className="block rounded-xl bg-black/40 border border-white/[0.06] p-3 sm:p-3.5 hover:border-emerald-500/40 hover:bg-white/[0.02] transition-all group"
                 >
                   {/* Top Row: Type with Stage Badge + Login ID | Middle: Account Size | Edge: Status Active */}
-                  <div className="flex items-center justify-between gap-2 border-b border-white/[0.04] pb-2.5 mb-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-white/[0.04] pb-2 mb-2">
                     {/* Left: Type + Stage Badge + Login ID */}
-                    <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-heading font-extrabold text-white text-sm sm:text-base tracking-tight group-hover:text-emerald-400 transition-colors">
+                        <span className="font-heading font-extrabold text-white text-xs sm:text-sm tracking-tight group-hover:text-emerald-400 transition-colors">
                           {acc.planName}
                         </span>
                         {/* Stage Badge on Type */}
@@ -307,7 +307,7 @@ export default function DashboardOverviewPage() {
                       </div>
 
                       {/* Login ID beside Type/Stage */}
-                      <span className="font-mono text-xs text-fgText-muted font-bold">
+                      <span className="font-mono text-[11px] text-fgText-muted font-bold">
                         {acc.loginId}
                       </span>
                     </div>
@@ -440,7 +440,7 @@ export default function DashboardOverviewPage() {
               href="/dashboard/challenges/buy"
               className="w-full py-2.5 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <span>Explore Trading Accounts</span>
+              <span>Buy New Account</span>
               <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
             </Link>
           </div>

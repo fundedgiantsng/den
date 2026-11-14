@@ -130,50 +130,50 @@ export default function TradingAccountsPage() {
 
         <Link
           href="/dashboard/challenges/buy"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Get New Account</span>
+          <span>Buy New Account</span>
         </Link>
       </div>
 
-      {/* 2. Top 3 Summary Metrics in a Row (Matching Snapshot) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* 2. Top 3 Summary Metrics in a Row (Compact & Sleek) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         {/* Metric 1: Active Accounts */}
-        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 shadow-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
-              <Users className="w-3.5 h-3.5" />
+        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 shadow-xl">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+              <Users className="w-3 h-3" />
             </div>
             <span className="text-[11px] font-medium text-fgText-secondary">Active Accounts</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-white tracking-tight">
+          <div className="text-xl sm:text-2xl font-mono font-bold text-white tracking-tight">
             {accounts.filter((a) => a.status === 'Active').length}
           </div>
         </div>
 
         {/* Metric 2: Total Profit */}
-        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 shadow-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
-              <TrendingUp className="w-3.5 h-3.5" />
+        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 shadow-xl">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+              <TrendingUp className="w-3 h-3" />
             </div>
             <span className="text-[11px] font-medium text-fgText-secondary">Total Profit</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-[#00f59b] tracking-tight">
+          <div className="text-xl sm:text-2xl font-mono font-bold text-[#00f59b] tracking-tight">
             +{formatNaira(totalProfitSum)}
           </div>
         </div>
 
         {/* Metric 3: Withdrawable */}
-        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 shadow-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
-              <Wallet className="w-3.5 h-3.5" />
+        <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 shadow-xl">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+              <Wallet className="w-3 h-3" />
             </div>
             <span className="text-[11px] font-medium text-fgText-secondary">Withdrawable</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-white tracking-tight">
+          <div className="text-xl sm:text-2xl font-mono font-bold text-white tracking-tight">
             {formatNaira(totalWithdrawableSum)}
           </div>
         </div>
@@ -211,13 +211,13 @@ export default function TradingAccountsPage() {
             filtered.map((acc) => (
               <div
                 key={acc.id}
-                className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 space-y-4 hover:border-emerald-500/30 transition-all shadow-xl"
+                className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-4.5 space-y-3 hover:border-emerald-500/30 transition-all shadow-xl"
               >
                 {/* Top Row: Stage Badge + Login ID */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] pb-3">
+                <div className="flex items-center justify-between border-b border-white/[0.04] pb-2.5">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold flex items-center gap-1.5 ${
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1.5 ${
                         acc.stage === 'Funded'
                           ? 'bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b]'
                           : 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
@@ -234,22 +234,22 @@ export default function TradingAccountsPage() {
                   </span>
                 </div>
 
-                {/* Middle Row: Current Balance + Total Profit */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
+                {/* Middle Row: Current Balance + Total Profit (Compact Sleek Typography) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-0.5">
                   <div>
-                    <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
+                    <div className="text-lg sm:text-xl font-mono font-bold text-white tracking-tight">
                       {formatNaira(acc.balanceNgn)}
                     </div>
-                    <span className="text-[11px] text-fgText-secondary uppercase tracking-wider">
+                    <span className="text-[10px] text-fgText-secondary uppercase tracking-wider">
                       Current Balance
                     </span>
                   </div>
 
                   <div>
-                    <div className="text-2xl sm:text-3xl font-mono font-extrabold text-[#00f59b] tracking-tight">
+                    <div className="text-lg sm:text-xl font-mono font-bold text-[#00f59b] tracking-tight">
                       +{formatNaira(acc.profitNgn)}
                     </div>
-                    <span className="text-[11px] text-fgText-secondary uppercase tracking-wider">
+                    <span className="text-[10px] text-fgText-secondary uppercase tracking-wider">
                       Total Profit
                     </span>
                   </div>
@@ -333,7 +333,7 @@ export default function TradingAccountsPage() {
               href="/dashboard/challenges/buy"
               className="w-full py-2.5 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <span>Explore Trading Accounts</span>
+              <span>Buy New Account</span>
               <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
             </Link>
           </div>

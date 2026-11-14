@@ -32,7 +32,7 @@ const navItems: NavItem[] = [
   { name: 'Trading Accounts', href: '/dashboard/trading-accounts', icon: TrendingUp },
   { name: 'CopyTrading', href: '/dashboard/copytrading', icon: Copy },
   { name: 'IB Program', href: '/dashboard/affiliate', icon: Users },
-  { name: 'Certificates', href: '/dashboard/trading-accounts', icon: Award },
+  { name: 'Certificates', href: '/dashboard/certificates', icon: Award },
 ];
 
 const secondaryNav: NavItem[] = [
@@ -98,7 +98,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Buy Challenge Action Button */}
+        {/* Buy New Account Action Button */}
         <div className="px-1">
           <Link
             href="/dashboard/challenges/buy"
@@ -106,7 +106,7 @@ export function Sidebar() {
           >
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4 text-black" />
-              <span>Buy Challenge</span>
+              <span>Buy New Account</span>
             </div>
             <ChevronRight className="w-3.5 h-3.5 stroke-[3] group-hover:translate-x-0.5 transition-transform" />
           </Link>
