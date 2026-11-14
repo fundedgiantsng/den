@@ -89,6 +89,62 @@ async function main() {
     });
   }
 
+  // 3. Verified Customer Account for Local Development & Real Ledger Testing
+  const existingCustomer = await prisma.user.findFirst({
+    where: { role: 'CUSTOMER' },
+    include: { wallet: true },
+  });
+
+  if (!existingCustomer) {
+    const demoUser = await prisma.user.create({
+      data: {
+        email: 'trader@fundedgiants.com',
+        phone: '+2348012345678',
+        firstName: 'John',
+        lastName: 'Doe',
+        role: 'CUSTOMER',
+        kycStatus: 'APPROVED',
+        bankAccounts: {
+          create: {
+            bankName: 'Access Bank',
+            bankCode: '044',
+            accountNumber: '0091823741',
+            accountName: 'JOHN DOE',
+            isVerified: true,
+          },
+        },
+      },
+    });
+
+    const wallet = await prisma.customerWallet.create({
+      data: {
+        userId: demoUser.id,
+        currency: 'NGN',
+        lencoVirtualBankName: 'Wema Bank',
+        lencoAccountName: 'FG / JOHN DOE',
+        lencoAccountNumber: '7041289410',
+        lencoAccountReference: 'LENCO_REF_FG_7041289410',
+      },
+    });
+
+    // Seed initial completed deposits into ledger
+    await prisma.deposit.create({
+      data: {
+        walletId: wallet.id,
+        reference: 'FG-INIT-DEP-001',
+        amount: 12450000,
+        currency: 'NGN',
+        status: 'SUCCESSFUL',
+        reconciled: true,
+        senderName: 'JOHN DOE',
+        senderBank: 'Access Bank',
+        senderAccount: '0091823741',
+      },
+    });
+
+    console.log('Seeded demo customer account with wallet balance and bank account.');
+  }
+
   console.log('Database seeded successfully with chart of accounts and fee engine configuration.');
 }
 

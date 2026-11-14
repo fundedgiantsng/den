@@ -8,6 +8,7 @@ import { AdminConfigController } from './modules/admin/admin-config.controller';
 import { RiskEngineModule } from './modules/risk/risk-engine.module';
 import { AffiliateModule } from './modules/affiliate/affiliate.module';
 import { WalletModule } from './modules/wallet/wallet.module';
+import { CopyTradingModule } from './modules/copytrading/copytrading.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
     RiskEngineModule,
     AffiliateModule,
     WalletModule,
+    CopyTradingModule,
   ],
   controllers: [AdminConfigController],
 })

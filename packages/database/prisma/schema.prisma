@@ -73,6 +73,7 @@ model User {
   referredBy        AffiliateReferral?  @relation("ReferredUser")
   auditEvents       AuditEvent[]
   kycRecords        KycRecord[]
+  copySubscriptions CopySubscription[]
 
   @@index([email])
   @@index([phone])
@@ -681,4 +682,127 @@ model WebhookEvent {
 
   @@index([provider, eventType])
   @@index([isProcessed])
+}
+
+// -------------------------------------------------------------
+// 8. CopyTrading & Strategy Mirroring
+// -------------------------------------------------------------
+
+enum CopyTradingStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+  ARCHIVED
+}
+
+enum CopyMode {
+  PROPORTIONAL_EQUITY
+  FIXED_LOT
+  MULTIPLIER
+}
+
+model MasterTrader {
+  id                    String              @id @default(uuid())
+  name                  String
+  handle                String              @unique
+  avatarUrl             String?
+  strategyType          String              // e.g. "Scalping", "Trend Following", "Swing FX", "Gold Specialist"
+  description           String
+  accountNumber         String              @unique
+  platform              String              @default("SteraTrader")
+  server                String              @default("FundedGiants Live")
+  accountSizeNgn        Decimal             @db.Decimal(18, 2)
+  winRatePercent        Decimal             @db.Decimal(5, 2)
+  roiPercent            Decimal             @db.Decimal(8, 2)
+  maxDrawdownPercent    Decimal             @db.Decimal(5, 2)
+  profitFactor          Decimal             @default(2.1) @db.Decimal(5, 2)
+  sharpeRatio           Decimal             @default(1.8) @db.Decimal(5, 2)
+  totalTradesCount      Int                 @default(0)
+  winningTradesCount    Int                 @default(0)
+  losingTradesCount     Int                 @default(0)
+  copiersCount          Int                 @default(0)
+  totalAumNgn           Decimal             @default(0) @db.Decimal(18, 2)
+  minCopyCapitalNgn     Decimal             @default(1000000) @db.Decimal(18, 2)
+  performanceFeePercent Decimal             @default(20.00) @db.Decimal(5, 2)
+  status                CopyTradingStatus   @default(ACTIVE)
+  isFeatured            Boolean             @default(false)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  subscriptions         CopySubscription[]
+  trades                MasterTradeRecord[]
+
+  @@index([status])
+  @@index([isFeatured])
+}
+
+model CopySubscription {
+  id                    String              @id @default(uuid())
+  userId                String
+  masterTraderId        String
+  allocatedCapitalNgn   Decimal             @db.Decimal(18, 2)
+  copyMode              CopyMode            @default(PROPORTIONAL_EQUITY)
+  fixedLotSize          Decimal?            @db.Decimal(5, 2)
+  multiplier            Decimal             @default(1.0) @db.Decimal(4, 2)
+  maxDailyLossNgn       Decimal?            @db.Decimal(18, 2)
+  stopLossEquityNgn     Decimal?            @db.Decimal(18, 2)
+  status                CopyTradingStatus   @default(ACTIVE)
+  totalCopiedTrades     Int                 @default(0)
+  totalProfitNgn        Decimal             @default(0) @db.Decimal(18, 2)
+  netRoiPercent         Decimal             @default(0) @db.Decimal(8, 2)
+  startedAt             DateTime            @default(now())
+  stoppedAt             DateTime?
+
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterTrader          MasterTrader        @relation(fields: [masterTraderId], references: [id])
+  copiedTrades          CopiedTradeExecution[]
+
+  @@index([userId])
+  @@index([masterTraderId])
+  @@index([status])
+}
+
+model MasterTradeRecord {
+  id              String              @id @default(uuid())
+  masterTraderId  String
+  ticketId        String              @unique
+  symbol          String
+  direction       String              // BUY / SELL
+  volume          Decimal             @db.Decimal(10, 2)
+  openPrice       Decimal             @db.Decimal(18, 5)
+  closePrice      Decimal?            @db.Decimal(18, 5)
+  stopLoss        Decimal?            @db.Decimal(18, 5)
+  takeProfit      Decimal?            @db.Decimal(18, 5)
+  profitNgn       Decimal?            @db.Decimal(18, 2)
+  openedAt        DateTime            @default(now())
+  closedAt        DateTime?
+
+  masterTrader    MasterTrader        @relation(fields: [masterTraderId], references: [id])
+  replications    CopiedTradeExecution[]
+
+  @@index([masterTraderId])
+  @@index([ticketId])
+}
+
+model CopiedTradeExecution {
+  id                  String            @id @default(uuid())
+  subscriptionId      String
+  masterTradeId       String
+  externalTicketId    String?
+  symbol              String
+  direction           String
+  volume              Decimal           @db.Decimal(10, 2)
+  openPrice           Decimal           @db.Decimal(18, 5)
+  closePrice          Decimal?          @db.Decimal(18, 5)
+  profitNgn           Decimal?          @db.Decimal(18, 2)
+  slippagePips        Decimal?          @db.Decimal(5, 2)
+  status              String            @default("EXECUTED") // EXECUTED, CLOSED, FAILED
+  openedAt            DateTime          @default(now())
+  closedAt            DateTime?
+
+  subscription        CopySubscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  masterTrade         MasterTradeRecord @relation(fields: [masterTradeId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([masterTradeId])
 }
