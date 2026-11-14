@@ -47,6 +47,7 @@ enum OtpStatus {
 
 model User {
   id                String       @id @default(uuid())
+  username          String?      @unique // Unique sitewide handle chosen on first login
   email             String?      @unique
   phone             String?      @unique
   firstName         String?
@@ -580,10 +581,13 @@ model RiskEvent {
 model AffiliateProfile {
   id                 String              @id @default(uuid())
   userId             String              @unique
-  referralCode       String              @unique // e.g. GIANTS-782
+  referralCode       String              @unique // username or referral handle e.g. giantstrader
   totalReferrals     Int                 @default(0)
   totalCommissions   Decimal             @default(0) @db.Decimal(18, 2)
   withdrawnCommissions Decimal           @default(0) @db.Decimal(18, 2)
+  cpaCommissionRate  Decimal             @default(10.00) @db.Decimal(5, 2) // Flat 10% CPA on all challenge/funding sales
+  payoutCommissionRate Decimal           @default(3.00) @db.Decimal(5, 2)  // Flat 3% recurring commission on all referral payouts
+  customDiscountPercent Decimal          @default(0.00) @db.Decimal(5, 2)  // Discount (0% to 10%) shared with referral, deducted from CPA
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 

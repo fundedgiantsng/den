@@ -5,17 +5,25 @@ import { prisma } from '@fundedgiants/database';
 export class AffiliateService {
   private readonly logger = new Logger(AffiliateService.name);
 
-  // Commission Tiers: Tier 1 (1-10 referrals: 10%), Tier 2 (11-50 referrals: 15%), Tier 3 (50+: 20%)
-  private getCommissionRate(totalReferrals: number): number {
-    if (totalReferrals >= 50) return 0.20;
-    if (totalReferrals >= 11) return 0.15;
-    return 0.10;
-  }
+  // Authoritative Compensation: Flat 10% CPA on challenge/account sales + 3% on recurring referral payouts
+  public static readonly BASE_CPA_RATE = 10.0;
+  public static readonly PAYOUT_COMMISSION_RATE = 3.0;
 
   /**
-   * Get or automatically generate affiliate profile for user
+   * Get or automatically generate affiliate profile for user using their username
    */
   async getOrCreateProfile(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Default username if not set on first profile fill
+    const usernameHandle = user.username || user.email?.split('@')[0] || `trader${user.id.slice(0, 5)}`;
+
     let profile = await prisma.affiliateProfile.findUnique({
       where: { userId },
       include: {
@@ -24,6 +32,7 @@ export class AffiliateService {
             referredUser: {
               select: {
                 id: true,
+                username: true,
                 email: true,
                 phone: true,
                 firstName: true,
@@ -41,14 +50,13 @@ export class AffiliateService {
     });
 
     if (!profile) {
-      // Generate clean unique referral code: e.g. FG-89214
-      const randomSuffix = Math.floor(10000 + Math.random() * 90000).toString();
-      const referralCode = `FG-${randomSuffix}`;
-
       profile = await prisma.affiliateProfile.create({
         data: {
           userId,
-          referralCode,
+          referralCode: usernameHandle,
+          cpaCommissionRate: AffiliateService.BASE_CPA_RATE,
+          payoutCommissionRate: AffiliateService.PAYOUT_COMMISSION_RATE,
+          customDiscountPercent: 0,
           totalReferrals: 0,
           totalCommissions: 0,
           withdrawnCommissions: 0,
@@ -59,6 +67,7 @@ export class AffiliateService {
               referredUser: {
                 select: {
                   id: true,
+                  username: true,
                   email: true,
                   phone: true,
                   firstName: true,
@@ -76,24 +85,29 @@ export class AffiliateService {
     const availableCommission =
       Number(profile.totalCommissions) - Number(profile.withdrawnCommissions);
 
-    const commissionRate = this.getCommissionRate(profile.totalReferrals);
+    const discountShare = Number(profile.customDiscountPercent);
+    const netCpaRate = AffiliateService.BASE_CPA_RATE - discountShare;
 
     return {
       success: true,
       profile: {
         id: profile.id,
+        username: profile.referralCode,
         referralCode: profile.referralCode,
         referralLink: `https://fundedgiants.com/ref/${profile.referralCode}`,
+        cpaRatePercent: AffiliateService.BASE_CPA_RATE,
+        netCpaRatePercent: netCpaRate > 0 ? netCpaRate : 0,
+        payoutRatePercent: AffiliateService.PAYOUT_COMMISSION_RATE,
+        discountSharedPercent: discountShare,
         totalReferrals: profile.totalReferrals,
         totalCommissionsNgn: Number(profile.totalCommissions),
         withdrawnCommissionsNgn: Number(profile.withdrawnCommissions),
         availableCommissionNgn: availableCommission > 0 ? availableCommission : 0,
-        currentTierRatePercent: Math.round(commissionRate * 100),
       },
       referrals: profile.referrals.map((r) => ({
         id: r.id,
         date: r.createdAt,
-        referredUser: r.referredUser.email || r.referredUser.phone || 'Trader',
+        referredUser: r.referredUser.username || r.referredUser.email || 'Trader',
       })),
       recentCommissions: profile.commissions.map((c) => ({
         id: c.id,
@@ -102,6 +116,31 @@ export class AffiliateService {
         status: c.status,
         date: c.createdAt,
       })),
+    };
+  }
+
+  /**
+   * Update affiliate discount code share (0% to 10% deducted from their 10% CPA)
+   */
+  async updateDiscountShare(userId: string, discountPercent: number) {
+    if (discountPercent < 0 || discountPercent > 10) {
+      throw new BadRequestException('Discount shared must be between 0% and 10%.');
+    }
+
+    const profile = await prisma.affiliateProfile.update({
+      where: { userId },
+      data: {
+        customDiscountPercent: discountPercent,
+      },
+    });
+
+    const netCpa = AffiliateService.BASE_CPA_RATE - discountPercent;
+
+    return {
+      success: true,
+      message: `Referral discount updated to ${discountPercent}%. Your net CPA is now ${netCpa}%.`,
+      customDiscountPercent: discountPercent,
+      netCpaRatePercent: netCpa,
     };
   }
 
@@ -133,7 +172,6 @@ export class AffiliateService {
 
     // Atomic double-entry update
     await prisma.$transaction([
-      // 1. Update affiliate profile withdrawn amounts
       prisma.affiliateProfile.update({
         where: { id: profile.id },
         data: {
@@ -141,7 +179,6 @@ export class AffiliateService {
         },
       }),
 
-      // 2. Record Deposit entry into Giants Vault
       prisma.deposit.create({
         data: {
           walletId: profile.user.wallet.id,
