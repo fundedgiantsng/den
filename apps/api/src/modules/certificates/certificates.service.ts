@@ -21,9 +21,32 @@ export class CertificatesService {
   private readonly templatesDir = path.join(__dirname, '../../../assets/certificates/templates');
   private readonly generatedDir = path.join(__dirname, '../../../../trader-web/public/certificates/generated');
 
+  // In-memory template buffer caching for ultra-high throughput (hundreds of certs/sec without disk I/O)
+  private completionTemplateBuffer: Buffer | null = null;
+  private payoutTemplateBuffer: Buffer | null = null;
+
   constructor() {
     if (!fs.existsSync(this.generatedDir)) {
       fs.mkdirSync(this.generatedDir, { recursive: true });
+    }
+    this.prewarmTemplates();
+  }
+
+  /**
+   * Preload certificate template images into memory for high-throughput stamping
+   */
+  private prewarmTemplates() {
+    try {
+      const completionPath = path.join(this.templatesDir, 'rhino-rush-completion-template.jpg');
+      if (fs.existsSync(completionPath)) {
+        this.completionTemplateBuffer = fs.readFileSync(completionPath);
+      }
+      const payoutPath = path.join(this.templatesDir, 'payout-certificate-template.jpg');
+      if (fs.existsSync(payoutPath)) {
+        this.payoutTemplateBuffer = fs.readFileSync(payoutPath);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not preload templates into memory: ${err.message}`);
     }
   }
 
@@ -49,15 +72,15 @@ export class CertificatesService {
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
 
+    // Granular scan: line begins at x=113, ends at x=581 (width = 468px), y=348
     const overlaySvg = `
-      <svg width="1024" height="723" xmlns="http://www.w3.org/2000/svg">
+      <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
               font-family: 'Plus Jakarta Sans', 'Inter', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               font-weight: 800;
               fill: #FFFFFF;
-              letter-spacing: 2px;
             }
             .date-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
@@ -74,8 +97,8 @@ export class CertificatesService {
           </style>
         </defs>
 
-        <!-- Trader Name in Title Case, expanded/scaled across line at y=348 -->
-        <text x="110" y="328" font-size="40" class="trader-name" textLength="430" lengthAdjust="spacing">${cleanName}</text>
+        <!-- Trader Name scaled across full 468px line width -->
+        <text x="113" y="336" font-size="52" class="trader-name" textLength="468" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
 
         <!-- Issue Date (enlarged, bold white) -->
         <text x="168" y="643" font-size="17" class="date-text">${issueDate}</text>
@@ -86,7 +109,8 @@ export class CertificatesService {
     `;
 
     try {
-      await sharp(templatePath)
+      const baseBuffer = this.completionTemplateBuffer || fs.readFileSync(templatePath);
+      await sharp(baseBuffer)
         .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
         .jpeg({ quality: 95 })
         .toFile(outputPath);
@@ -169,21 +193,22 @@ export class CertificatesService {
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
 
+    // Granular scan:
+    // Name line begins at x=106, ends at x=569 (width = 463px), y=371
+    // Profit Split line begins at x=105, ends at x=575 (width = 470px), y=484
     const overlaySvg = `
-      <svg width="1024" height="723" xmlns="http://www.w3.org/2000/svg">
+      <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <style>
             .trader-name {
               font-family: 'Plus Jakarta Sans', 'Inter', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               font-weight: 800;
               fill: #FFFFFF;
-              letter-spacing: 2px;
             }
             .profit-split {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
               font-weight: 800;
               fill: #FFFFFF;
-              letter-spacing: 1.5px;
             }
             .date-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
@@ -207,11 +232,11 @@ export class CertificatesService {
           </style>
         </defs>
 
-        <!-- 1. Trader Name in Title Case, expanded/scaled across line at y=371 -->
-        <text x="110" y="354" font-size="40" class="trader-name" textLength="430" lengthAdjust="spacing">${cleanName}</text>
+        <!-- 1. Trader Name scaled across full 463px line width -->
+        <text x="106" y="358" font-size="52" class="trader-name" textLength="463" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
 
-        <!-- 2. Profit Split full amount scaled/expanded to fill the line at y=484 -->
-        <text x="110" y="468" font-size="46" class="profit-split" textLength="430" lengthAdjust="spacing">${formattedAmount}</text>
+        <!-- 2. Profit Split full amount scaled across full 470px line width -->
+        <text x="105" y="472" font-size="54" class="profit-split" textLength="470" lengthAdjust="spacingAndGlyphs">${formattedAmount}</text>
 
         <!-- 3. Date right below Profit Split section, placed on Date line at y=531 -->
         <text x="160" y="527" font-size="16" class="date-text">${issueDate}</text>
@@ -238,7 +263,8 @@ export class CertificatesService {
     `;
 
     try {
-      await sharp(templatePath)
+      const baseBuffer = this.payoutTemplateBuffer || fs.readFileSync(templatePath);
+      await sharp(baseBuffer)
         .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
         .jpeg({ quality: 95 })
         .toFile(outputPath);
