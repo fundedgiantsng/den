@@ -172,22 +172,22 @@ export default function DashboardOverviewPage() {
       {/* Top 3 Metric Cards Grid (Modular & Disciplined Font Sizing) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
         {/* Card 1: Giants Vault (NGN) */}
-        <div className="fg-card p-4 flex flex-col justify-between space-y-3">
+        <div className="fg-card p-4 sm:p-5 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
               <Wallet className="w-4 h-4 text-emerald-400" />
               <span>Giants Vault</span>
             </div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
               Central NGN
             </span>
           </div>
 
           <div>
-            <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-white tracking-tight">
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-white tracking-tight">
               {formatNaira(wallet.availableBalanceNgn)}
             </div>
-            <p className="text-[10px] text-fgText-muted mt-0.5 font-medium">
+            <p className="text-xs text-fgText-muted mt-1 font-medium">
               Available Spendable & Payout Balance
             </p>
           </div>
@@ -196,38 +196,38 @@ export default function DashboardOverviewPage() {
           <div className="flex items-center gap-2 pt-1">
             <Link
               href="/dashboard/wallet?tab=DEPOSIT"
-              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold flex items-center justify-center gap-1 transition-all"
+              className="flex-1 py-2 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm"
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
               <span>Deposit</span>
             </Link>
             <Link
               href="/dashboard/wallet"
-              className="flex-1 py-1.5 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+              className="flex-1 py-2 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
             >
-              <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
               <span>Manage</span>
             </Link>
           </div>
         </div>
 
         {/* Card 2: Cumulative Trading Performance */}
-        <div className="fg-card p-4 flex flex-col justify-between space-y-3">
+        <div className="fg-card p-4 sm:p-5 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
               <span>Performance & Payouts</span>
             </div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
               +6.84% Total
             </span>
           </div>
 
           <div>
-            <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-emerald-400 tracking-tight">
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-emerald-400 tracking-tight">
               +{formatNaira(wallet.withdrawableProfitsNgn)}
             </div>
-            <p className="text-[10px] text-fgText-muted mt-0.5 font-medium">
+            <p className="text-xs text-fgText-muted mt-1 font-medium">
               Accumulated Withdrawable Trader Share
             </p>
           </div>
@@ -235,31 +235,31 @@ export default function DashboardOverviewPage() {
           <div className="flex items-center gap-2 pt-1">
             <Link
               href="/dashboard/wallet?tab=WITHDRAW"
-              className="w-full py-1.5 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+              className="w-full py-2 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
             >
-              <ArrowUpRight className="w-3 h-3 text-emerald-400" />
+              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
               <span>Request Payout</span>
             </Link>
           </div>
         </div>
 
         {/* Card 3: Total Allocated Capital */}
-        <div className="fg-card p-4 flex flex-col justify-between space-y-3 sm:col-span-2 lg:col-span-1">
+        <div className="fg-card p-4 sm:p-5 flex flex-col justify-between space-y-3 sm:col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
               <Coins className="w-4 h-4 text-sky-400" />
               <span>Total Active Capital</span>
             </div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono">
               SteraTrader
             </span>
           </div>
 
           <div>
-            <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-white tracking-tight">
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-white tracking-tight">
               {formatNaira(wallet.totalCapitalNgn)}
             </div>
-            <p className="text-[10px] text-fgText-muted mt-0.5 font-medium">
+            <p className="text-xs text-fgText-muted mt-1 font-medium">
               {activeAccounts.length} Active Challenge / Funded Accounts
             </p>
           </div>
@@ -267,9 +267,9 @@ export default function DashboardOverviewPage() {
           <div className="flex items-center gap-2 pt-1">
             <Link
               href="/dashboard/challenges/buy"
-              className="w-full py-1.5 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+              className="w-full py-2 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
             >
-              <Plus className="w-3 h-3 text-sky-400" />
+              <Plus className="w-3.5 h-3.5 text-sky-400" />
               <span>Scale Up Capital</span>
             </Link>
           </div>
@@ -285,40 +285,39 @@ export default function DashboardOverviewPage() {
               Active Trading Accounts
             </h2>
             <Link
-              href="/dashboard/accounts"
-              className="text-[11px] text-emerald-400 hover:underline font-semibold"
+              href="/dashboard/trading-accounts"
+              className="text-xs text-emerald-400 hover:underline font-semibold"
             >
               View All ({activeAccounts.length}) &rarr;
             </Link>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {activeAccounts.map((acc) => {
               const isPhoenix = acc.planType.includes('PHOENIX');
               const isRhino = acc.planType.includes('RHINO');
 
-              // Exact phase badge logic:
-              // Rhino Rush: "Challenge" or "Funded"
-              // Phoenix Rise: "Instant Funding"
               let badgeText = acc.currentPhase || (isPhoenix ? 'Instant Funding' : 'Challenge');
               if (isPhoenix) badgeText = 'Instant Funding';
 
               const isFundedPhase = badgeText === 'Funded' || isPhoenix;
+              const ddPercentage = Math.min(100, Math.round((acc.dailyDrawdownNgn / acc.dailyDrawdownLimitNgn) * 100));
+              const remainingHeadroomNgn = Math.max(0, acc.dailyDrawdownLimitNgn - acc.dailyDrawdownNgn);
 
               return (
                 <div
                   key={acc.id}
-                  className="fg-card p-4 space-y-3 hover:border-white/20 transition-all"
+                  className="fg-card p-4 sm:p-5 space-y-4 hover:border-emerald-500/30 transition-all shadow-cardGlow"
                 >
-                  <div className="flex items-start justify-between">
+                  {/* Account Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/[0.06]">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-heading font-extrabold text-sm text-white">
+                        <span className="font-heading font-extrabold text-base sm:text-lg text-white">
                           {acc.planName}
                         </span>
-                        {/* Phase Badge with reduced font size */}
                         <span
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
                             isPhoenix
                               ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
                               : isFundedPhase
@@ -329,53 +328,92 @@ export default function DashboardOverviewPage() {
                           {badgeText}
                         </span>
                       </div>
-                      <div className="text-[10px] text-fgText-secondary font-mono mt-0.5">
-                        Login: <span className="text-white font-bold">{acc.id}</span> • Platform:{' '}
-                        {acc.platform}
+                      <div className="text-xs text-fgText-secondary font-mono mt-1 flex items-center gap-2">
+                        <span>Login: <strong className="text-white">{acc.id}</strong></span>
+                        <span>&bull;</span>
+                        <span>Platform: <strong className="text-white">{acc.platform}</strong></span>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="text-xs font-mono font-bold text-white">
+                    <div className="sm:text-right">
+                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
+                        Capital Allocation
+                      </span>
+                      <div className="text-base sm:text-lg md:text-xl font-bold font-mono text-white tracking-tight">
                         {formatNaira(acc.sizeNgn)}
                       </div>
-                      <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                        {acc.profitPercent} ({formatNaira(acc.profitNgn)})
+                    </div>
+                  </div>
+
+                  {/* Modular Metric Grid (Legible, High-Contrast Typography) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-xl bg-bg-card border border-white/[0.06]">
+                    {/* Metric 1: Net Profit */}
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
+                        Net Profit / P&L
+                      </span>
+                      <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tracking-tight">
+                        +{formatNaira(acc.profitNgn)}
+                      </div>
+                      <span className="text-[11px] font-semibold text-emerald-300 font-mono block">
+                        {acc.profitPercent} Gain
+                      </span>
+                    </div>
+
+                    {/* Metric 2: Today's Drawdown */}
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
+                        Daily Drawdown (4%)
+                      </span>
+                      <div className="text-xs sm:text-sm font-bold font-mono text-white tracking-tight">
+                        {formatNaira(acc.dailyDrawdownNgn)}
+                      </div>
+                      <span className="text-[10px] text-fgText-muted font-mono block">
+                        of {formatNaira(acc.dailyDrawdownLimitNgn)} Max
+                      </span>
+                    </div>
+
+                    {/* Metric 3: Headroom Safe Buffer */}
+                    <div className="col-span-2 sm:col-span-1 space-y-0.5">
+                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
+                        Drawdown Headroom
+                      </span>
+                      <div className="text-xs sm:text-sm font-bold font-mono text-emerald-400 tracking-tight">
+                        {formatNaira(remainingHeadroomNgn)}
+                      </div>
+                      <span className="text-[10px] text-emerald-300 font-semibold block">
+                        Safe Room Remaining
                       </span>
                     </div>
                   </div>
 
-                  {/* Daily Drawdown Progress */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-fgText-secondary font-mono">
-                      <span>Daily Drawdown Used:</span>
-                      <span className="text-white">
-                        {formatNaira(acc.dailyDrawdownNgn)} / {formatNaira(acc.dailyDrawdownLimitNgn)} (4%)
-                      </span>
+                  {/* Daily Drawdown Progress Bar */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between text-xs font-mono">
+                      <span className="text-fgText-secondary font-medium">Daily Risk Cushion:</span>
+                      <span className="text-white font-bold">{ddPercentage}% used ({100 - ddPercentage}% remaining)</span>
                     </div>
-                    <div className="h-1.5 w-full bg-white/[0.06] rounded-full overflow-hidden">
+                    <div className="h-2 w-full bg-white/[0.06] rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (acc.dailyDrawdownNgn / acc.dailyDrawdownLimitNgn) * 100
-                          )}%`,
-                        }}
+                        className={`h-full rounded-full transition-all ${
+                          ddPercentage > 75 ? 'bg-red-500' : ddPercentage > 50 ? 'bg-amber-400' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${ddPercentage}%` }}
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[11px]">
+                  {/* Card Action Footer */}
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-xs">
                     <span className="text-fgText-secondary">
-                      Leverage: <span className="text-white font-bold">{isPhoenix ? '1:30' : '1:100'}</span>
+                      Leverage: <strong className="text-white">{isPhoenix ? '1:30' : '1:100'}</strong>
                     </span>
                     <Link
-                      href={`/dashboard/accounts/${acc.id}`}
-                      className="text-emerald-400 hover:underline font-semibold flex items-center gap-1"
+                      href={`/dashboard/trading-accounts/${acc.id}`}
+                      className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors"
                     >
-                      <span>Trading Terminal</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <span>Launch SteraTrader Terminal</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </Link>
                   </div>
                 </div>

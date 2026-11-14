@@ -181,73 +181,93 @@ export default function TradingAccountsPage() {
               </div>
 
               <div className="text-right">
-                <span className="text-xs text-fgText-muted block uppercase">Capital</span>
-                <span className="text-lg font-heading font-extrabold text-white">
+                <span className="text-[10px] font-semibold text-fgText-muted block uppercase tracking-wider">
+                  Capital Allocation
+                </span>
+                <span className="text-lg sm:text-xl md:text-2xl font-mono font-bold text-white tracking-tight">
                   {formatNaira(acc.sizeNgn)}
                 </span>
               </div>
             </div>
 
-            {/* Metrics 3-Col Bar */}
-            <div className="grid grid-cols-3 gap-3 p-3.5 rounded-xl bg-bg-card border border-fgBorder-subtle text-center text-xs">
-              <div>
-                <span className="text-[10px] text-fgText-muted block uppercase">Net Profit</span>
-                <span className="font-heading font-bold text-emerald-400">
+            {/* Metrics 3-Col Bar (Legible, Bold Numbers) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-bg-card border border-fgBorder-subtle text-left sm:text-center">
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-fgText-muted block uppercase tracking-wider font-semibold">
+                  Net Profit / P&L
+                </span>
+                <span className="text-base sm:text-lg font-mono font-bold text-emerald-400 block tracking-tight">
                   +{formatNaira(acc.profitNgn)}
                 </span>
-                <span className="text-[10px] text-emerald-300 block">({acc.profitPercent})</span>
+                <span className="text-xs text-emerald-300 font-mono font-semibold block">({acc.profitPercent} Gain)</span>
               </div>
 
-              <div>
-                <span className="text-[10px] text-fgText-muted block uppercase">Equity</span>
-                <span className="font-heading font-bold text-white">
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-fgText-muted block uppercase tracking-wider font-semibold">
+                  Current Equity
+                </span>
+                <span className="text-base sm:text-lg font-mono font-bold text-white block tracking-tight">
                   {formatNaira(acc.equityNgn)}
                 </span>
+                <span className="text-xs text-fgText-muted font-mono block">Balance: {formatNaira(acc.balanceNgn)}</span>
               </div>
 
-              <div>
-                <span className="text-[10px] text-fgText-muted block uppercase">Trading Days</span>
-                <span className="font-heading font-bold text-white">{acc.tradingDays} Days</span>
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-fgText-muted block uppercase tracking-wider font-semibold">
+                  Trading Days
+                </span>
+                <span className="text-base sm:text-lg font-mono font-bold text-white block tracking-tight">
+                  {acc.tradingDays} Days Active
+                </span>
+                <span className="text-xs text-emerald-400 font-semibold block">Active & Compliant</span>
               </div>
             </div>
 
-            {/* Risk Engine Compliance Bars */}
-            <div className="space-y-3 pt-2">
+            {/* Risk Engine Compliance Bars (Legible Drawdown Headroom) */}
+            <div className="space-y-3.5 pt-1">
               {/* Daily Drawdown */}
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-fgText-secondary">Daily Drawdown (Max 4%)</span>
-                  <span className="font-mono text-white">
-                    {formatNaira(acc.dailyLossNgn)} / {formatNaira(acc.dailyLossLimitNgn)}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-fgText-secondary font-medium">Daily Drawdown (Max 4%)</span>
+                  <span className="font-mono text-sm font-bold text-white">
+                    {formatNaira(acc.dailyLossNgn)} <span className="text-fgText-muted font-normal text-xs">/ {formatNaira(acc.dailyLossLimitNgn)}</span>
                   </span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-bg-base overflow-hidden">
                   <div
-                    className="h-full bg-emerald-400 rounded-full"
+                    className="h-full bg-emerald-400 rounded-full transition-all"
                     style={{
                       width: `${(acc.dailyLossNgn / acc.dailyLossLimitNgn) * 100}%`,
                     }}
                   />
                 </div>
+                <div className="flex justify-between text-[11px] text-fgText-muted font-mono">
+                  <span>Used: {Math.round((acc.dailyLossNgn / acc.dailyLossLimitNgn) * 100)}%</span>
+                  <span className="text-emerald-400 font-semibold">Headroom: {formatNaira(acc.dailyLossLimitNgn - acc.dailyLossNgn)} remaining</span>
+                </div>
               </div>
 
               {/* Max Drawdown */}
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-fgText-secondary">
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-fgText-secondary font-medium">
                     Max Loss Limit ({acc.planType === 'PHOENIX_RISE' ? '7%' : '10%'})
                   </span>
-                  <span className="font-mono text-white">
-                    {formatNaira(acc.maxLossNgn)} / {formatNaira(acc.maxLossLimitNgn)}
+                  <span className="font-mono text-sm font-bold text-white">
+                    {formatNaira(acc.maxLossNgn)} <span className="text-fgText-muted font-normal text-xs">/ {formatNaira(acc.maxLossLimitNgn)}</span>
                   </span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-bg-base overflow-hidden">
                   <div
-                    className="h-full bg-amber-400 rounded-full"
+                    className="h-full bg-amber-400 rounded-full transition-all"
                     style={{
                       width: `${(acc.maxLossNgn / acc.maxLossLimitNgn) * 100}%`,
                     }}
                   />
+                </div>
+                <div className="flex justify-between text-[11px] text-fgText-muted font-mono">
+                  <span>Used: {Math.round((acc.maxLossNgn / acc.maxLossLimitNgn) * 100)}%</span>
+                  <span className="text-amber-300 font-semibold">Loss Buffer: {formatNaira(acc.maxLossLimitNgn - acc.maxLossNgn)} remaining</span>
                 </div>
               </div>
             </div>

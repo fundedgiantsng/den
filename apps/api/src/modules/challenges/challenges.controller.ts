@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  Param,
   HttpCode,
   HttpStatus,
   Req,
@@ -38,6 +39,25 @@ export class ChallengesController {
   async getMyAccounts(@Req() req: Request) {
     const userId = await this.resolveUserId(req);
     return this.challengesService.getUserAccounts(userId);
+  }
+
+  @Get('accounts/:id')
+  @ApiOperation({ summary: 'Get detailed account analytics and risk engine state' })
+  async getAccountDetails(@Param('id') id: string, @Req() req: Request) {
+    const userId = await this.resolveUserId(req);
+    return this.challengesService.getAccountDetails(id, userId);
+  }
+
+  @Post('accounts/:id/payout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request trading profit payout into Giants Vault' })
+  async requestPayout(
+    @Param('id') id: string,
+    @Body() body: { amountNgn?: number },
+    @Req() req: Request
+  ) {
+    const userId = await this.resolveUserId(req);
+    return this.challengesService.requestAccountPayout(id, userId, body.amountNgn);
   }
 
   @Post('purchase-from-wallet')
