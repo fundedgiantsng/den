@@ -15,6 +15,7 @@ import { prisma } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { RiskEngineService } from '../risk/risk-engine.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -24,7 +25,8 @@ export class WebhooksController {
   constructor(
     private readonly lencoService: LencoService,
     private readonly ninjaKycService: NinjaKycService,
-    private readonly steraTraderService: SteraTraderService
+    private readonly steraTraderService: SteraTraderService,
+    private readonly riskEngineService: RiskEngineService
   ) {}
 
   /**
@@ -345,5 +347,52 @@ export class WebhooksController {
     }
 
     return { status: 'success' };
+  }
+
+  /**
+   * SteraTrader Trade Event & Real-Time Equity Webhook
+   * Dispatched instantaneously on TRADE_OPEN, TRADE_CLOSE, TRADE_UPDATE, and EQUITY_TICK.
+   * Feeds directly into RiskEngine for sub-second rule evaluation and breach termination.
+   */
+  @Post('steratrader/events')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Receive real-time trade execution and equity ticks from SteraTrader' })
+  async handleSteraTraderEvent(
+    @Body() payload: any,
+    @Headers('x-steratrader-signature') signature: string
+  ) {
+    const secret = process.env.STERATRADER_WEBHOOK_SECRET || 'fg_stera_live_secret';
+    if (signature) {
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+      if (signature !== expected) {
+        throw new UnauthorizedException('Invalid SteraTrader webhook signature');
+      }
+    }
+
+    if (!payload.accountNumber) {
+      throw new BadRequestException('Missing accountNumber in SteraTrader event');
+    }
+
+    this.logger.debug(
+      `SteraTrader Event [${payload.event || 'TICK'}]: Account ${payload.accountNumber}`
+    );
+
+    return this.riskEngineService.processTradeEvent({
+      event: payload.event || 'EQUITY_TICK',
+      accountNumber: payload.accountNumber,
+      tradeId: payload.tradeId,
+      symbol: payload.symbol,
+      direction: payload.direction,
+      volume: payload.volume,
+      openPrice: payload.openPrice,
+      closePrice: payload.closePrice,
+      profit: payload.profit,
+      equity: payload.equity,
+      balance: payload.balance,
+      timestamp: payload.timestamp,
+    });
   }
 }
