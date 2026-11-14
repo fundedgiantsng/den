@@ -13,13 +13,19 @@ import {
   ShieldCheck,
   Award,
   RefreshCw,
-  SlidersHorizontal,
   Clock,
   CheckCircle2,
   AlertCircle,
   X,
   Loader2,
   ChevronRight,
+  Users,
+  Copy,
+  Check,
+  Sparkles,
+  Calendar,
+  Layers,
+  Flame,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -27,15 +33,11 @@ interface AccountItem {
   id: string;
   planName: string;
   planType: string;
-  currentPhase?: string;
+  currentPhase: 'Funded' | 'Challenge' | 'Instant Funding';
   sizeNgn: number;
   profitNgn: number;
   profitPercent: string;
-  dailyDrawdownNgn: number;
-  dailyDrawdownLimitNgn: number;
-  maxDrawdownLimitNgn?: number;
   status: string;
-  platform: string;
 }
 
 interface ActivityItem {
@@ -48,11 +50,18 @@ interface ActivityItem {
   status: string;
 }
 
+interface SettlementItem {
+  id: string;
+  title: string;
+  subtext: string;
+  dueIn: string;
+}
+
 export default function DashboardOverviewPage() {
   const [wallet, setWallet] = useState({
-    availableBalanceNgn: 18450000.0,
-    withdrawableProfitsNgn: 0,
-    totalCapitalNgn: 60000000.0,
+    availableBalanceNgn: 12450000.0,
+    withdrawableProfitsNgn: 2480000.0,
+    totalCapitalNgn: 24680000.0,
   });
 
   const [activeAccounts, setActiveAccounts] = useState<AccountItem[]>([
@@ -60,70 +69,90 @@ export default function DashboardOverviewPage() {
       id: 'FG-48291',
       planName: 'Rhino Rush',
       planType: 'RHINO_RUSH',
-      currentPhase: 'Challenge', // In evaluation phase: profit is NOT withdrawable yet
+      currentPhase: 'Funded',
       sizeNgn: 10000000,
       profitNgn: 420000,
       profitPercent: '+4.20%',
-      dailyDrawdownNgn: 180000,
-      dailyDrawdownLimitNgn: 400000,
       status: 'Active',
-      platform: 'SteraTrader',
     },
     {
       id: 'FG-51732',
-      planName: 'Phoenix Rise',
-      planType: 'PHOENIX_RISE',
-      currentPhase: 'Instant Funding', // Instant funding: profit CAN be withdrawn once >= 2%
+      planName: 'Rhino Rush',
+      planType: 'RHINO_RUSH',
+      currentPhase: 'Challenge',
       sizeNgn: 50000000,
-      profitNgn: 1250000,
-      profitPercent: '+2.50%',
-      dailyDrawdownNgn: 220000,
-      dailyDrawdownLimitNgn: 2000000,
+      profitNgn: 820000,
+      profitPercent: '+1.64%',
       status: 'Active',
-      platform: 'SteraTrader',
     },
   ]);
 
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([
     {
       id: 'tx-1',
-      title: 'Giants Vault Wallet Deposit',
-      ref: 'ref: LEN-DEP-9421',
+      title: 'Trading Payout',
+      ref: 'FG-48291 • 2h ago',
       date: 'Today, 10:15 AM',
-      amountNgn: 500000,
+      amountNgn: 1240000,
       isCredit: true,
       status: 'Successful',
     },
     {
       id: 'tx-2',
-      title: 'Affiliate Commission Settlement',
-      ref: 'ref: AFF-COM-8219',
+      title: 'IB Commission',
+      ref: 'Referral #FG2B47 • 3h ago',
       date: 'Yesterday, 04:20 PM',
-      amountNgn: 24750,
+      amountNgn: 500000,
       isCredit: true,
       status: 'Successful',
     },
     {
       id: 'tx-3',
-      title: 'Challenge Activation: Phoenix Rise ₦50M',
-      ref: 'order: FG-ORD-1094',
+      title: 'Prop Account Purchase',
+      ref: '100K Challenge • 5h ago',
       date: 'Nov 12, 2026',
-      amountNgn: 2018000,
+      amountNgn: 250000,
+      isCredit: false,
+      status: 'Successful',
+    },
+    {
+      id: 'tx-4',
+      title: 'Withdrawal Processed',
+      ref: 'Bank Transfer • 1d ago',
+      date: 'Nov 11, 2026',
+      amountNgn: 1000000,
       isCredit: false,
       status: 'Successful',
     },
   ]);
 
-  const [loading, setLoading] = useState(false);
+  const [upcomingSettlements] = useState<SettlementItem[]>([
+    {
+      id: 'st-1',
+      title: 'Copy Profit Settlement',
+      subtext: 'Alpha FX Master',
+      dueIn: '3 days',
+    },
+    {
+      id: 'st-2',
+      title: 'Trading Payout',
+      subtext: 'FG-48291',
+      dueIn: '5 days',
+    },
+  ]);
+
+  // Affiliate link copy
+  const [copiedLink, setCopiedLink] = useState(false);
+  const affiliateLink = 'https://fundedgiants.com/?ref=giantstrader';
+
+  // Payout Modal
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
   const [submittingPayoutAccId, setSubmittingPayoutAccId] = useState<string | null>(null);
   const [payoutStatusMessage, setPayoutStatusMessage] = useState<string | null>(null);
 
   // Compute withdrawable profits strictly from Funded stage or Instant accounts (Excluding evaluation phase)
   const withdrawableAccounts = activeAccounts.filter((acc) => {
-    const isPhoenix = acc.planType.includes('PHOENIX') || acc.currentPhase === 'Instant Funding';
-    const isFundedRhino = acc.currentPhase === 'Funded';
-    return isPhoenix || isFundedRhino;
+    return acc.currentPhase === 'Funded' || acc.currentPhase === 'Instant Funding';
   });
 
   // Calculate accumulated withdrawable trader profit (80% profit split on positive gains)
@@ -131,574 +160,582 @@ export default function DashboardOverviewPage() {
     return sum + (acc.profitNgn > 0 ? acc.profitNgn * 0.8 : 0);
   }, 0);
 
-  // Qualifying accounts meeting minimum payout threshold (2% for Phoenix Rise, 5% first / 2% subsequent for Rhino Funded)
+  // Qualifying accounts meeting minimum payout threshold (2%)
   const qualifyingAccounts = withdrawableAccounts.filter((acc) => {
-    const isPhoenix = acc.planType.includes('PHOENIX') || acc.currentPhase === 'Instant Funding';
     const profitPct = acc.sizeNgn > 0 ? (acc.profitNgn / acc.sizeNgn) * 100 : 0;
-    const minThreshold = isPhoenix ? 2.0 : 5.0;
-    return profitPct >= minThreshold;
+    return profitPct >= 2.0;
   });
 
-  const totalQualifyingPayoutNgn = qualifyingAccounts.reduce((sum, acc) => {
-    return sum + acc.profitNgn * 0.8;
-  }, 0);
-
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [resWallet, resAccounts, resTx] = await Promise.all([
-        fetch('http://localhost:4000/api/v1/wallet/overview', { credentials: 'include' }),
-        fetch('http://localhost:4000/api/v1/challenges/my-accounts', { credentials: 'include' }),
-        fetch('http://localhost:4000/api/v1/wallet/transactions', { credentials: 'include' }),
-      ]);
-
-      if (resWallet.ok) {
-        const wData = await resWallet.json();
-        setWallet((prev) => ({
-          ...prev,
-          availableBalanceNgn: wData.availableBalanceNgn ?? prev.availableBalanceNgn,
-        }));
-      }
-
-      if (resAccounts.ok) {
-        const accData = await resAccounts.json();
-        if (Array.isArray(accData) && accData.length > 0) {
-          setActiveAccounts(accData);
-          const totalCap = accData.reduce((sum: number, a: any) => sum + (a.sizeNgn || 0), 0);
-          setWallet((prev) => ({ ...prev, totalCapitalNgn: totalCap }));
-        }
-      }
-
-      if (resTx.ok) {
-        const txData = await resTx.json();
-        if (Array.isArray(txData) && txData.length > 0) {
-          setRecentActivity(
-            txData.map((t: any) => ({
-              id: t.id,
-              title: t.title,
-              ref: t.ref,
-              date: t.date,
-              amountNgn: t.amountNgn,
-              isCredit: t.isCredit,
-              status: t.status,
-            }))
-          );
-        }
-      }
-    } catch (err) {
-      console.error('Dashboard data fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(affiliateLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const handleExecutePayout = async (accId?: string) => {
-    const targetId = accId || qualifyingAccounts[0]?.id;
-    if (!targetId) return;
-
-    setSubmittingPayoutAccId(targetId);
+  const handleExecutePayout = async (accountNumber: string) => {
+    setSubmittingPayoutAccId(accountNumber);
     setPayoutStatusMessage(null);
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/challenges/accounts/${targetId}/payout`, {
+      const res = await fetch(`http://localhost:4000/api/v1/risk/request-payout/${accountNumber}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
       });
       const data = await res.json();
-      setPayoutStatusMessage(
-        'Payout request submitted! Status: PENDING_APPROVAL. Once approved by admin, funds drop directly into your Giants Vault (SLA: 3 Hours Max).'
-      );
-    } catch {
-      setPayoutStatusMessage(
-        'Payout request submitted! Status: PENDING_APPROVAL. Once approved by admin, funds drop directly into your Giants Vault (SLA: 3 Hours Max).'
-      );
+      if (!res.ok) {
+        throw new Error(data.message || 'Risk engine payout approval failed');
+      }
+      setPayoutStatusMessage(`Success: ${data.message || 'Payout approved and credited to Giants Vault!'}`);
+      // Refresh withdrawable profit state
+      setTimeout(() => {
+        setPayoutModalOpen(false);
+        setPayoutStatusMessage(null);
+      }, 2500);
+    } catch (err: any) {
+      setPayoutStatusMessage(`Error: ${err.message}`);
     } finally {
       setSubmittingPayoutAccId(null);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto w-full pb-12">
-      {/* Welcome Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-heading font-extrabold text-white flex items-center gap-2">
-            <span>Trading Overview</span>
-            <span className="text-base sm:text-xl">👋</span>
-          </h1>
-          <p className="text-xs text-fgText-secondary mt-0.5">
-            Your live Nigerian capital allocation, Giants Vault balance, and SteraTrader accounts.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard/challenges/buy"
-            className="py-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-bg-base font-heading font-extrabold text-xs shadow-md transition-all flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Buy Challenge</span>
-          </Link>
-          <button
-            type="button"
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="p-2 rounded-xl bg-bg-card border border-fgBorder-subtle text-fgText-secondary hover:text-white transition-colors"
-            title="Refresh Dashboard"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
-          </button>
-        </div>
+    <div className="space-y-6 max-w-7xl mx-auto w-full pb-16">
+      {/* 1. Header Greeting & Context */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-heading font-extrabold text-white tracking-tight flex items-center gap-2">
+          <span>Good morning, John</span>
+          <span className="text-2xl sm:text-3xl animate-bounce">👋</span>
+        </h1>
+        <p className="text-xs sm:text-sm text-fgText-secondary mt-1">
+          Here's your platform overview
+        </p>
       </div>
 
-      {/* Top 3 Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Card 1: Giants Vault (NGN) */}
-        <div className="fg-card p-5 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
-              <Wallet className="w-4 h-4 text-emerald-400" />
-              <span>Giants Vault</span>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-              Central NGN
-            </span>
+      {/* 2. Top 3 Primary Metric Cards in a Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Central Wallet */}
+        <div className="relative overflow-hidden rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 hover:border-emerald-500/30 transition-all shadow-xl group">
+          <div className="flex items-center justify-between mb-3">
+            <Link href="/dashboard/wallet" className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                <Wallet className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-semibold text-fgText-secondary group-hover:text-white transition-colors">
+                Central Wallet
+              </span>
+            </Link>
+            <ChevronRight className="w-4 h-4 text-fgText-muted group-hover:text-white group-hover:translate-x-0.5 transition" />
           </div>
 
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-white tracking-tight">
+          <div className="space-y-1">
+            <div className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">
               {formatNaira(wallet.availableBalanceNgn)}
             </div>
-            <p className="text-xs text-fgText-muted mt-1 font-medium">
-              Available Spendable & Payout Balance
-            </p>
+            <div className="text-[11px] text-fgText-secondary font-medium">Available Balance</div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center gap-2.5 pt-4">
             <Link
-              href="/dashboard/wallet?tab=DEPOSIT"
-              className="flex-1 py-2 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm"
+              href="/dashboard/wallet"
+              className="px-4 py-1.5 rounded-lg bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Deposit</span>
+              Deposit
             </Link>
             <Link
               href="/dashboard/wallet"
-              className="flex-1 py-2 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+              className="px-4 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1] text-white font-heading font-semibold text-xs active:scale-95 transition flex items-center gap-1"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Manage</span>
+              <span>Withdraw</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* Card 2: Cumulative Trading Performance (Strictly Funded / Instant Accounts) */}
-        <div className="fg-card p-5 flex flex-col justify-between space-y-3 border-emerald-500/30 shadow-cardGlow">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
-              <span>Performance & Payouts</span>
+        {/* Card 2: Trading Performance */}
+        <div
+          onClick={() => setPayoutModalOpen(true)}
+          className="relative overflow-hidden rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 hover:border-emerald-500/30 transition-all shadow-xl group cursor-pointer"
+        >
+          {/* Subtle Sparkline Background Graphic */}
+          <svg
+            className="absolute right-4 bottom-4 w-28 h-14 text-emerald-400 opacity-60 pointer-events-none group-hover:scale-105 transition-transform"
+            viewBox="0 0 100 40"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path d="M 0 35 Q 20 28 35 30 T 60 15 T 85 10 T 100 5" strokeLinecap="round" />
+          </svg>
+
+          <div className="flex items-center justify-between mb-3 relative z-10">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-semibold text-fgText-secondary group-hover:text-white transition-colors">
+                Trading Performance
+              </span>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
-              Live Withdrawable
-            </span>
+            <ChevronRight className="w-4 h-4 text-fgText-muted group-hover:text-white group-hover:translate-x-0.5 transition" />
           </div>
 
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-emerald-400 tracking-tight">
-              +{formatNaira(calculatedWithdrawableProfitsNgn)}
+          <div className="space-y-1 relative z-10">
+            <div className="text-2xl sm:text-3xl font-bold font-mono text-[#00f59b] tracking-tight">
+              +{formatNaira(calculatedWithdrawableProfitsNgn > 0 ? calculatedWithdrawableProfitsNgn : wallet.withdrawableProfitsNgn)}
             </div>
-            <p className="text-xs text-fgText-muted mt-1 font-medium">
-              Funded & Instant Account Trader Share (80%)
-            </p>
+            <div className="text-[11px] text-fgText-secondary font-medium">Total Withdrawable Profits</div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setPayoutModalOpen(true)}
-              className="w-full py-2 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-bg-base text-xs font-bold flex items-center justify-center gap-1.5 shadow-emeraldGlow transition-all"
-            >
-              <ArrowUpRight className="w-4 h-4" />
-              <span>Request Payout</span>
-            </button>
+          <div className="pt-4 flex items-center gap-1.5 text-[11px] text-[#00f59b] font-semibold relative z-10">
+            <span>Request Payout</span>
+            <ChevronRight className="w-3 h-3 stroke-[2.5]" />
           </div>
         </div>
 
-        {/* Card 3: Total Allocated Capital */}
-        <div className="fg-card p-5 flex flex-col justify-between space-y-3 sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-fgText-secondary">
-              <Coins className="w-4 h-4 text-sky-400" />
-              <span>Total Active Capital</span>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono">
-              SteraTrader
-            </span>
+        {/* Card 3: Total Capital */}
+        <div className="relative overflow-hidden rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 hover:border-emerald-500/30 transition-all shadow-xl group">
+          {/* Stacked Coins Graphic on Right */}
+          <div className="absolute right-4 bottom-4 w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 opacity-80 pointer-events-none group-hover:scale-110 transition-transform">
+            <Coins className="w-6 h-6" />
           </div>
 
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-white tracking-tight">
+          <div className="flex items-center justify-between mb-3">
+            <Link href="/dashboard/trading-accounts" className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                <Coins className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-semibold text-fgText-secondary group-hover:text-white transition-colors">
+                Total Capital
+              </span>
+            </Link>
+            <ChevronRight className="w-4 h-4 text-fgText-muted group-hover:text-white group-hover:translate-x-0.5 transition" />
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">
               {formatNaira(wallet.totalCapitalNgn)}
             </div>
-            <p className="text-xs text-fgText-muted mt-1 font-medium">
-              {activeAccounts.length} Active Challenge / Funded Accounts
-            </p>
+            <div className="text-[11px] text-fgText-secondary font-medium">Across All Accounts</div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
+          <div className="pt-4 text-[11px] text-fgText-muted">
+            Institutional SteraTrader Allocation
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Main Dashboard Grid (Main 68% vs Sidebar 32%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ======================================================== */}
+        {/* LEFT / MAIN COLUMN (lg:col-span-8)                      */}
+        {/* ======================================================== */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* A. Trading Accounts Section: FULL WIDTH LAYERED ROWS */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 space-y-4 shadow-xl">
+            {/* Header Row */}
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-heading font-bold text-white">Trading Accounts</h3>
+                  <p className="text-xs text-fgText-secondary">Your active trading accounts</p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/trading-accounts"
+                className="text-xs font-semibold text-[#00f59b] hover:text-emerald-300 transition flex items-center gap-1"
+              >
+                <span>View all</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Stacked Full-Width Account Rows */}
+            <div className="space-y-3">
+              {activeAccounts.map((acc) => (
+                <Link
+                  key={acc.id}
+                  href={`/dashboard/trading-accounts/${acc.id}`}
+                  className="block rounded-xl bg-black/40 border border-white/[0.06] p-4 hover:border-emerald-500/40 hover:bg-white/[0.02] transition-all group"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {/* Left: Phase Badge & Account Number */}
+                    <div className="flex items-center gap-3 sm:w-1/4">
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                          acc.currentPhase === 'Funded'
+                            ? 'bg-emerald-500/15 text-[#00f59b] border border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                        }`}
+                      >
+                        {acc.currentPhase}
+                      </span>
+                      <span className="font-heading font-extrabold text-white text-base tracking-tight group-hover:text-emerald-400 transition-colors">
+                        {acc.id}
+                      </span>
+                    </div>
+
+                    {/* Column 2: Account Size */}
+                    <div className="sm:w-1/5">
+                      <span className="text-xs font-mono font-bold text-white block">
+                        {formatNaira(acc.sizeNgn)}
+                      </span>
+                      <span className="text-[10px] text-fgText-muted uppercase tracking-wider block">
+                        Account Size
+                      </span>
+                    </div>
+
+                    {/* Column 3: Total Withdrawable Profits */}
+                    <div className="sm:w-1/4">
+                      <span className="text-xs font-mono font-bold text-[#00f59b] block">
+                        +{formatNaira(acc.profitNgn)}
+                      </span>
+                      <span className="text-[10px] text-fgText-muted uppercase tracking-wider block">
+                        Total Withdrawable Profits
+                      </span>
+                    </div>
+
+                    {/* Column 4: Sparkline Curve SVG */}
+                    <div className="hidden md:block sm:w-1/6">
+                      <svg
+                        className="w-20 h-6 text-emerald-400 opacity-80"
+                        viewBox="0 0 80 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M 0 20 Q 15 16 30 18 T 50 8 T 70 6 T 80 2" strokeLinecap="round" />
+                      </svg>
+                    </div>
+
+                    {/* Column 5: Status Pill & Chevron */}
+                    <div className="flex items-center gap-3 sm:w-1/6 justify-end">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-[#00f59b] font-semibold">
+                        {acc.status}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-fgText-muted group-hover:text-white group-hover:translate-x-0.5 transition" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* B. Copy Investments Section (Below Trading Accounts) */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 sm:p-6 space-y-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                  <Coins className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-heading font-bold text-white">Copy Investments</h3>
+                  <p className="text-xs text-fgText-secondary">Grow your funds by copying expert traders</p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/copytrading"
+                className="text-xs font-semibold text-[#00f59b] hover:text-emerald-300 transition flex items-center gap-1"
+              >
+                <span>View all</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Empty State / Explore Masters */}
+            <div className="p-8 rounded-xl bg-black/40 border border-white/[0.04] flex flex-col items-center justify-center text-center space-y-3">
+              <div className="w-11 h-11 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-fgText-muted">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white">No active copy investments</h4>
+                <p className="text-[11px] text-fgText-muted mt-0.5">
+                  Explore top-performing traders and start copying today.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/copytrading"
+                className="px-5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.12] text-[#00f59b] font-heading font-bold text-xs active:scale-95 transition flex items-center gap-1.5"
+              >
+                <span>Explore Masters</span>
+                <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================== */}
+        {/* RIGHT / SIDEBAR COLUMN (lg:col-span-4)                  */}
+        {/* ======================================================== */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* 1. Top Ad Placement: Explore Trading Accounts */}
+          <div className="rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
+            {/* Bull art with neon candles */}
+            <div className="relative h-28 w-full rounded-xl overflow-hidden bg-black/60 border border-emerald-500/20 flex items-center justify-center">
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0e1f17] via-transparent to-transparent z-10" />
+              <div className="relative z-0 flex items-center justify-center gap-3 scale-90">
+                <svg
+                  className="w-16 h-16 text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+                  viewBox="0 0 100 100"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M 20 25 C 25 15, 35 15, 45 30 C 50 35, 50 40, 50 45 C 50 40, 50 35, 55 30 C 65 15, 75 15, 80 25 C 75 35, 70 45, 60 48 C 65 55, 68 65, 65 75 C 60 85, 40 85, 35 75 C 32 65, 35 55, 40 48 C 30 45, 25 35, 20 25 Z" />
+                </svg>
+                {/* Candlestick graphics */}
+                <div className="flex items-end gap-1.5 h-12">
+                  <div className="w-1.5 h-8 bg-emerald-400 rounded-sm" />
+                  <div className="w-1.5 h-12 bg-emerald-400 rounded-sm" />
+                  <div className="w-1.5 h-6 bg-rose-400 rounded-sm" />
+                  <div className="w-1.5 h-10 bg-emerald-400 rounded-sm" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-heading font-extrabold text-[#00f59b] tracking-wider uppercase block">
+                FundedGiants
+              </span>
+              <h4 className="text-base font-heading font-extrabold text-white tracking-tight leading-snug">
+                Trade Smarter. Grow Faster.
+              </h4>
+              <p className="text-[11px] text-fgText-secondary">
+                Get funded. Trade. Earn.
+              </p>
+            </div>
+
             <Link
               href="/dashboard/challenges/buy"
-              className="w-full py-2 px-2.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+              className="w-full py-2.5 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <Plus className="w-3.5 h-3.5 text-sky-400" />
-              <span>Scale Up Capital</span>
+              <span>Explore Trading Accounts</span>
+              <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
             </Link>
           </div>
-        </div>
-      </div>
 
-      {/* Active Trading Accounts Section (FULL WIDTH) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-bold text-fgText-secondary uppercase tracking-wider">
-              Active Trading Accounts
-            </h2>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/[0.05] text-fgText-secondary font-mono">
-              {activeAccounts.length} Total
-            </span>
-          </div>
-          <Link
-            href="/dashboard/trading-accounts"
-            className="text-xs text-emerald-400 hover:underline font-semibold flex items-center gap-1"
-          >
-            <span>View All Accounts</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        {/* 2-Column Responsive Grid across Full Width */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-          {activeAccounts.map((acc) => {
-            const isPhoenix = acc.planType.includes('PHOENIX') || acc.currentPhase === 'Instant Funding';
-            const isRhino = acc.planType.includes('RHINO');
-            const isFundedPhase = acc.currentPhase === 'Funded' || isPhoenix;
-
-            let badgeText = acc.currentPhase || (isPhoenix ? 'Instant Funding' : 'Challenge');
-            if (isPhoenix) badgeText = 'Instant Funding';
-
-            const ddPercentage = Math.min(100, Math.round((acc.dailyDrawdownNgn / acc.dailyDrawdownLimitNgn) * 100));
-            const remainingHeadroomNgn = Math.max(0, acc.dailyDrawdownLimitNgn - acc.dailyDrawdownNgn);
-            const profitPct = acc.sizeNgn > 0 ? (acc.profitNgn / acc.sizeNgn) * 100 : 0;
-            const qualifiesForPayout = isFundedPhase && profitPct >= (isPhoenix ? 2 : 5);
-
-            return (
-              <div
-                key={acc.id}
-                className="fg-card p-5 space-y-4 hover:border-emerald-500/30 transition-all shadow-cardGlow flex flex-col justify-between"
-              >
+          {/* 2. Small Referral Card (Below Ad Spot) */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                  <Users className="w-4 h-4" />
+                </div>
                 <div>
-                  {/* Account Header */}
-                  <div className="flex items-start justify-between gap-2 pb-3 border-b border-white/[0.06]">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-heading font-extrabold text-base sm:text-lg text-white">
-                          {acc.planName}
-                        </span>
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-                            isPhoenix
-                              ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-                              : isFundedPhase
-                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                              : 'bg-sky-500/15 border-sky-500/30 text-sky-400'
-                          }`}
-                        >
-                          {badgeText}
-                        </span>
-                      </div>
-                      <div className="text-xs text-fgText-secondary font-mono mt-1 flex items-center gap-2">
-                        <span>Login: <strong className="text-white">{acc.id}</strong></span>
-                        <span>&bull;</span>
-                        <span>Platform: <strong className="text-white">{acc.platform}</strong></span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-                        Capital Allocation
-                      </span>
-                      <div className="text-base sm:text-lg font-bold font-mono text-white tracking-tight">
-                        {formatNaira(acc.sizeNgn)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Modular Metric Grid (High-Contrast, Legible Numbers) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 p-3.5 rounded-xl bg-bg-card border border-white/[0.06] mt-3">
-                    {/* Metric 1: Net Profit */}
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-                        Net Profit / P&L
-                      </span>
-                      <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tracking-tight">
-                        +{formatNaira(acc.profitNgn)}
-                      </div>
-                      <span className="text-[11px] font-semibold text-emerald-300 font-mono block">
-                        {acc.profitPercent} {isFundedPhase ? 'Payout Eligible' : 'Target Progress'}
-                      </span>
-                    </div>
-
-                    {/* Metric 2: Today's Drawdown */}
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-                        Daily Drawdown (4%)
-                      </span>
-                      <div className="text-xs sm:text-sm font-bold font-mono text-white tracking-tight">
-                        {formatNaira(acc.dailyDrawdownNgn)}
-                      </div>
-                      <span className="text-[10px] text-fgText-muted font-mono block">
-                        of {formatNaira(acc.dailyDrawdownLimitNgn)} Max
-                      </span>
-                    </div>
-
-                    {/* Metric 3: Headroom Safe Buffer */}
-                    <div className="col-span-2 sm:col-span-1 space-y-0.5">
-                      <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-                        Drawdown Headroom
-                      </span>
-                      <div className="text-xs sm:text-sm font-bold font-mono text-emerald-400 tracking-tight">
-                        {formatNaira(remainingHeadroomNgn)}
-                      </div>
-                      <span className="text-[10px] text-emerald-300 font-semibold block">
-                        Safe Room Remaining
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Daily Drawdown Progress Bar */}
-                  <div className="space-y-1.5 pt-3">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span className="text-fgText-secondary font-medium">Daily Risk Cushion:</span>
-                      <span className="text-white font-bold">{ddPercentage}% used ({100 - ddPercentage}% safe)</span>
-                    </div>
-                    <div className="h-2 w-full bg-white/[0.06] rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          ddPercentage > 75 ? 'bg-red-500' : ddPercentage > 50 ? 'bg-amber-400' : 'bg-emerald-500'
-                        }`}
-                        style={{ width: `${ddPercentage}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Action Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06] text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-fgText-secondary">
-                      Leverage: <strong className="text-white">{isPhoenix ? '1:30' : '1:100'}</strong>
-                    </span>
-                    {qualifiesForPayout && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        Payout Ready
-                      </span>
-                    )}
-                  </div>
-
-                  <Link
-                    href={`/dashboard/trading-accounts/${acc.id}`}
-                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors"
-                  >
-                    <span>Launch Terminal & Analytics</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </Link>
+                  <h4 className="text-xs font-heading font-bold text-white">
+                    Invite Friends. Earn More.
+                  </h4>
+                  <p className="text-[10px] text-fgText-secondary">
+                    Get rewarded for every successful referral.
+                  </p>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+            </div>
 
-      {/* Recent Activity Section (FULL WIDTH, BELOW ACCOUNTS) */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-bold text-fgText-secondary uppercase tracking-wider">
-              Recent Vault Activity & Movements
-            </h2>
-            <span className="text-[11px] text-fgText-muted">Live ledger transactions</span>
+            <button
+              onClick={handleCopyLink}
+              className="w-full py-2 px-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b] hover:bg-emerald-500/25 transition text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedLink ? 'Link Copied to Clipboard!' : 'Get Your Referral Link →'}</span>
+            </button>
           </div>
-          <Link
-            href="/dashboard/wallet"
-            className="text-xs text-emerald-400 hover:underline font-semibold flex items-center gap-1"
-          >
-            <span>Full Vault Ledger</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
 
-        <div className="fg-card p-4 sm:p-5 divide-y divide-white/[0.06]">
-          {recentActivity.length === 0 ? (
-            <div className="py-6 text-center text-xs text-fgText-secondary font-mono">
-              No recent transactions recorded in your Giants Vault.
+          {/* 3. Best Trader of the Month Ad (Copy Investments) */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3.5 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-amber-400">
+                  Trader of the Month
+                </span>
+              </div>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-bold">
+                +184.5% ROI
+              </span>
             </div>
-          ) : (
-            recentActivity.slice(0, 5).map((act) => (
-              <div key={act.id} className="py-3 first:pt-0 last:pb-0 flex items-center justify-between text-xs gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      act.isCredit
-                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-white/[0.04] text-white border border-white/[0.08]'
-                    }`}
-                  >
-                    {act.isCredit ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white text-xs leading-tight">{act.title}</div>
-                    <div className="text-[11px] text-fgText-secondary font-mono mt-0.5">{act.ref} &bull; {act.date}</div>
-                  </div>
-                </div>
 
-                <div className="text-right flex-shrink-0">
-                  <div
-                    className={`font-mono font-bold text-xs sm:text-sm ${
-                      act.isCredit ? 'text-emerald-400' : 'text-white'
-                    }`}
-                  >
-                    {act.isCredit ? '+' : '-'}{formatNaira(act.amountNgn)}
-                  </div>
-                  <span className="text-[10px] text-emerald-400/90 font-medium">{act.status}</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-400 font-bold flex items-center justify-center text-xs">
+                  AF
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-white">Alpha FX Master</h5>
+                  <p className="text-[10px] text-fgText-muted">94.2% Win Rate • 1,420 Followers</p>
                 </div>
               </div>
-            ))
-          )}
+              <Link
+                href="/dashboard/copytrading"
+                className="px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b] hover:bg-emerald-500/25 transition text-[11px] font-bold"
+              >
+                Copy Trader →
+              </Link>
+            </div>
+          </div>
+
+          {/* 4. Upcoming Settlements */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-heading font-bold text-white">Upcoming Settlements</h4>
+              </div>
+              <Link
+                href="/dashboard/wallet"
+                className="text-[10px] text-[#00f59b] hover:text-emerald-300 font-semibold transition"
+              >
+                View all →
+              </Link>
+            </div>
+
+            <div className="space-y-2">
+              {upcomingSettlements.map((st) => (
+                <div
+                  key={st.id}
+                  className="p-2.5 rounded-xl bg-black/40 border border-white/[0.04] flex items-center justify-between text-xs"
+                >
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-white block text-[11px]">{st.title}</span>
+                    <span className="text-[10px] text-fgText-muted">{st.subtext}</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                    {st.dueIn}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 5. Recent Activity (Ledger Movements) */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-heading font-bold text-white">Recent Activity</h4>
+              </div>
+              <Link
+                href="/dashboard/wallet"
+                className="text-[10px] text-[#00f59b] hover:text-emerald-300 font-semibold transition"
+              >
+                View all →
+              </Link>
+            </div>
+
+            <div className="space-y-2">
+              {recentActivity.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="p-2.5 rounded-xl bg-black/40 border border-white/[0.04] flex items-center justify-between text-xs hover:border-emerald-500/30 transition-colors"
+                >
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-white block text-[11px]">{tx.title}</span>
+                    <span className="text-[10px] text-fgText-muted font-mono">{tx.ref}</span>
+                  </div>
+                  <span
+                    className={`font-mono font-bold text-xs ${
+                      tx.isCredit ? 'text-[#00f59b]' : 'text-rose-400'
+                    }`}
+                  >
+                    {tx.isCredit ? '+ ' : '- '}
+                    {formatNaira(tx.amountNgn)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Payout Request Modal / Drawer */}
+      {/* ======================================================== */}
+      {/* INTERACTIVE PAYOUT MODAL                                 */}
+      {/* ======================================================== */}
       {payoutModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-xl bg-bg-surface border border-emerald-500/30 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
-              <div>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
-                  Giants Vault Settlement
-                </span>
-                <h3 className="text-lg font-heading font-extrabold text-white mt-1">
-                  Request Profit Payout
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPayoutModalOpen(false)}
-                className="p-1.5 rounded-lg bg-bg-card border border-white/[0.08] text-fgText-secondary hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0b1612] border border-emerald-500/30 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative">
+            <button
+              onClick={() => setPayoutModalOpen(false)}
+              className="absolute top-4 right-4 text-fgText-muted hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-heading font-bold text-white flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
+                <span>Request Trading Payout</span>
+              </h3>
+              <p className="text-xs text-fgText-secondary">
+                Qualifying Funded & Instant Funding accounts with 2%+ profit:
+              </p>
             </div>
 
-            {payoutStatusMessage ? (
-              <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                <span className="leading-relaxed">{payoutStatusMessage}</span>
-              </div>
-            ) : qualifyingAccounts.length === 0 ? (
-              <div className="p-5 rounded-2xl bg-bg-card border border-white/[0.08] space-y-3 text-center">
-                <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
-                <h4 className="text-sm font-bold text-white">No Accounts Currently Qualify for Payout</h4>
-                <p className="text-xs text-fgText-secondary max-w-md mx-auto leading-relaxed">
-                  Payouts are exclusive to <strong>Funded stage</strong> accounts (promoted from 1-step evaluation) or <strong>Phoenix Rise Instant Funding</strong> accounts with at least <strong>2% net profit gain</strong>.
-                </p>
-                <div className="pt-2">
-                  <Link
-                    href="/dashboard/trading-accounts"
-                    onClick={() => setPayoutModalOpen(false)}
-                    className="py-2 px-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-xs font-semibold text-white inline-block"
-                  >
-                    View Account Progress &rarr;
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center justify-between">
-                  <span>Total Eligible Trader Profit (80% Split):</span>
-                  <span className="font-mono font-bold text-base text-emerald-400">
-                    {formatNaira(totalQualifyingPayoutNgn)}
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  <span className="text-[11px] font-semibold text-fgText-muted uppercase tracking-wider block">
-                    Qualifying Accounts ({qualifyingAccounts.length}):
-                  </span>
-
-                  {qualifyingAccounts.map((acc) => {
-                    const traderShareNgn = acc.profitNgn * 0.8;
-                    const isSubmitting = submittingPayoutAccId === acc.id;
-
-                    return (
-                      <div
-                        key={acc.id}
-                        className="p-4 rounded-xl bg-bg-card border border-white/[0.08] flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white">{acc.planName}</span>
-                            <span className="font-mono text-fgText-secondary">#{acc.id}</span>
-                          </div>
-                          <p className="text-[11px] text-fgText-muted mt-0.5">
-                            Capital: {formatNaira(acc.sizeNgn)} &bull; Gain: {acc.profitPercent}
-                          </p>
-                        </div>
-
-                        <div className="text-right flex items-center gap-3">
-                          <div>
-                            <span className="font-mono font-bold text-sm text-emerald-400 block">
-                              {formatNaira(traderShareNgn)}
-                            </span>
-                            <span className="text-[10px] text-fgText-muted">80% Trader Share</span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleExecutePayout(acc.id)}
-                            disabled={isSubmitting}
-                            className="py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
-                          >
-                            {isSubmitting ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <span>Request</span>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {qualifyingAccounts.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleExecutePayout()}
-                    className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-bg-base font-bold text-xs flex items-center justify-center gap-2 shadow-emeraldGlow transition-all"
-                  >
-                    <span>Request Payout for All Qualifying Accounts ({formatNaira(totalQualifyingPayoutNgn)})</span>
-                  </button>
+            {payoutStatusMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  payoutStatusMessage.startsWith('Success')
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/10 border border-rose-500/30 text-rose-400'
+                }`}
+              >
+                {payoutStatusMessage.startsWith('Success') ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                 )}
-
-                <p className="text-[11px] text-fgText-muted text-center leading-relaxed">
-                  Payouts submit to administrative compliance review with guaranteed <strong>3 Hours Max SLA</strong>. Once approved, the funds drop directly into your <strong>Giants Vault</strong> for instant bank withdrawal or spending.
-                </p>
+                <span>{payoutStatusMessage}</span>
               </div>
             )}
+
+            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+              {qualifyingAccounts.length === 0 ? (
+                <div className="p-4 rounded-xl bg-black/40 border border-white/[0.06] text-center text-xs text-fgText-muted">
+                  No accounts currently meet the 2% withdrawable profit threshold.
+                </div>
+              ) : (
+                qualifyingAccounts.map((acc) => (
+                  <div
+                    key={acc.id}
+                    className="p-3.5 rounded-xl bg-black/50 border border-emerald-500/25 flex items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-white text-xs font-mono">{acc.id}</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-mono">
+                          {acc.currentPhase}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-fgText-secondary font-mono">
+                        Profit: +{formatNaira(acc.profitNgn)} ({acc.profitPercent})
+                      </div>
+                      <div className="text-[10px] text-emerald-400 font-bold font-mono">
+                        80% Payout Share: {formatNaira(acc.profitNgn * 0.8)}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleExecutePayout(acc.id)}
+                      disabled={submittingPayoutAccId === acc.id}
+                      className="px-4 py-2 rounded-xl bg-[#00e575] hover:bg-[#00c966] disabled:opacity-50 text-black font-heading font-extrabold text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition flex items-center gap-1.5"
+                    >
+                      {submittingPayoutAccId === acc.id ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      )}
+                      <span>Instant Disburse</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-fgText-muted leading-relaxed">
+              Automated Risk Engine Verification: Once approved, payouts credit directly to your Giants Vault balance without manual delay.
+            </div>
           </div>
         </div>
       )}
