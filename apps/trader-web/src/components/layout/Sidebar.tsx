@@ -30,7 +30,6 @@ const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
   { name: 'Trading Accounts', href: '/dashboard/trading-accounts', icon: TrendingUp },
-  { name: 'CopyTrading', href: '/dashboard/copytrading', icon: Copy },
   { name: 'IB Program', href: '/dashboard/affiliate', icon: Users },
   { name: 'Certificates', href: '/dashboard/certificates', icon: Award },
 ];

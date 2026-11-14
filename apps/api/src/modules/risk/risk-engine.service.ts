@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { CertificatesService } from '../certificates/certificates.service';
 
 export interface SteraTraderAccountMetrics {
   accountNumber: string;
@@ -61,7 +62,10 @@ export class RiskEngineService {
   private totalAutomatedPayoutsApproved = 0;
   private lastCronExecutionTime = 0;
 
-  constructor(private readonly steraTraderService: SteraTraderService) {}
+  constructor(
+    private readonly steraTraderService: SteraTraderService,
+    private readonly certificatesService: CertificatesService
+  ) {}
 
   /**
    * High-Load Cron Monitoring:
@@ -341,6 +345,24 @@ export class RiskEngineService {
 
     // Promote on SteraTrader broker subset
     await this.steraTraderService.promoteAccount(account.accountNumber);
+
+    // Stamped Completion Certificate Generation
+    try {
+      const challengeWithUser = await prisma.customerChallenge.findUnique({
+        where: { id: account.challengeId },
+        include: { user: true },
+      });
+      const traderName = challengeWithUser?.user
+        ? `${challengeWithUser.user.firstName || 'John'} ${challengeWithUser.user.lastName || 'Doe'}`.trim()
+        : 'John Doe';
+
+      await this.certificatesService.generateCompletionCertificate({
+        recipientName: traderName,
+        accountNumber: account.accountNumber,
+      });
+    } catch (err: any) {
+      this.logger.error(`Error auto-generating completion certificate: ${err.message}`);
+    }
   }
 
   /**
@@ -644,6 +666,21 @@ export class RiskEngineService {
       `AUTOMATED PAYOUT SUCCESS: ₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber}, ${eligibility.profitSplitRatio}) credited to user ${user.id} (${account.accountNumber}). Ref: ${reference}`
     );
 
+    // Stamped Payout Certificate Generation & WordPress Live Payout Tracker Sync
+    let generatedCertificate: any = null;
+    try {
+      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
+      generatedCertificate = await this.certificatesService.generatePayoutCertificate({
+        recipientName: traderFullName,
+        amountNgn: payoutAmount,
+        accountNumber: account.accountNumber,
+        userEmail: user.email || '',
+        payoutReference: reference,
+      });
+    } catch (err: any) {
+      this.logger.error(`Error auto-generating payout certificate: ${err.message}`);
+    }
+
     return {
       success: true,
       reference,
@@ -653,7 +690,9 @@ export class RiskEngineService {
       traderSplitPercent: eligibility.traderSplitPercent,
       depositedToWallet: true,
       accountNumber: account.accountNumber,
-      message: `₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber} payout, ${eligibility.profitSplitRatio} split) has been approved and instantly disbursed to your Giants Vault.`,
+      certificateId: generatedCertificate?.certificateId || null,
+      certificateUrl: generatedCertificate?.publicUrl || null,
+      message: `₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber} payout, ${eligibility.profitSplitRatio} split) has been approved and instantly disbursed to your Giants Vault. Payout certificate generated and synced to live tracker.`,
     };
   }
 

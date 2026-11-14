@@ -3,9 +3,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { RiskEngineService } from './risk-engine.service';
 import { RiskEngineController } from './risk-engine.controller';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { CertificatesModule } from '../certificates/certificates.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot()],
+  imports: [ScheduleModule.forRoot(), CertificatesModule],
   controllers: [RiskEngineController],
   providers: [RiskEngineService, SteraTraderService],
   exports: [RiskEngineService],
