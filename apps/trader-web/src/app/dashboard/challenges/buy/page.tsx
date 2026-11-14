@@ -37,12 +37,12 @@ const plans: PlanConfig[] = [
     name: 'Rhino Rush',
     subtitle: '1 Step Challenge',
     accent: 'blue',
-    dailyDD: '4% (Static)',
-    maxDD: '10% (Static)',
-    target: '10% (2% Daily Cap)',
-    payouts: 'Tiered 50% -> 60% -> 70% -> 80% (Min 2%)',
+    dailyDD: '4%',
+    maxDD: '10%',
+    target: '10%',
+    payouts: 'Daily Payouts, Min 2%',
     leverage: '1:100',
-    profitSplit: 'Tiered 50% - 80%',
+    profitSplit: 'Upto 80%',
     refund: '100% Fee Refund at 10% total payouts',
     prices: {
       1000000: 27500,
@@ -58,12 +58,12 @@ const plans: PlanConfig[] = [
     name: 'Phoenix Rise',
     subtitle: 'Instant Funding',
     accent: 'gold',
-    dailyDD: '4% (Static)',
-    maxDD: '7% (Static)',
-    target: '1st Payout: 10% Target | Subsequent: 2% Min',
-    payouts: 'Tiered 60% (<15d) / 50% (15d+) -> 60% -> 70% -> 80%',
+    dailyDD: '4%',
+    maxDD: '7%',
+    target: '10%',
+    payouts: 'Daily Payouts, Min 2%',
     leverage: '1:30',
-    profitSplit: 'Tiered 50% - 80%',
+    profitSplit: 'Upto 80%',
     refund: 'No refund',
     prices: {
       1000000: 43000,
@@ -447,13 +447,13 @@ export default function InDashboardBuyChallengePage() {
                 <div>
                   <span className="text-[10px] text-fgText-secondary uppercase block">Daily Drawdown</span>
                   <span className="font-bold text-white font-mono">
-                    {formatNaira(selectedSize * 0.04)} ({currentPlan.dailyDD})
+                    {formatNaira(selectedSize * 0.04)} {currentPlan.dailyDD}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-fgText-secondary uppercase block">Max Drawdown</span>
                   <span className="font-bold text-white font-mono">
-                    {formatNaira(selectedSize * (selectedPlan === 'phoenix-rise' ? 0.07 : 0.1))} ({currentPlan.maxDD})
+                    {formatNaira(selectedSize * (selectedPlan === 'phoenix-rise' ? 0.07 : 0.1))} {currentPlan.maxDD}
                   </span>
                 </div>
                 <div>
