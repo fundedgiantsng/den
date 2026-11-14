@@ -38,13 +38,11 @@ export class SteraTraderService {
   constructor() {
     this.apiUrl = process.env.STERATRADER_API_URL || 'https://api.steratrader.com/v1';
     this.apiKey = process.env.STERATRADER_API_KEY || '';
-    // SteraTrader NGN account subset for Nigerian Naira broker group
     this.brokerSubset = process.env.STERATRADER_NGN_SUBSET || 'FG-NGN-Standard';
   }
 
   /**
-   * Provision a new SteraTrader account in Nigerian Naira (NGN)
-   * Explores NGN accounts subset of broker per https://www.steratrader.com/docs#subsets
+   * Provision trading account in Nigerian Naira (NGN)
    */
   async provisionAccount(options: SteraTraderProvisionOptions): Promise<SteraTraderAccountResponse> {
     if (!this.apiKey) {
