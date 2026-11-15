@@ -20,7 +20,6 @@ import {
   Copy,
   Check,
   Sparkles,
-  Flame,
   ArrowRight,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
@@ -471,39 +470,6 @@ export default function DashboardOverviewPage() {
               {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedLink ? 'Link Copied to Clipboard!' : 'Get Your Referral Link →'}</span>
             </button>
-          </div>
-
-          {/* 3. Best Trader of the Month Ad (Copy Investments) */}
-          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3.5 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-400" />
-                <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-amber-400">
-                  Trader of the Month
-                </span>
-              </div>
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-bold">
-                +184.5% ROI
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-400 font-bold flex items-center justify-center text-xs">
-                  AF
-                </div>
-                <div>
-                  <h5 className="text-xs font-bold text-white">Alpha FX Master</h5>
-                  <p className="text-[10px] text-fgText-muted">94.2% Win Rate • 1,420 Followers</p>
-                </div>
-              </div>
-              <Link
-                href="/dashboard/copytrading"
-                className="px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b] hover:bg-emerald-500/25 transition text-[11px] font-bold"
-              >
-                Copy Trader →
-              </Link>
-            </div>
           </div>
         </div>
       </div>
