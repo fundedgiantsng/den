@@ -3,6 +3,8 @@ import {
   Get,
   Post,
   Patch,
+  Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -249,6 +251,42 @@ export class AdminController {
   ) {
     const context = this.extractContext(req, body);
     return this.adminService.toggleCoupon(code, body.isActive, context);
+  }
+
+  @Put('affiliates/coupons/:code')
+  @HttpCode(HttpStatus.OK)
+  updateCoupon(
+    @Param('code') code: string,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req, body);
+    return this.adminService.updateCoupon(code, body, context);
+  }
+
+  @Delete('affiliates/coupons/:code')
+  @HttpCode(HttpStatus.OK)
+  deleteCoupon(
+    @Param('code') code: string,
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req);
+    return this.adminService.deleteCoupon(code, context);
+  }
+
+  @Post('affiliates/coupons/:code/send-email')
+  @HttpCode(HttpStatus.OK)
+  sendCouponEmail(
+    @Param('code') code: string,
+    @Body() body: { emails: string[]; assignedPlan?: string; assignedSize?: number; discountPercent?: number },
+  ) {
+    return this.adminService.dispatchCouponEmails({
+      code,
+      discountPercent: body.discountPercent || 10,
+      emails: body.emails,
+      assignedPlan: body.assignedPlan,
+      assignedSize: body.assignedSize,
+    });
   }
 
   // 11. Immutable Audit Trail

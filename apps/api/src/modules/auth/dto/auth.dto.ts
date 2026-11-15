@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, Matches, IsEnum, IsOptional } from 'class-validator';
 
 export enum LoginIdentifierType {
@@ -53,4 +53,44 @@ export class VerifyOtpDto {
   @IsString()
   @Matches(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
   code!: string;
+}
+
+export class SignupDto {
+  @ApiProperty({ example: 'John' })
+  @IsNotEmpty()
+  @IsString()
+  firstName!: string;
+
+  @ApiProperty({ example: 'Doe' })
+  @IsNotEmpty()
+  @IsString()
+  lastName!: string;
+
+  @ApiProperty({ example: 'john.doe@example.com' })
+  @IsNotEmpty()
+  @IsString()
+  email!: string;
+
+  @ApiProperty({ example: '+2348012345678' })
+  @IsNotEmpty()
+  @IsString()
+  phone!: string;
+
+  @ApiPropertyOptional({ example: '14 Admiralty Way, Lekki Phase 1, Lagos' })
+  @IsOptional()
+  @IsString()
+  address?: string;
+}
+
+export class NinjaBvnVerifyDto {
+  @ApiProperty({ example: '22222222222', description: '11-digit Bank Verification Number' })
+  @IsNotEmpty()
+  @IsString()
+  @Matches(/^\d{11}$/, { message: 'BVN must be exactly 11 digits' })
+  bvn!: string;
+
+  @ApiPropertyOptional({ example: 'trader@example.com' })
+  @IsOptional()
+  @IsString()
+  email?: string;
 }

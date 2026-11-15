@@ -121,11 +121,15 @@ export class ChallengesService implements OnModuleInit {
           siteMessage = 'Coupon has expired.';
         } else if (coupon.maxUsage && coupon.usageCount >= coupon.maxUsage) {
           siteMessage = 'Coupon usage limit reached.';
+        } else if (coupon.restrictedAccountType && coupon.restrictedAccountType !== 'ALL' && coupon.restrictedAccountType !== dto.planType) {
+          siteMessage = `Coupon is only valid for ${coupon.restrictedAccountType} programs.`;
+        } else if (coupon.restrictedAccountSize && Number(coupon.restrictedAccountSize) !== Number(dto.accountSizeNgn)) {
+          siteMessage = `Coupon is only valid for ₦${Number(coupon.restrictedAccountSize).toLocaleString()} capital accounts.`;
         } else {
           isSiteValid = true;
           siteDiscountPercent = Number(coupon.discountPercent);
-          siteDiscountNgn = Math.round((subtotalNgn * siteDiscountPercent) / 100);
-          siteMessage = `Site coupon applied (${siteDiscountPercent}% off)`;
+          siteDiscountNgn = siteDiscountPercent >= 100 ? subtotalNgn : Math.round((subtotalNgn * siteDiscountPercent) / 100);
+          siteMessage = siteDiscountPercent >= 100 ? '100% Free Account Coupon Applied!' : `Site coupon applied (${siteDiscountPercent}% off)`;
         }
       } else {
         siteMessage = 'Invalid discount coupon.';

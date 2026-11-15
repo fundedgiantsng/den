@@ -23,6 +23,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
+import { NinjaKycPromptModal } from '@/components/auth/NinjaKycPromptModal';
 
 interface AccountItem {
   id: string;
@@ -143,6 +144,14 @@ export default function DashboardOverviewPage() {
   ];
 
   const [bannerIndex, setBannerIndex] = useState(0);
+  const [currentUser, setCurrentUser] = useState<{
+    id?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    kycStatus?: string;
+  } | null>(null);
+  const [isKycModalOpen, setIsKycModalOpen] = useState(false);
 
   useEffect(() => {
     const updateBanner = () => {
@@ -151,6 +160,22 @@ export default function DashboardOverviewPage() {
     };
     updateBanner();
     const interval = setInterval(updateBanner, 60000);
+
+    // Fetch current user session & KYC status
+    fetch('http://localhost:4000/api/v1/auth/me', {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.user) {
+          setCurrentUser(data.user);
+          if (data.user.kycStatus !== 'APPROVED') {
+            setIsKycModalOpen(true);
+          }
+        }
+      })
+      .catch(() => {});
+
     return () => clearInterval(interval);
   }, []);
 
@@ -162,10 +187,46 @@ export default function DashboardOverviewPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-16">
+      {/* NinjaKYC First Login Modal */}
+      <NinjaKycPromptModal
+        isOpen={isKycModalOpen}
+        onClose={() => setIsKycModalOpen(false)}
+        user={{
+          firstName: currentUser?.firstName,
+          lastName: currentUser?.lastName,
+          email: currentUser?.email,
+          kycStatus: currentUser?.kycStatus,
+        }}
+        onSuccess={() => {
+          setCurrentUser((prev) => (prev ? { ...prev, kycStatus: 'APPROVED' } : null));
+          setIsKycModalOpen(false);
+        }}
+      />
+
+      {/* KYC Alert Banner if unverified */}
+      {currentUser && currentUser.kycStatus !== 'APPROVED' && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+            <div>
+              <span className="font-bold text-white">Identity Verification Required:</span> Complete your NinjaKYC BVN verification to activate your dedicated bank deposit account and unlock trading payouts.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsKycModalOpen(true)}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 self-start sm:self-auto"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Verify with NinjaKYC</span>
+          </button>
+        </div>
+      )}
+
       {/* 1. Header Greeting & Context */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-heading font-extrabold text-white tracking-tight flex items-center gap-2">
-          <span>Good morning, John</span>
+          <span>Good morning, {currentUser?.firstName || 'Trader'}</span>
           <span className="text-2xl sm:text-3xl animate-bounce">👋</span>
         </h1>
         <p className="text-xs sm:text-sm text-fgText-secondary mt-1">

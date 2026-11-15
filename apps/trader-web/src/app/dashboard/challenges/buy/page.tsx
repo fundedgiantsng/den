@@ -495,19 +495,12 @@ export default function InDashboardBuyChallengePage() {
                 </div>
               </div>
 
-              {/* Vault Balance Status */}
-              <div className="p-3 rounded-lg bg-[#0e1a12] border border-white/[0.08] text-xs space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-fgText-secondary">Giants Vault Available:</span>
-                  <span className="font-mono font-bold text-white">{formatNaira(walletBalanceNgn)}</span>
+              {!hasSufficientFunds && (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 flex items-center gap-2 font-sans">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>Insufficient balance to purchase this account.</span>
                 </div>
-                {!hasSufficientFunds && (
-                  <div className="text-[11px] text-amber-400 flex items-center gap-1 pt-1 font-sans">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Insufficient balance. Deposit funds into Giants Vault to proceed.</span>
-                  </div>
-                )}
-              </div>
+              )}
 
               {error && (
                 <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
@@ -537,7 +530,7 @@ export default function InDashboardBuyChallengePage() {
                     ) : (
                       <>
                         <Wallet className="w-4 h-4" />
-                        <span>Pay from Giants Vault • {formatNaira(finalTotalNgn)}</span>
+                        <span>Pay from wallet Balance</span>
                       </>
                     )}
                   </button>
@@ -547,18 +540,9 @@ export default function InDashboardBuyChallengePage() {
                     className="w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black shadow-emeraldGlow transition-all text-center"
                   >
                     <Wallet className="w-4 h-4" />
-                    <span>Deposit into Giants Vault • {formatNaira(finalTotalNgn)}</span>
+                    <span>Deposit into Wallet</span>
                   </Link>
                 )}
-
-                <a
-                  href={`${process.env.NEXT_PUBLIC_WORDPRESS_URL || 'http://localhost:10005'}/checkout/?plan=${selectedPlan}&size=${selectedSize}${discountCode ? `&coupon=${encodeURIComponent(discountCode)}` : ''}${affiliateCode ? `&ref=${encodeURIComponent(affiliateCode)}` : ''}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-2.5 px-4 rounded-xl font-heading font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-neutral-300 hover:text-white transition-all text-center"
-                >
-                  <span>Pay Online (Direct Bank Transfer / Card / Crypto)</span>
-                </a>
               </div>
 
               <p className="text-[10px] text-fgText-secondary text-center leading-relaxed">

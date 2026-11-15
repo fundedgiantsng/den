@@ -1159,13 +1159,33 @@ export class AdminService {
         isActive: c.isActive,
         usageCount: c.usageCount,
         maxUsage: c.maxUsage,
+        expiresAt: c.expiresAt,
+        restrictedEmails: c.restrictedEmails ? c.restrictedEmails.split(',').map((e) => e.trim()).filter(Boolean) : [],
+        restrictedAccountType: c.restrictedAccountType || null,
+        restrictedAccountSize: c.restrictedAccountSize ? Number(c.restrictedAccountSize) : null,
+        assignedAccountPlan: c.assignedAccountPlan || null,
+        assignedAccountSize: c.assignedAccountSize ? Number(c.assignedAccountSize) : null,
+        description: c.description || null,
         createdAt: c.createdAt,
       })),
     };
   }
 
   async createCoupon(
-    dto: { code: string; discountPercent: number; maxDiscountNgn?: number; maxUsage?: number },
+    dto: {
+      code: string;
+      discountPercent: number;
+      maxDiscountNgn?: number;
+      maxUsage?: number;
+      expiresAt?: string;
+      restrictedEmails?: string[];
+      restrictedAccountType?: string;
+      restrictedAccountSize?: number;
+      assignedAccountPlan?: string;
+      assignedAccountSize?: number;
+      description?: string;
+      sendEmail?: boolean;
+    },
     context: AdminActionContext,
   ) {
     const code = dto.code.trim().toUpperCase();
@@ -1174,6 +1194,10 @@ export class AdminService {
       throw new BadRequestException(`Coupon code ${code} already exists.`);
     }
 
+    const emailStr = Array.isArray(dto.restrictedEmails) && dto.restrictedEmails.length > 0
+      ? dto.restrictedEmails.map((e) => e.trim().toLowerCase()).filter(Boolean).join(',')
+      : null;
+
     const coupon = await prisma.$transaction(async (tx) => {
       const c = await tx.coupon.create({
         data: {
@@ -1181,6 +1205,13 @@ export class AdminService {
           discountPercent: dto.discountPercent,
           maxDiscountNgn: dto.maxDiscountNgn,
           maxUsage: dto.maxUsage,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+          restrictedEmails: emailStr,
+          restrictedAccountType: dto.restrictedAccountType || null,
+          restrictedAccountSize: dto.restrictedAccountSize || null,
+          assignedAccountPlan: dto.assignedAccountPlan || null,
+          assignedAccountSize: dto.assignedAccountSize || null,
+          description: dto.description || null,
           isActive: true,
         },
       });
@@ -1191,7 +1222,13 @@ export class AdminService {
           action: 'ADMIN_COUPON_CREATED',
           resource: 'Coupon',
           resourceId: c.id,
-          details: { code, discountPercent: dto.discountPercent },
+          details: {
+            code,
+            discountPercent: dto.discountPercent,
+            restrictedEmails: emailStr,
+            assignedAccountPlan: dto.assignedAccountPlan,
+            assignedAccountSize: dto.assignedAccountSize,
+          },
           ipAddress: context.ipAddress,
           userAgent: context.userAgent,
         },
@@ -1200,10 +1237,192 @@ export class AdminService {
       return c;
     });
 
+    // Send email notification to user(s) if requested and emails exist
+    if (dto.sendEmail && emailStr) {
+      await this.dispatchCouponEmails({
+        code,
+        discountPercent: dto.discountPercent,
+        emails: emailStr.split(','),
+        assignedPlan: dto.assignedAccountPlan,
+        assignedSize: dto.assignedAccountSize,
+      });
+    }
+
     return {
       success: true,
       message: `Coupon ${code} created successfully.`,
       data: coupon,
+    };
+  }
+
+  async updateCoupon(
+    code: string,
+    dto: {
+      discountPercent?: number;
+      maxDiscountNgn?: number;
+      maxUsage?: number;
+      expiresAt?: string | null;
+      restrictedEmails?: string[];
+      restrictedAccountType?: string | null;
+      restrictedAccountSize?: number | null;
+      assignedAccountPlan?: string | null;
+      assignedAccountSize?: number | null;
+      description?: string | null;
+      isActive?: boolean;
+      sendEmail?: boolean;
+    },
+    context: AdminActionContext,
+  ) {
+    const cleanCode = code.trim().toUpperCase();
+    const existing = await prisma.coupon.findUnique({ where: { code: cleanCode } });
+    if (!existing) {
+      throw new NotFoundException(`Coupon ${cleanCode} not found.`);
+    }
+
+    const emailStr = Array.isArray(dto.restrictedEmails)
+      ? dto.restrictedEmails.map((e) => e.trim().toLowerCase()).filter(Boolean).join(',')
+      : undefined;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const c = await tx.coupon.update({
+        where: { code: cleanCode },
+        data: {
+          discountPercent: dto.discountPercent !== undefined ? dto.discountPercent : undefined,
+          maxDiscountNgn: dto.maxDiscountNgn !== undefined ? dto.maxDiscountNgn : undefined,
+          maxUsage: dto.maxUsage !== undefined ? dto.maxUsage : undefined,
+          expiresAt: dto.expiresAt !== undefined ? (dto.expiresAt ? new Date(dto.expiresAt) : null) : undefined,
+          restrictedEmails: emailStr !== undefined ? (emailStr || null) : undefined,
+          restrictedAccountType: dto.restrictedAccountType !== undefined ? dto.restrictedAccountType : undefined,
+          restrictedAccountSize: dto.restrictedAccountSize !== undefined ? dto.restrictedAccountSize : undefined,
+          assignedAccountPlan: dto.assignedAccountPlan !== undefined ? dto.assignedAccountPlan : undefined,
+          assignedAccountSize: dto.assignedAccountSize !== undefined ? dto.assignedAccountSize : undefined,
+          description: dto.description !== undefined ? dto.description : undefined,
+          isActive: dto.isActive !== undefined ? dto.isActive : undefined,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_COUPON_UPDATED',
+          resource: 'Coupon',
+          resourceId: c.id,
+          details: { code: cleanCode, updates: dto },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return c;
+    });
+
+    if (dto.sendEmail && emailStr) {
+      await this.dispatchCouponEmails({
+        code: cleanCode,
+        discountPercent: Number(updated.discountPercent),
+        emails: emailStr.split(','),
+        assignedPlan: updated.assignedAccountPlan || undefined,
+        assignedSize: updated.assignedAccountSize ? Number(updated.assignedAccountSize) : undefined,
+      });
+    }
+
+    return {
+      success: true,
+      message: `Coupon ${cleanCode} updated successfully.`,
+      data: updated,
+    };
+  }
+
+  async deleteCoupon(code: string, context: AdminActionContext) {
+    const cleanCode = code.trim().toUpperCase();
+    const existing = await prisma.coupon.findUnique({ where: { code: cleanCode } });
+    if (!existing) {
+      throw new NotFoundException(`Coupon ${cleanCode} not found.`);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.coupon.delete({ where: { code: cleanCode } });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_COUPON_DELETED',
+          resource: 'Coupon',
+          resourceId: existing.id,
+          details: { code: cleanCode },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      message: `Coupon ${cleanCode} deleted successfully.`,
+    };
+  }
+
+  /**
+   * Dispatch transactional email to assigned users with direct WordPress checkout link
+   */
+  async dispatchCouponEmails(params: {
+    code: string;
+    discountPercent: number;
+    emails: string[];
+    assignedPlan?: string;
+    assignedSize?: number;
+  }) {
+    const { code, discountPercent, emails, assignedPlan, assignedSize } = params;
+    const wpBase = process.env.NEXT_PUBLIC_WORDPRESS_URL || process.env.WORDPRESS_URL || 'https://fundedgiants.com';
+    const planParam = assignedPlan ? `&plan=${encodeURIComponent(assignedPlan)}` : '';
+    const sizeParam = assignedSize ? `&size=${encodeURIComponent(assignedSize)}` : '';
+    const checkoutUrl = `${wpBase}/checkout/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`;
+
+    for (const email of emails) {
+      this.logger.log(`[DISPATCH COUPON EMAIL] To: ${email} | Coupon: ${code} (${discountPercent}% off) | URL: ${checkoutUrl}`);
+      // Brevo / SMTP HTTP dispatch
+      const brevoKey = process.env.BREVO_API_KEY;
+      if (brevoKey) {
+        try {
+          await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': brevoKey,
+            },
+            body: JSON.stringify({
+              sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.com' },
+              to: [{ email }],
+              subject: discountPercent === 100 ? 'Your 100% Free FundedGiants Account Offer!' : `Exclusive ${discountPercent}% Off Your FundedGiants Challenge`,
+              htmlContent: `
+                <div style="font-family: Arial, sans-serif; background: #070a08; color: #ffffff; padding: 24px; border-radius: 12px;">
+                  <h2 style="color: #00f59b;">Exclusive Challenge Offer from FundedGiants</h2>
+                  <p>Hello,</p>
+                  <p>You have been offered a special promo coupon to launch your prop trading challenge with FundedGiants:</p>
+                  <div style="background: #0f1712; border: 1px solid #1b3322; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                    <p style="font-size: 20px; font-weight: bold; color: #00f59b; margin: 0;">Code: ${code}</p>
+                    <p style="font-size: 14px; color: #a1a1aa; margin: 4px 0;">Discount: ${discountPercent}% ${discountPercent === 100 ? '(100% Free Account)' : ''}</p>
+                    ${assignedPlan ? `<p style="font-size: 14px; color: #a1a1aa; margin: 4px 0;">Program: ${assignedPlan} ${assignedSize ? `• ₦${Number(assignedSize).toLocaleString()}` : ''}</p>` : ''}
+                  </div>
+                  <p>To claim this account, please proceed directly through our checkout flow below:</p>
+                  <a href="${checkoutUrl}" style="display: inline-block; background: #00f59b; color: #000000; padding: 12px 24px; border-radius: 8px; font-weight: bold; text-decoration: none; margin-top: 12px;">
+                    Claim Your Account on FundedGiants
+                  </a>
+                  <p style="font-size: 11px; color: #71717a; margin-top: 24px;">Note: You must complete the checkout with this email address (${email}).</p>
+                </div>
+              `,
+            }),
+          });
+        } catch (err: any) {
+          this.logger.warn(`Failed to dispatch Brevo email for coupon ${code} to ${email}: ${err.message}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: `Coupon notifications dispatched to ${emails.length} recipient(s).`,
+      checkoutUrl,
     };
   }
 

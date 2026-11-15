@@ -62,6 +62,8 @@ export function AdminSidebar() {
             const isActive =
               item.href === '/'
                 ? pathname === '/'
+                : item.href === '/affiliates'
+                ? pathname === '/affiliates'
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
             return (

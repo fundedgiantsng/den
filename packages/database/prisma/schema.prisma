@@ -52,6 +52,7 @@ model User {
   phone             String?      @unique
   firstName         String?
   lastName          String?
+  address           String?
   role              UserRole     @default(CUSTOMER)
   kycStatus         KycStatus    @default(UNVERIFIED)
   isSuspended       Boolean      @default(false)
@@ -634,11 +635,17 @@ model Coupon {
   maxDiscountNgn     Decimal?          @db.Decimal(18, 2)
   isActive           Boolean           @default(true)
   expiresAt          DateTime?
-  usageCount         Int               @default(0)
-  maxUsage           Int?
-  affiliateProfileId String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  usageCount            Int               @default(0)
+  maxUsage              Int?
+  affiliateProfileId    String?
+  restrictedEmails      String?           @db.Text
+  restrictedAccountType String?           @db.VarChar(64)
+  restrictedAccountSize Decimal?          @db.Decimal(18, 2)
+  assignedAccountPlan   String?           @db.VarChar(64)
+  assignedAccountSize   Decimal?          @db.Decimal(18, 2)
+  description           String?           @db.Text
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   affiliateProfile   AffiliateProfile? @relation(fields: [affiliateProfileId], references: [id])
 
