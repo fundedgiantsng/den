@@ -301,7 +301,19 @@ export class RiskEngineService {
     }
 
     // 2. Perform instantaneous risk assessment on the account
-    const assessment = await this.evaluateAccount(account);
+    const pushedMetrics: SteraTraderAccountMetrics | undefined =
+      payload.equity !== undefined || payload.balance !== undefined
+        ? {
+            accountNumber,
+            equity: payload.equity !== undefined ? Number(payload.equity) : Number(account.currentEquity),
+            balance: payload.balance !== undefined ? Number(payload.balance) : Number(account.currentBalance),
+            startingDayEquity: Number(account.initialBalance),
+            openTradesCount: event === 'TRADE_OPEN' ? 1 : 0,
+            openTradesProfit: profit !== undefined ? Number(profit) : 0,
+          }
+        : undefined;
+
+    const assessment = await this.evaluateAccount(account, pushedMetrics);
 
     return {
       status: 'evaluated',
@@ -312,21 +324,20 @@ export class RiskEngineService {
 
   /**
    * Evaluate a single trading account against strict risk parameters:
-   * 1. 4% Daily Drawdown Rule (based on 00:00 UTC starting balance/equity)
-   * 2. Max Total Drawdown (10% Rhino Rush / 7% Phoenix Rise)
-   * 3. 2% Daily Profit Cap towards challenge target
-   * 4. 50% Profit Consistency Rule
-   * 5. Target Promotion (10% profit for 1-Step Rhino Rush)
+   * 1. 4% Daily Drawdown Rule (based on 23:00 GMT+1 starting baseline, open & closed trades inclusive)
+   * 2. Max Total Drawdown (10% Rhino Rush / 7% Phoenix Rise - 100% Static Floor)
+   * 3. 2% Daily Profit Cap towards challenge target (excess cleared at session reset)
+   * 4. Target Promotion (10% profit for 1-Step Rhino Rush)
    */
-  async evaluateAccount(account: any) {
+  async evaluateAccount(account: any, pushedMetrics?: SteraTraderAccountMetrics) {
     this.totalEvaluationsCount++;
     const { challenge, initialBalance, dailyDrawdownLimit, maxDrawdownLimit } = account;
     const initialBal = Number(initialBalance);
     const dailyLimit = Number(dailyDrawdownLimit);
     const maxLimit = Number(maxDrawdownLimit);
 
-    // Fetch real-time equity & metrics from SteraTrader
-    const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+    // Fetch real-time equity & metrics from SteraTrader, or use pushed webhook metrics
+    const metrics = pushedMetrics || (await this.steraTraderService.fetchAccountMetrics(account.accountNumber));
     if (!metrics) {
       // SteraTrader metrics missing or offline
       return { status: 'metrics_unavailable' };
