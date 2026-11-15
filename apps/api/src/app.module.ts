@@ -10,6 +10,7 @@ import { AffiliateModule } from './modules/affiliate/affiliate.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { CardsModule } from './modules/cards/cards.module';
+import { SupportModule } from './modules/support/support.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CardsModule } from './modules/cards/cards.module';
     WalletModule,
     CertificatesModule,
     CardsModule,
+    SupportModule,
     AdminModule,
   ],
   controllers: [],

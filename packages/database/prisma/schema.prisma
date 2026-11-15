@@ -75,6 +75,9 @@ model User {
   auditEvents       AuditEvent[]
   kycRecords        KycRecord[]
   copySubscriptions CopySubscription[]
+  supportTickets    SupportTicket[]
+  ticketMessages    TicketMessage[]
+  liveChatMessages  LiveChatMessage[]
 
   @@index([email])
   @@index([phone])
@@ -813,3 +816,83 @@ model CopiedTradeExecution {
   @@index([subscriptionId])
   @@index([masterTradeId])
 }
+
+enum TicketCategory {
+  TECHNICAL
+  ACCOUNT
+  PAYOUT
+  RULES
+  VERVE_CARD
+  AFFILIATE
+  BILLING
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id                String          @id @default(uuid())
+  ticketNumber      String          @unique
+  userId            String
+  subject           String
+  category          TicketCategory  @default(OTHER)
+  priority          TicketPriority  @default(NORMAL)
+  status            TicketStatus    @default(OPEN)
+  relatedAccountId  String?
+  assignedAgentName String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  resolvedAt        DateTime?
+
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages          TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+}
+
+model TicketMessage {
+  id          String        @id @default(uuid())
+  ticketId    String
+  senderId    String
+  senderRole  UserRole      @default(CUSTOMER)
+  senderName  String
+  message     String        @db.Text
+  attachments Json?
+  createdAt   DateTime      @default(now())
+
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender      User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([senderId])
+}
+
+model LiveChatMessage {
+  id         String   @id @default(uuid())
+  userId     String
+  senderRole UserRole @default(CUSTOMER)
+  senderName String
+  message    String   @db.Text
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+

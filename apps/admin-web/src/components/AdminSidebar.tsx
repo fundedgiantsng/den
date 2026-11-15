@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Cpu,
   ExternalLink,
+  LifeBuoy,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { label: 'Withdrawals Log', href: '/finance/withdrawals', icon: ArrowDownLeft },
   { label: 'Affiliates', href: '/affiliates', icon: Share2 },
   { label: 'Discount Coupons', href: '/affiliates/coupons', icon: Tag },
+  { label: 'Support Desk', href: '/support', icon: LifeBuoy },
   { label: 'Audit Trail', href: '/audit-logs', icon: ClipboardList },
   { label: 'Device & API Config', href: '/settings', icon: Cpu },
 ];
