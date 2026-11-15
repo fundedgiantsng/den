@@ -593,56 +593,51 @@ export default function GiantsVaultPage() {
         {/* RIGHT / SIDEBAR COLUMN (lg:col-span-4)                  */}
         {/* ======================================================== */}
         <div className="lg:col-span-4 space-y-5">
-          {/* BUY NEW CHALLENGE PRIMARY CALL-TO-ACTION */}
+          {/* BUY NEW ACCOUNT PRIMARY CALL-TO-ACTION (GOLD/AMBER THEME) */}
           <Link
             href="/dashboard/challenges/buy"
-            className="w-full p-4 rounded-2xl bg-gradient-to-r from-[#00f59b] via-[#00d685] to-[#00a86b] hover:from-[#00ffaa] hover:to-[#00c57d] text-black font-heading font-black text-sm tracking-wide transition-all shadow-[0_0_25px_rgba(0,245,155,0.25)] hover:shadow-[0_0_35px_rgba(0,245,155,0.4)] active:scale-[0.99] flex items-center justify-between group"
+            className="w-full p-4 rounded-2xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-black text-sm tracking-wide transition-all shadow-lg shadow-amber-500/20 hover:shadow-amber-500/35 active:scale-[0.99] flex items-center justify-between group"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-black stroke-[2.5]" />
+              <div className="w-10 h-10 rounded-xl bg-black/15 flex items-center justify-center">
+                <Plus className="w-5 h-5 text-black stroke-[3]" />
               </div>
               <div className="text-left">
-                <div className="font-extrabold text-sm uppercase leading-tight">Buy New Challenge</div>
-                <div className="text-[11px] font-semibold text-black/80">Get funded up to $300,000</div>
+                <div className="font-extrabold text-sm uppercase leading-tight">Buy New Account</div>
+                <div className="text-[11px] font-semibold text-black/80">Get Funded Upto ₦50,000,000</div>
               </div>
             </div>
             <ChevronRight className="w-5 h-5 stroke-[3] group-hover:translate-x-1 transition-transform" />
           </Link>
 
-          {/* 1. Dedicated Deposit Bank Details Card (Top of Sidebar) */}
-          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+          {/* 1. FundedGiants Deposit Account Card */}
+          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-4 sm:p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2.5">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
                   <Building2 className="w-3.5 h-3.5" />
                 </div>
-                <div>
-                  <h3 className="text-xs font-heading font-bold text-white uppercase tracking-wider">
-                    Dedicated Deposit Account
-                  </h3>
-                  <p className="text-[10px] text-fgText-secondary">
-                    Automated Inward Reconciliation
-                  </p>
-                </div>
+                <h3 className="text-xs font-heading font-bold text-white uppercase tracking-wider">
+                  FundedGiants Deposit Account
+                </h3>
               </div>
               <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono font-bold">
                 Instant
               </span>
             </div>
 
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-1.5 text-xs">
               {/* Bank Name */}
-              <div className="p-2.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
+              <div className="py-2 px-3 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-fgText-muted uppercase block">Bank Name</span>
-                  <span className="font-bold text-white font-mono">
+                  <span className="text-[9px] text-fgText-muted uppercase block">Bank Name</span>
+                  <span className="font-bold text-white font-mono text-xs">
                     {vault.dedicatedAccount?.bankName || 'Wema Bank'}
                   </span>
                 </div>
                 <button
                   onClick={() => handleCopy(vault.dedicatedAccount?.bankName || 'Wema Bank', 'bank')}
-                  className="p-1.5 text-fgText-secondary hover:text-white transition"
+                  className="p-1 text-fgText-secondary hover:text-white transition"
                   title="Copy Bank Name"
                 >
                   {copied === 'bank' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -650,9 +645,9 @@ export default function GiantsVaultPage() {
               </div>
 
               {/* Account Number */}
-              <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/20 flex items-center justify-between">
+              <div className="py-2 px-3 rounded-xl bg-black/40 border border-emerald-500/20 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-fgText-muted uppercase block">Account Number</span>
+                  <span className="text-[9px] text-fgText-muted uppercase block">Account Number</span>
                   <span className="font-extrabold text-[#00f59b] font-mono text-sm tracking-wider">
                     {vault.dedicatedAccount?.accountNumber || '7041289410'}
                   </span>
@@ -667,26 +662,22 @@ export default function GiantsVaultPage() {
               </div>
 
               {/* Beneficiary Name */}
-              <div className="p-2.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
+              <div className="py-2 px-3 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-fgText-muted uppercase block">Beneficiary</span>
+                  <span className="text-[9px] text-fgText-muted uppercase block">Beneficiary</span>
                   <span className="font-semibold text-white font-mono text-[11px]">
                     {vault.dedicatedAccount?.accountName || 'FG / JOHN DOE'}
                   </span>
                 </div>
                 <button
                   onClick={() => handleCopy(vault.dedicatedAccount?.accountName || 'FG / JOHN DOE', 'name')}
-                  className="p-1.5 text-fgText-secondary hover:text-white transition"
+                  className="p-1 text-fgText-secondary hover:text-white transition"
                   title="Copy Name"
                 >
                   {copied === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
-
-            <p className="text-[10px] text-fgText-muted leading-relaxed">
-              Transfer funds from any Nigerian banking app. Deposits are automatically detected and credited to your Giants Vault balance within seconds.
-            </p>
           </div>
 
           {/* 2. Giants Spend Card */}
@@ -694,20 +685,14 @@ export default function GiantsVaultPage() {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-heading font-extrabold text-white tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                <span>REQUEST GIANTS CARD</span>
+                <span>GIANTS SPEND CARD</span>
               </span>
-              {myCardData?.hasCard ? (
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
-                  {myCardData.cardOrder?.status || 'PENDING APPROVAL'}
-                </span>
-              ) : (
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
-                  MASTERCARD DEBIT
-                </span>
-              )}
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
+                MASTERCARD DEBIT
+              </span>
             </div>
 
-            {/* Spend Card Image: Custom Stamped or Official Perspective Card Design */}
+            {/* Spend Card Image: Official Perspective Card Design */}
             <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-black/60 flex items-center justify-center p-2">
               <Image
                 src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-perspective.png'}
@@ -719,41 +704,19 @@ export default function GiantsVaultPage() {
               />
             </div>
 
-            {/* Card Info and Download / Request Controls */}
-            {myCardData?.hasCard ? (
-              <div className="space-y-2.5 pt-1">
-                <div className="flex items-center justify-between text-[11px] text-fgText-secondary">
-                  <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Request Giants Card
-                  </span>
-                  <span className="font-mono text-fgText-muted">Physical Print Ready</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={myCardData.stampedUrl || `/cards/generated/${myCardData.cardOrder?.userId || 'sample'}-spend-card.jpg`}
-                    download="FundedGiants-Spend-Card.jpg"
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition text-center flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Card JPEG</span>
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2.5 pt-1">
-                <p className="text-[11px] text-fgText-secondary leading-relaxed">
-                  Request your personalized physical Mastercard debit card. Choose your custom print name and receive your high-res digital card instantly.
-                </p>
-                <button
-                  onClick={() => setIsRequestCardOpen(true)}
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-gradient-to-r from-emerald-500 to-[#00f59b] hover:from-emerald-400 hover:to-[#00ffaa] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Request Your Card</span>
-                </button>
-              </div>
-            )}
+            {/* Direct Link to Giants Card Dashboard */}
+            <div className="space-y-2.5 pt-1">
+              <p className="text-[11px] text-fgText-secondary leading-relaxed">
+                Physical laser-etched Mastercard debit card debited directly from your Giants Vault. Instant ATM cash, POS terminals, and online checkout.
+              </p>
+              <Link
+                href="/dashboard/wallet/cards"
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Request Giants MasterCard</span>
+              </Link>
+            </div>
           </div>
 
           {/* 3. List of Withdrawal Accounts (Bottom of Sidebar) */}
