@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Wallet,
@@ -11,19 +11,52 @@ import {
   AlertCircle,
   ArrowLeft,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
+
+interface DedicatedAccount {
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  currency: string;
+}
 
 export default function FundWalletPage() {
   const [copied, setCopied] = useState<string | null>(null);
-
-  // Dedicated Lenco Virtual Bank Account Details (Assigned via Lenco API after Ninja KYC)
-  const virtualAccount = {
-    bankName: 'Moniepoint Bank',
-    accountName: 'FGT/JOHN DOE',
-    accountNumber: '1234567890',
+  const [loading, setLoading] = useState(true);
+  const [virtualAccount, setVirtualAccount] = useState<DedicatedAccount>({
+    bankName: 'Wema Bank',
+    accountName: 'FG / TRADER',
+    accountNumber: '7041289410',
     currency: 'NGN (₦)',
-    minDeposit: 1000,
-  };
+  });
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+  useEffect(() => {
+    async function loadAccount() {
+      setLoading(true);
+      try {
+        const res = await fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.dedicatedAccount) {
+            setVirtualAccount({
+              bankName: data.dedicatedAccount.bankName || 'Wema Bank',
+              accountName: data.dedicatedAccount.accountName || 'FG / TRADER',
+              accountNumber: data.dedicatedAccount.accountNumber || '7041289410',
+              currency: data.dedicatedAccount.currency || 'NGN (₦)',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load virtual account details:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAccount();
+  }, [apiUrl]);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -32,12 +65,12 @@ export default function FundWalletPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-16">
       {/* Back to Wallet */}
       <div>
         <Link
           href="/dashboard/wallet"
-          className="inline-flex items-center gap-1.5 text-xs text-fgText-secondary hover:text-white mb-2"
+          className="inline-flex items-center gap-1.5 text-xs text-fgText-secondary hover:text-white mb-2 transition"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Central Wallet</span>
@@ -56,8 +89,10 @@ export default function FundWalletPage() {
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-xs text-fgText-muted uppercase tracking-wider">Dedicated Bank</p>
-              <p className="text-base font-heading font-bold text-white">{virtualAccount.bankName}</p>
+              <p className="text-xs text-fgText-muted uppercase tracking-wider font-semibold">Dedicated Bank</p>
+              <p className="text-base font-heading font-bold text-white">
+                {loading ? 'Fetching...' : virtualAccount.bankName}
+              </p>
             </div>
           </div>
 
@@ -74,7 +109,7 @@ export default function FundWalletPage() {
               Virtual Account Number
             </p>
             <p className="text-2xl font-mono font-extrabold text-white tracking-widest mt-0.5">
-              {virtualAccount.accountNumber}
+              {loading ? '••••••••••' : virtualAccount.accountNumber}
             </p>
           </div>
           <button
@@ -99,7 +134,7 @@ export default function FundWalletPage() {
         {/* Account Name */}
         <div className="flex items-center justify-between py-2 border-b border-fgBorder-subtle text-xs">
           <span className="text-fgText-muted">Account Name</span>
-          <span className="font-semibold text-white">{virtualAccount.accountName}</span>
+          <span className="font-semibold text-white">{loading ? '...' : virtualAccount.accountName}</span>
         </div>
 
         {/* Currency & Settling */}
