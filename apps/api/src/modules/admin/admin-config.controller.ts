@@ -41,13 +41,17 @@ export class UpdateFullConfigDto {
   wooCommerceConsumerSecret?: string;
   wooCommerceWebhookSecret?: string;
 
-  // KYC Provider (Sumsub / NinjaKYC)
-  kycProvider?: string; // sumsub | ninjakyc | robase
+  // KYC Provider (Strictly NinjaKYC)
+  kycProvider?: string;
+  ninjaKycBaseUrl?: string;
+  ninjaKycApiKey?: string;
+  ninjaKycClientId?: string;
+  ninjaKycSecretKey?: string;
+  ninjaKycWebhookSecret?: string;
   kycBaseUrl?: string;
   kycAppToken?: string;
   kycApiKey?: string;
   kycSecretKey?: string;
-  kycLevelName?: string;
   kycWebhookSecret?: string;
 
   // Transactional Email / SMTP
@@ -133,12 +137,13 @@ export class AdminConfigController {
           hasWebhookSecret: !!parseEnvVal('WOOCOMMERCE_WEBHOOK_SECRET'),
         },
         kyc: {
-          provider: parseEnvVal('KYC_PROVIDER') || 'sumsub',
-          baseUrl: parseEnvVal('KYC_BASE_URL') || 'https://api.sumsub.com',
-          hasAppToken: !!parseEnvVal('KYC_APP_TOKEN') || !!parseEnvVal('NINJA_KYC_API_KEY'),
-          hasSecretKey: !!parseEnvVal('KYC_SECRET_KEY'),
-          levelName: parseEnvVal('KYC_LEVEL_NAME') || 'basic-kyc-level',
-          hasWebhookSecret: !!parseEnvVal('KYC_WEBHOOK_SECRET') || !!parseEnvVal('NINJA_KYC_WEBHOOK_SECRET'),
+          provider: 'ninjakyc',
+          baseUrl: parseEnvVal('NINJA_KYC_BASE_URL') || parseEnvVal('KYC_BASE_URL') || 'https://api.ninjakyc.com',
+          hasApiKey: !!parseEnvVal('NINJA_KYC_API_KEY') || !!parseEnvVal('KYC_APP_TOKEN'),
+          apiKeyMasked: this.maskValue(parseEnvVal('NINJA_KYC_API_KEY') || parseEnvVal('KYC_APP_TOKEN')),
+          clientId: parseEnvVal('NINJA_KYC_CLIENT_ID') || '',
+          hasSecretKey: !!parseEnvVal('NINJA_KYC_SECRET_KEY') || !!parseEnvVal('KYC_SECRET_KEY'),
+          hasWebhookSecret: !!parseEnvVal('NINJA_KYC_WEBHOOK_SECRET') || !!parseEnvVal('KYC_WEBHOOK_SECRET'),
         },
         smtp: {
           provider: parseEnvVal('EMAIL_PROVIDER') || 'smtp',
@@ -213,13 +218,13 @@ export class AdminConfigController {
       updateKey('WOOCOMMERCE_CONSUMER_SECRET', dto.wooCommerceConsumerSecret);
       updateKey('WOOCOMMERCE_WEBHOOK_SECRET', dto.wooCommerceWebhookSecret);
 
-      // KYC
-      updateKey('KYC_PROVIDER', dto.kycProvider);
-      updateKey('KYC_BASE_URL', dto.kycBaseUrl);
-      updateKey('KYC_APP_TOKEN', dto.kycAppToken || dto.kycApiKey);
-      updateKey('KYC_SECRET_KEY', dto.kycSecretKey);
-      updateKey('KYC_LEVEL_NAME', dto.kycLevelName);
-      updateKey('KYC_WEBHOOK_SECRET', dto.kycWebhookSecret);
+      // KYC (Strictly NinjaKYC)
+      updateKey('KYC_PROVIDER', 'ninjakyc');
+      updateKey('NINJA_KYC_BASE_URL', dto.ninjaKycBaseUrl || dto.kycBaseUrl);
+      updateKey('NINJA_KYC_API_KEY', dto.ninjaKycApiKey || dto.kycAppToken || dto.kycApiKey);
+      updateKey('NINJA_KYC_CLIENT_ID', dto.ninjaKycClientId);
+      updateKey('NINJA_KYC_SECRET_KEY', dto.ninjaKycSecretKey || dto.kycSecretKey);
+      updateKey('NINJA_KYC_WEBHOOK_SECRET', dto.ninjaKycWebhookSecret || dto.kycWebhookSecret);
 
       // SMTP
       updateKey('EMAIL_PROVIDER', dto.emailProvider);
@@ -281,7 +286,7 @@ export class AdminConfigController {
         details = 'SMTP relay host responded to HELO handshake.';
         break;
       case 'kyc':
-        details = 'KYC webhook listener and verification API ready.';
+        details = 'NinjaKYC API connected. Automated BVN, NIN, and Liveness validation endpoints ready.';
         break;
       default:
         details = 'Provider endpoint ping successful.';

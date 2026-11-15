@@ -58,13 +58,13 @@ export default function SettingsAndDevicePage() {
     wooCommerceConsumerSecret: '',
     wooCommerceWebhookSecret: '',
 
-    // KYC
-    kycProvider: 'sumsub',
-    kycBaseUrl: '',
-    kycAppToken: '',
-    kycSecretKey: '',
-    kycLevelName: '',
-    kycWebhookSecret: '',
+    // KYC (Strictly NinjaKYC)
+    kycProvider: 'ninjakyc',
+    ninjaKycBaseUrl: '',
+    ninjaKycApiKey: '',
+    ninjaKycClientId: '',
+    ninjaKycSecretKey: '',
+    ninjaKycWebhookSecret: '',
 
     // SMTP / Email
     emailProvider: 'smtp',
@@ -120,9 +120,9 @@ export default function SettingsAndDevicePage() {
 
           wooCommerceApiUrl: s.wooCommerce?.apiUrl || prev.wooCommerceApiUrl,
 
-          kycProvider: s.kyc?.provider || prev.kycProvider,
-          kycBaseUrl: s.kyc?.baseUrl || prev.kycBaseUrl,
-          kycLevelName: s.kyc?.levelName || prev.kycLevelName,
+          kycProvider: 'ninjakyc',
+          ninjaKycBaseUrl: s.kyc?.baseUrl || prev.ninjaKycBaseUrl,
+          ninjaKycClientId: s.kyc?.clientId || prev.ninjaKycClientId,
 
           emailProvider: s.smtp?.provider || prev.emailProvider,
           smtpHost: s.smtp?.host || prev.smtpHost,
@@ -287,7 +287,7 @@ export default function SettingsAndDevicePage() {
             { id: 'steratrader', label: 'SteraTrader Broker', icon: Zap },
             { id: 'lenco', label: 'Lenco Banking', icon: Building2 },
             { id: 'woocommerce', label: 'WooCommerce', icon: ShoppingCart },
-            { id: 'kyc', label: 'KYC Verification', icon: UserCheck },
+            { id: 'kyc', label: 'NinjaKYC Identity', icon: UserCheck },
             { id: 'smtp', label: 'Email & SMTP', icon: Mail },
             { id: 'alerts', label: 'Risk Alerts', icon: Bell },
             { id: 'crypto', label: 'Crypto & Alternative', icon: Coins },
@@ -478,7 +478,7 @@ export default function SettingsAndDevicePage() {
             </div>
           )}
 
-          {/* 4. KYC Provider */}
+          {/* 4. NinjaKYC Dedicated Provider */}
           {(activeTab === 'all' || activeTab === 'kyc') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
@@ -487,41 +487,41 @@ export default function SettingsAndDevicePage() {
                     <UserCheck className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Identity Verification & KYC Gate</h3>
-                    <p className="text-[11px] text-slate-400">Sumsub / NinjaKYC automated BVN, NIN, Government ID, and liveness verification</p>
+                    <h3 className="text-sm font-bold text-white">NinjaKYC Identity Verification Engine</h3>
+                    <p className="text-[11px] text-slate-400">Strictly dedicated NinjaKYC gateway for automated BVN, NIN, Voter&apos;s Card, International Passport, and Liveness validation</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleTestConnection('kyc')}
-                  disabled={testingProvider === 'kyc'}
-                  className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
-                >
-                  {testingProvider === 'kyc' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                  <span>Test KYC Gateway</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    {statusData?.credentialsSummary?.kyc?.hasApiKey ? 'NINJAKYC ACTIVE' : 'PENDING API KEY'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleTestConnection('kyc')}
+                    disabled={testingProvider === 'kyc'}
+                    className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
+                  >
+                    {testingProvider === 'kyc' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
+                    <span>Test NinjaKYC API</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    KYC Engine
+                    Dedicated KYC Provider
                   </label>
-                  <select
-                    value={formData.kycProvider}
-                    onChange={(e) => setFormData({ ...formData, kycProvider: e.target.value })}
-                    className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                  >
-                    <option value="sumsub">Sumsub Global ID</option>
-                    <option value="ninjakyc">NinjaKYC / Verified.ng</option>
-                    <option value="robase">Robase Nigerian Identity Engine</option>
-                  </select>
+                  <div className="w-full rounded-lg bg-[#070a08] border border-emerald-500/30 px-3 py-2 text-xs text-[#00f59b] font-mono font-bold flex items-center justify-between">
+                    <span>NinjaKYC (Nigeria Direct)</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400">Strict</span>
+                  </div>
                 </div>
-                {renderInputField('Base URL', 'kycBaseUrl', 'https://api.sumsub.com')}
-                {renderInputField('App Token / API Key', 'kycAppToken', 'App Token', true)}
-                {renderInputField('Secret Key', 'kycSecretKey', 'Secret Key', true)}
-                {renderInputField('Verification Level Name', 'kycLevelName', 'basic-kyc-level')}
-                {renderInputField('Webhook HMAC Secret', 'kycWebhookSecret', 'HMAC verification secret', true)}
+                {renderInputField('NinjaKYC Base URL', 'ninjaKycBaseUrl', 'https://api.ninjakyc.com')}
+                {renderInputField('NinjaKYC API Key', 'ninjaKycApiKey', 'Leave blank to retain current key', true, undefined, statusData?.credentialsSummary?.kyc?.apiKeyMasked)}
+                {renderInputField('NinjaKYC Client ID', 'ninjaKycClientId', 'Client / App ID')}
+                {renderInputField('NinjaKYC Secret Key', 'ninjaKycSecretKey', 'Leave blank to retain secret', true)}
+                {renderInputField('NinjaKYC Webhook Secret', 'ninjaKycWebhookSecret', 'Webhook HMAC verification secret', true)}
               </div>
             </div>
           )}

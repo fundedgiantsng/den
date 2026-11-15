@@ -9,7 +9,7 @@ export class CardsService {
   private readonly logger = new Logger(CardsService.name);
   private readonly publicDir = path.resolve(__dirname, '../../../../trader-web/public/cards');
   private readonly generatedDir = path.resolve(this.publicDir, 'generated');
-  private readonly blankTemplatePath = path.resolve(this.publicDir, 'card-template-blank.png');
+  private readonly blankTemplatePath = path.resolve(this.publicDir, 'card-verve-blank.png');
 
   constructor() {
     if (!fs.existsSync(this.generatedDir)) {
@@ -18,7 +18,7 @@ export class CardsService {
   }
 
   /**
-   * Stamp user's name onto the blank luxury card template and create CardOrder
+   * Stamp user's name onto the blank luxury Verve card template and create CardOrder
    */
   async requestCard(params: {
     userId: string;
@@ -35,7 +35,7 @@ export class CardsService {
 
     // 1. Generate Stamped Card JPEG using Sharp with Metallic Gold Foil SVG
     const svgOverlay = `
-    <svg width="1024" height="696" xmlns="http://www.w3.org/2000/svg">
+    <svg width="1024" height="682" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="goldFoilGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stop-color="#fff5db" />
@@ -47,7 +47,7 @@ export class CardsService {
           <feDropShadow dx="1" dy="1.5" stdDeviation="0.8" flood-color="#000000" flood-opacity="0.95" />
         </filter>
       </defs>
-      <text x="88" y="574" 
+      <text x="90" y="574" 
             font-family="'Cinzel', 'Times New Roman', 'Georgia', serif" 
             font-size="32" 
             font-weight="bold" 

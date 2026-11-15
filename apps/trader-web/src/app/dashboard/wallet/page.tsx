@@ -688,33 +688,30 @@ export default function GiantsVaultPage() {
                 <span>GIANTS SPEND CARD</span>
               </span>
               <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
-                MASTERCARD DEBIT
+                VERVE DEBIT
               </span>
             </div>
 
-            {/* Spend Card Image: Official Perspective Card Design */}
+            {/* Spend Card Image: Official Perspective Verve Card Design */}
             <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-black/60 flex items-center justify-center p-2">
               <Image
-                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-perspective.png'}
+                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-verve-perspective.png'}
                 alt="FundedGiants Spend Card"
                 width={1024}
-                height={696}
+                height={748}
                 className="w-full h-auto object-contain rounded-lg transition duration-300 group-hover:scale-[1.02]"
                 priority
               />
             </div>
 
             {/* Direct Link to Giants Card Dashboard */}
-            <div className="space-y-2.5 pt-1">
-              <p className="text-[11px] text-fgText-secondary leading-relaxed">
-                Physical laser-etched Mastercard debit card debited directly from your Giants Vault. Instant ATM cash, POS terminals, and online checkout.
-              </p>
+            <div className="pt-1">
               <Link
                 href="/dashboard/wallet/cards"
                 className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
               >
                 <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Request Giants MasterCard</span>
+                <span>Request Card</span>
               </Link>
             </div>
           </div>
@@ -935,7 +932,7 @@ export default function GiantsVaultPage() {
                 <span>Request Custom Giants Spend Card</span>
               </h3>
               <p className="text-xs text-fgText-secondary">
-                Personalized metallic gold foil stamping on your Mastercard debit card.
+                Personalized metallic gold foil stamping on your Verve debit card.
               </p>
             </div>
 

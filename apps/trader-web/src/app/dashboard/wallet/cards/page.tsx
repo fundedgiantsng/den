@@ -166,11 +166,11 @@ export default function GiantsCardDashboardPage() {
       setMyCardData({
         hasCard: true,
         cardOrder: result.cardOrder,
-        previewUrl: '/cards/card-preview-perspective.png',
+        previewUrl: '/cards/card-verve-perspective.png',
         stampedUrl: result.downloadUrl,
       });
 
-      setActionSuccess('Giants MasterCard requested and stamped successfully! Ready for download and physical dispatch.');
+      setActionSuccess('Giants Verve Card requested and stamped successfully! Ready for download and physical dispatch.');
       setTimeout(() => {
         setIsRequestModalOpen(false);
         setActionSuccess(null);
@@ -206,13 +206,13 @@ export default function GiantsCardDashboardPage() {
               Giants Vault
             </Link>
             <span>/</span>
-            <span className="text-[#00f59b]">Giants MasterCard Dashboard</span>
+            <span className="text-[#00f59b]">Giants Verve Card Dashboard</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-heading font-extrabold text-white tracking-tight">
-            Giants MasterCard Dashboard
+            Giants Verve Card Dashboard
           </h1>
           <p className="text-xs text-fgText-secondary mt-1">
-            Physical laser-etched debit card debited directly from your Giants Vault balance for ATMs, POS, and online checkouts.
+            Physical laser-etched Verve debit card debited directly from your Giants Vault balance for ATMs, POS, and online checkouts.
           </p>
         </div>
 
@@ -248,7 +248,7 @@ export default function GiantsCardDashboardPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-heading font-extrabold text-white tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
-                <span>FUNDEDGIANTS MASTERCARD</span>
+                <span>FUNDEDGIANTS VERVE CARD</span>
               </span>
               <span
                 className={`text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold uppercase tracking-wider ${
@@ -261,13 +261,13 @@ export default function GiantsCardDashboardPage() {
               </span>
             </div>
 
-            {/* Official 3D Perspective Card Graphic */}
+            {/* Official 3D Perspective Verve Card Graphic */}
             <div className="relative rounded-2xl overflow-hidden border border-emerald-500/40 shadow-2xl group bg-black/60 p-3 flex items-center justify-center">
               <Image
-                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-perspective.png'}
-                alt="FundedGiants Spend Card"
+                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-verve-perspective.png'}
+                alt="FundedGiants Verve Spend Card"
                 width={1024}
-                height={696}
+                height={748}
                 className={`w-full h-auto object-contain rounded-xl transition duration-500 ${
                   isCardFrozen ? 'grayscale opacity-60' : 'group-hover:scale-[1.02]'
                 }`}
@@ -424,7 +424,7 @@ export default function GiantsCardDashboardPage() {
                   3
                 </div>
                 <div className="text-[10px] font-bold text-emerald-400">NFC Encoded</div>
-                <div className="text-[8px] text-slate-500">Mastercard Chip</div>
+                <div className="text-[8px] text-slate-500">Verve Smart Chip</div>
               </div>
               <div className="space-y-1.5 opacity-40">
                 <div className="w-7 h-7 mx-auto rounded-full bg-black/40 text-slate-500 border border-white/10 flex items-center justify-center font-bold text-xs">
@@ -444,7 +444,7 @@ export default function GiantsCardDashboardPage() {
                   Card Transactions Log
                 </h3>
                 <p className="text-[10px] text-fgText-secondary">
-                  Direct debit activity from your FundedGiants MasterCard
+                  Direct debit activity from your FundedGiants Verve Card
                 </p>
               </div>
               <span className="text-[10px] font-mono text-emerald-400">
@@ -486,7 +486,7 @@ export default function GiantsCardDashboardPage() {
       </div>
 
       {/* ======================================================== */}
-      {/* MODAL 1: REQUEST GIANTS MASTERCARD                       */}
+      {/* MODAL 1: REQUEST GIANTS VERVE CARD                       */}
       {/* ======================================================== */}
       {isRequestModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -501,7 +501,7 @@ export default function GiantsCardDashboardPage() {
             <div className="space-y-1">
               <h3 className="text-lg font-heading font-bold text-white flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
-                <span>Request Giants MasterCard</span>
+                <span>Request Giants Verve Card</span>
               </h3>
               <p className="text-xs text-fgText-secondary">
                 Personalized metallic gold foil stamping on your physical debit card.
