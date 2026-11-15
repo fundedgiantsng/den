@@ -20,12 +20,34 @@ export class RiskEngineController {
   constructor(private readonly riskEngineService: RiskEngineService) {}
 
   /**
+   * SteraTrader Webhook / Event Stream endpoint:
+   * Real-time trade open, trade close, trade modification, and equity tick broadcast.
+   * Performs instantaneous O(1) risk assessment for immediate breach termination.
+   */
+  @Post('trade-event')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Receive real-time trade execution and equity events from SteraTrader' })
+  async handleTradeEvent(@Req() req: Request) {
+    const payload = req.body;
+    return this.riskEngineService.processTradeEvent(payload);
+  }
+
+  /**
    * Trader endpoint: Check real-time payout eligibility and rule compliance
    */
   @Get('eligibility/:accountId')
   @ApiOperation({ summary: 'Check real-time payout eligibility and rule compliance for an account' })
   async checkEligibility(@Param('accountId') accountId: string) {
     return this.riskEngineService.checkPayoutEligibility(accountId);
+  }
+
+  /**
+   * Account real-time compliance status snapshot
+   */
+  @Get('status/:accountId')
+  @ApiOperation({ summary: 'Fetch real-time risk compliance, drawdown metrics, and headroom' })
+  async getAccountRiskStatus(@Param('accountId') accountId: string) {
+    return this.riskEngineService.getAccountRiskStatus(accountId);
   }
 
   /**

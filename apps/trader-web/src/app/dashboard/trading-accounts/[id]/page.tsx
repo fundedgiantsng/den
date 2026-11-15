@@ -69,6 +69,7 @@ export default function AccountAnalyticsTerminalPage() {
     maxDrawdownLimitNgn: 1000000,
     maxLossHeadroomNgn: 750000,
     isPayoutEligible: true,
+    payoutIneligibilityReason: undefined as string | undefined,
     minPayoutPercent: 2,
     payoutNumber: 1,
     traderSplitPercent: 50,
@@ -84,16 +85,43 @@ export default function AccountAnalyticsTerminalPage() {
   const fetchDetails = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:4000/api/v1/challenges/accounts/${accountId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [accRes, riskRes] = await Promise.allSettled([
+        fetch(`http://localhost:4000/api/v1/challenges/accounts/${accountId}`),
+        fetch(`http://localhost:4000/api/v1/risk/status/${accountId}`),
+      ]);
+
+      let accData: any = {};
+      if (accRes.status === 'fulfilled' && accRes.value.ok) {
+        accData = await accRes.value.json();
+      }
+
+      if (riskRes.status === 'fulfilled' && riskRes.value.ok) {
+        const riskData = await riskRes.value.json();
         setAccount((prev) => ({
           ...prev,
-          ...data,
+          ...accData,
+          currentBalanceNgn: riskData.currentBalanceNgn ?? prev.currentBalanceNgn,
+          currentEquityNgn: riskData.currentEquityNgn ?? prev.currentEquityNgn,
+          dailyDrawdownNgn: riskData.dailyDrawdown?.currentLossNgn ?? prev.dailyDrawdownNgn,
+          dailyDrawdownLimitNgn: riskData.dailyDrawdown?.dailyLimitNgn ?? prev.dailyDrawdownLimitNgn,
+          dailyHeadroomNgn: riskData.dailyDrawdown?.headroomRemainingNgn ?? prev.dailyHeadroomNgn,
+          maxDrawdownNgn: riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn,
+          maxDrawdownLimitNgn: riskData.maximumDrawdown?.limitNgn ?? prev.maxDrawdownLimitNgn,
+          maxLossHeadroomNgn: riskData.maximumDrawdown?.headroomRemainingNgn ?? prev.maxLossHeadroomNgn,
+          isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
+          payoutIneligibilityReason: riskData.payoutEligibility?.reason,
+          traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? prev.traderSplitPercent,
+          traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplit ?? prev.traderProfitSplitNgn,
+          firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplit ?? prev.firmProfitSplitNgn,
+        }));
+      } else if (Object.keys(accData).length > 0) {
+        setAccount((prev) => ({
+          ...prev,
+          ...accData,
         }));
       }
     } catch {
-      // Fallback
+      // Fallback to static mock for local preview
     } finally {
       setLoading(false);
     }
@@ -213,7 +241,7 @@ export default function AccountAnalyticsTerminalPage() {
             </div>
 
             {/* Quick Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <button
                 type="button"
                 onClick={fetchDetails}
@@ -224,15 +252,26 @@ export default function AccountAnalyticsTerminalPage() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
               </button>
 
-              <button
-                type="button"
-                onClick={handleRequestPayout}
-                disabled={requestingPayout || !account.isPayoutEligible}
-                className="px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Wallet className="w-3.5 h-3.5" />
-                <span>Request Payout ({formatNaira(account.traderProfitSplitNgn)})</span>
-              </button>
+              <div className="flex flex-col items-start sm:items-end gap-1">
+                <button
+                  type="button"
+                  onClick={handleRequestPayout}
+                  disabled={requestingPayout || !account.isPayoutEligible}
+                  className="px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>
+                    {account.isPayoutEligible
+                      ? `Request Payout (${formatNaira(account.traderProfitSplitNgn)})`
+                      : 'Payout Locked'}
+                  </span>
+                </button>
+                {!account.isPayoutEligible && account.payoutIneligibilityReason && (
+                  <span className="text-[10px] text-amber-400/90 font-mono">
+                    {account.payoutIneligibilityReason}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -310,7 +349,7 @@ export default function AccountAnalyticsTerminalPage() {
               <span className="text-xs font-heading font-bold text-white">Daily Drawdown (4% Limit)</span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400">
-              00:00 UTC Reset
+              23:00 GMT+1 Reset
             </span>
           </div>
 
@@ -325,6 +364,7 @@ export default function AccountAnalyticsTerminalPage() {
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
             <span>Used: {formatNaira(account.dailyDrawdownNgn)} ({dailyDdPercent}%)</span>
+            <span>Headroom: <strong className="text-emerald-400">{formatNaira(account.dailyHeadroomNgn)}</strong></span>
             <span>Limit: {formatNaira(account.dailyDrawdownLimitNgn)}</span>
           </div>
         </div>
@@ -335,10 +375,10 @@ export default function AccountAnalyticsTerminalPage() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-heading font-bold text-white">
-                Maximum Drawdown ({isPhoenix ? '7%' : '10%'} Limit)
+                Maximum Drawdown ({isPhoenix ? '7%' : '10%'} Static Floor)
               </span>
             </div>
-            <span className="text-[10px] font-mono text-amber-400">Static Barrier (No Trailing)</span>
+            <span className="text-[10px] font-mono text-amber-400">100% Static (Zero Trailing)</span>
           </div>
 
           <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">
@@ -352,6 +392,7 @@ export default function AccountAnalyticsTerminalPage() {
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
             <span>Used: {formatNaira(account.maxDrawdownNgn)} ({maxDdPercent}%)</span>
+            <span>Headroom: <strong className="text-amber-400">{formatNaira(account.maxLossHeadroomNgn)}</strong></span>
             <span>Limit: {formatNaira(account.maxDrawdownLimitNgn)}</span>
           </div>
         </div>

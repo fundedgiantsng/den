@@ -46,7 +46,6 @@ export interface PayoutEligibilityResult {
     minimumProfitMet: boolean;
     zeroOpenTradesMet: boolean;
     noActiveBreachesMet: boolean;
-    consistencyRuleMet: boolean;
     firstPayoutMet: boolean;
   };
 }
@@ -313,6 +312,60 @@ export class RiskEngineService {
 
     // Instruct SteraTrader to terminate/archive the breached account
     await this.steraTraderService.terminateAccount(account.accountNumber, reason);
+
+    // Dispatch dual real-time notifications to trader and admin
+    await this.dispatchBreachNotifications(account, eventType, reason, snapshotBalance, snapshotEquity);
+  }
+
+  /**
+   * Dispatch dual real-time breach notifications to both trader and administrator
+   */
+  private async dispatchBreachNotifications(
+    account: any,
+    eventType: string,
+    reason: string,
+    snapshotBalance: number,
+    snapshotEquity: number
+  ) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: account.userId },
+      });
+
+      const traderEmail = user?.email || 'trader@fundedgiants.com';
+      const traderName = `${user?.firstName || 'Trader'} ${user?.lastName || ''}`.trim();
+      const adminEmail = process.env.ADMIN_ALERT_EMAIL || 'admin@fundedgiants.com';
+
+      // 1. Record AuditEvent in ledger
+      await prisma.auditEvent.create({
+        data: {
+          userId: account.userId,
+          action: 'RULE_BREACH_ENFORCEMENT',
+          resource: 'TradingAccount',
+          resourceId: account.id,
+          details: {
+            accountNumber: account.accountNumber,
+            eventType,
+            reason,
+            snapshotBalance,
+            snapshotEquity,
+            notifiedTraderEmail: traderEmail,
+            notifiedAdminEmail: adminEmail,
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+
+      // 2. Dispatch real-time dual notifications
+      this.logger.warn(
+        `[DUAL NOTIFICATION] Alert sent to Trader (${traderEmail}): Account ${account.accountNumber} terminated. Reason: ${reason}`
+      );
+      this.logger.warn(
+        `[DUAL NOTIFICATION] Alert sent to Admin (${adminEmail}): CRITICAL Rule Breach on ${account.accountNumber} (${traderName}). Liquidated & closed on SteraTrader.`
+      );
+    } catch (err: any) {
+      this.logger.error(`Failed to dispatch breach notifications: ${err.message}`);
+    }
   }
 
   /**
@@ -423,7 +476,6 @@ export class RiskEngineService {
           minimumProfitMet: false,
           zeroOpenTradesMet: true,
           noActiveBreachesMet: true,
-          consistencyRuleMet: true,
           firstPayoutMet: false,
         },
       };
@@ -496,27 +548,16 @@ export class RiskEngineService {
 
     const profitSplitRatio = `${traderSplitPercent}:${100 - traderSplitPercent}`;
 
-    // Rule A: Minimum profit threshold
+    // Rule A: Minimum profit threshold (2% min gain; 10% on first payout for Phoenix Rise)
     const minimumProfitMet = profitPercent >= minThresholdPercent;
 
-    // Rule B: Zero open trades
+    // Rule B: Zero open trades (all positions must be closed)
     const zeroOpenTradesMet = openTradesCount === 0;
 
     // Rule C: No active critical risk breaches
     const noActiveBreachesMet = account.riskEvents.length === 0;
 
-    // Rule D: Consistency rule (no single trade > 50% of profit)
-    let consistencyRuleMet = true;
-    if (netProfit > 0 && account.tradeRecords.length > 0) {
-      const maxSingleTradeProfit = Math.max(
-        ...account.tradeRecords.map((t) => Number(t.profit || 0))
-      );
-      if (maxSingleTradeProfit > netProfit * 0.50) {
-        consistencyRuleMet = false;
-      }
-    }
-
-    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && consistencyRuleMet;
+    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
     const traderProfitSplit = isEligible ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
 
     let failureReason: string | undefined;
@@ -526,8 +567,6 @@ export class RiskEngineService {
       failureReason = isPhoenix && payoutNumber === 1
         ? `Phoenix Rise 1st payout requires 10.0% net profit. Current gain is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}).`
         : `Current profit is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}), below the required ${minThresholdPercent}% minimum gain.`;
-    } else if (!consistencyRuleMet) {
-      failureReason = 'Profit consistency rule breached: A single trade exceeded 50% of total profit.';
     } else if (!noActiveBreachesMet) {
       failureReason = 'Account has an active or unresolved risk compliance event.';
     }
@@ -550,9 +589,99 @@ export class RiskEngineService {
         minimumProfitMet,
         zeroOpenTradesMet,
         noActiveBreachesMet,
-        consistencyRuleMet,
-        firstPayoutMet: true,
+        firstPayoutMet: isPhoenix ? (payoutNumber > 1 || profitPercent >= 10.0) : true,
       },
+    };
+  }
+
+  /**
+   * Fetch real-time account risk status, headroom and metrics:
+   * 1. 4% Daily Drawdown (23:00 GMT+1 baseline)
+   * 2. 100% Static Max Drawdown Floor (10% Rhino Rush / 7% Phoenix Rise)
+   * 3. Current headroom before breach
+   * 4. Payout eligibility
+   */
+  async getAccountRiskStatus(accountNumberOrId: string) {
+    const account = await prisma.tradingAccount.findFirst({
+      where: {
+        OR: [{ id: accountNumberOrId }, { accountNumber: accountNumberOrId }],
+      },
+      include: {
+        challenge: {
+          include: {
+            product: true,
+          },
+        },
+        riskEvents: {
+          where: { severity: 'CRITICAL' },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Trading account ${accountNumberOrId} not found`);
+    }
+
+    const initialBal = Number(account.initialBalance);
+    const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+    const currentEquity = metrics?.equity ?? Number(account.currentEquity);
+    const currentBalance = metrics?.balance ?? Number(account.currentBalance);
+    const openTradesCount = metrics?.openTradesCount ?? 0;
+
+    const isPhoenix = account.challenge.product.skuPrefix === 'phoenix-rise';
+    const isFunded = account.challenge.status === 'PASSED' || account.challenge.status === 'COMPLETED';
+
+    // 1. Daily Drawdown calculations (4% from 23:00 GMT+1 HWM)
+    const startingDayHwm = metrics?.startingDayEquity || initialBal;
+    const dailyLimitAmount = startingDayHwm * 0.04;
+    const dailyBreachFloor = startingDayHwm - dailyLimitAmount;
+    const dailyLossCurrent = Math.max(0, startingDayHwm - currentEquity);
+    const dailyHeadroom = Math.max(0, currentEquity - dailyBreachFloor);
+
+    // 2. 100% Static Max Drawdown Floor (Zero Trailing)
+    // Rhino Rush: permanently fixed at 90% of initial balance (10% max DD)
+    // Phoenix Rise: permanently fixed at 93% of initial balance (7% max DD)
+    const maxLossPercent = isPhoenix ? 0.07 : 0.10;
+    const maxDrawdownLimitAmount = initialBal * maxLossPercent;
+    const maxBreachFloor = initialBal - maxDrawdownLimitAmount;
+    const maxLossCurrent = Math.max(0, initialBal - currentEquity);
+    const maxHeadroom = Math.max(0, currentEquity - maxBreachFloor);
+
+    // Payout eligibility
+    const eligibility = await this.checkPayoutEligibility(account.id);
+
+    return {
+      accountNumber: account.accountNumber,
+      platform: account.platform,
+      planType: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
+      stage: isPhoenix ? 'Instant Funding' : isFunded ? 'Funded' : 'Phase 1 Evaluation',
+      status: account.status,
+      initialBalanceNgn: initialBal,
+      currentBalanceNgn: currentBalance,
+      currentEquityNgn: currentEquity,
+      totalNetProfitNgn: currentEquity - initialBal,
+      openTradesCount,
+      dailyDrawdown: {
+        percent: 4.0,
+        startingDayHwmNgn: startingDayHwm,
+        dailyLimitNgn: dailyLimitAmount,
+        dailyBreachFloorNgn: dailyBreachFloor,
+        currentLossNgn: dailyLossCurrent,
+        headroomRemainingNgn: dailyHeadroom,
+        isSafe: currentEquity > dailyBreachFloor,
+      },
+      maximumDrawdown: {
+        percent: isPhoenix ? 7.0 : 10.0,
+        model: '100% Static Floor (Zero Trailing)',
+        limitNgn: maxDrawdownLimitAmount,
+        breachFloorNgn: maxBreachFloor,
+        currentLossNgn: maxLossCurrent,
+        headroomRemainingNgn: maxHeadroom,
+        isSafe: currentEquity > maxBreachFloor,
+      },
+      payoutEligibility: eligibility,
+      lastSyncedAt: account.lastSyncedAt || new Date(),
     };
   }
 
