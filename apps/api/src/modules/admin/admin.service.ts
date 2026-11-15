@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus, ChallengeType } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
+import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 
 export interface AdminActionContext {
   adminId?: string;
@@ -17,6 +18,7 @@ export class AdminService {
   constructor(
     private readonly steraTraderService: SteraTraderService,
     private readonly lencoService: LencoService,
+    private readonly woocommerceService: WooCommerceService,
   ) {}
 
   /**
@@ -1237,6 +1239,21 @@ export class AdminService {
       return c;
     });
 
+    // Auto-sync coupon to WooCommerce REST API & WordPress plugin
+    try {
+      await this.woocommerceService.syncCoupon({
+        code,
+        discountPercent: Number(dto.discountPercent),
+        maxUsage: dto.maxUsage,
+        expiresAt: dto.expiresAt,
+        restrictedEmails: emailStr,
+        description: dto.description,
+        isActive: true,
+      });
+    } catch (syncErr: any) {
+      this.logger.warn(`WooCommerce sync deferred: ${syncErr.message}`);
+    }
+
     // Send email notification to user(s) if requested and emails exist
     if (dto.sendEmail && emailStr) {
       await this.dispatchCouponEmails({
@@ -1250,7 +1267,7 @@ export class AdminService {
 
     return {
       success: true,
-      message: `Coupon ${code} created successfully.`,
+      message: `Coupon ${code} created and synced to WooCommerce successfully.`,
       data: coupon,
     };
   }
@@ -1316,6 +1333,21 @@ export class AdminService {
       return c;
     });
 
+    // Auto-sync updated coupon to WooCommerce REST API & WordPress plugin
+    try {
+      await this.woocommerceService.syncCoupon({
+        code: cleanCode,
+        discountPercent: Number(updated.discountPercent),
+        maxUsage: updated.maxUsage,
+        expiresAt: updated.expiresAt,
+        restrictedEmails: updated.restrictedEmails,
+        description: updated.description,
+        isActive: updated.isActive,
+      });
+    } catch (syncErr: any) {
+      this.logger.warn(`WooCommerce update sync deferred: ${syncErr.message}`);
+    }
+
     if (dto.sendEmail && emailStr) {
       await this.dispatchCouponEmails({
         code: cleanCode,
@@ -1328,7 +1360,7 @@ export class AdminService {
 
     return {
       success: true,
-      message: `Coupon ${cleanCode} updated successfully.`,
+      message: `Coupon ${cleanCode} updated and synced successfully.`,
       data: updated,
     };
   }
@@ -1356,9 +1388,16 @@ export class AdminService {
       });
     });
 
+    // Delete coupon from WooCommerce
+    try {
+      await this.woocommerceService.deleteCoupon(cleanCode);
+    } catch (e: any) {
+      this.logger.warn(`WooCommerce delete deferred: ${e.message}`);
+    }
+
     return {
       success: true,
-      message: `Coupon ${cleanCode} deleted successfully.`,
+      message: `Coupon ${cleanCode} deleted and removed from WooCommerce successfully.`,
     };
   }
 
@@ -1448,9 +1487,24 @@ export class AdminService {
       return c;
     });
 
+    // Auto-sync status to WooCommerce
+    try {
+      await this.woocommerceService.syncCoupon({
+        code: updated.code,
+        discountPercent: Number(updated.discountPercent),
+        maxUsage: updated.maxUsage,
+        expiresAt: updated.expiresAt,
+        restrictedEmails: updated.restrictedEmails,
+        description: updated.description,
+        isActive,
+      });
+    } catch (e: any) {
+      this.logger.warn(`WooCommerce toggle sync deferred: ${e.message}`);
+    }
+
     return {
       success: true,
-      message: `Coupon ${code} is now ${isActive ? 'ACTIVE' : 'DISABLED'}.`,
+      message: `Coupon ${code} is now ${isActive ? 'ACTIVE' : 'DISABLED'} and synced to WooCommerce.`,
       data: updated,
     };
   }

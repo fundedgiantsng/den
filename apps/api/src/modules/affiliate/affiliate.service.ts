@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { prisma } from '@fundedgiants/database';
+import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 
 @Injectable()
 export class AffiliateService {
@@ -8,6 +9,8 @@ export class AffiliateService {
   // Authoritative Compensation: Flat 10% CPA on challenge/account sales + 3% on recurring referral payouts
   public static readonly BASE_CPA_RATE = 10.0;
   public static readonly PAYOUT_COMMISSION_RATE = 3.0;
+
+  constructor(private readonly woocommerceService: WooCommerceService) {}
 
   /**
    * Get or automatically generate affiliate profile for user using their username
@@ -196,6 +199,19 @@ export class AffiliateService {
         affiliateProfileId: profile.id,
       },
     });
+
+    // Auto-sync affiliate discount code to WooCommerce so it works on WordPress checkout
+    try {
+      await this.woocommerceService.syncCoupon({
+        code: cleanCode,
+        discountPercent: discount,
+        maxUsage: usageLimit,
+        description: `Affiliate Discount Coupon - ${profile.referralCode}`,
+        isActive: true,
+      });
+    } catch (syncErr: any) {
+      this.logger.warn(`WooCommerce sync for affiliate coupon deferred: ${syncErr.message}`);
+    }
 
     const netCpa = AffiliateService.BASE_CPA_RATE - discount;
 

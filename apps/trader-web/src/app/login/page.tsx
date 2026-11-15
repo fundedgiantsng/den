@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -8,7 +8,6 @@ import {
   Mail,
   Phone,
   ArrowRight,
-  ShieldCheck,
   Award,
   Zap,
   Users,
@@ -16,6 +15,7 @@ import {
   User,
   MapPin,
   Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -37,6 +37,32 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Marketing banners rotated every hour
+  const marketingBanners = [
+    {
+      id: 'eat-like-a-giant',
+      src: '/banners/banner-eat-like-a-giant.jpg',
+      alt: 'If You Can Trade You Eat Like a Giant',
+    },
+    {
+      id: 'withdraw-today',
+      src: '/banners/banner-withdraw-today.jpg',
+      alt: 'Withdraw Today, again tomorrow, & the next',
+    },
+  ];
+
+  const [bannerIndex, setBannerIndex] = useState(0);
+
+  useEffect(() => {
+    const updateBanner = () => {
+      const currentHour = new Date().getHours();
+      setBannerIndex(currentHour % marketingBanners.length);
+    };
+    updateBanner();
+    const interval = setInterval(updateBanner, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,11 +155,6 @@ export default function LoginPage() {
             />
           </div>
         </Link>
-
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-card border border-fgBorder-subtle text-xs text-fgText-secondary">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Strict Device Verification</span>
-        </div>
       </header>
 
       {/* Main Split Grid */}
@@ -174,9 +195,6 @@ export default function LoginPage() {
           </div>
 
           <div className="mb-6">
-            <span className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-block mb-3">
-              Forex & CFD Prop Firm
-            </span>
             <h1 className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight text-white mb-2">
               {authMode === 'LOGIN' ? (
                 <>Welcome <span className="text-emerald-400">Back</span></>
@@ -239,7 +257,7 @@ export default function LoginPage() {
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-fgText-secondary mb-1.5">
-                    {authType === 'EMAIL' ? 'Email Address' : 'Phone Number (E.164)'}
+                    {authType === 'EMAIL' ? 'Email Address' : 'Phone Number'}
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-fgText-muted">
@@ -365,11 +383,11 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Creating account & sending OTP...</span>
+                    <span>Creating account...</span>
                   </>
                 ) : (
                   <>
-                    <span>Create Account & Get Code</span>
+                    <span>Create Account</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -397,47 +415,43 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Right Column: Hero Visual with Official Bull Emblem and Glowing Matrix */}
+        {/* Right Column: Replicated Spotlight Marketing Ad Banner */}
         <div className="lg:col-span-6 hidden lg:flex items-center justify-center relative">
-          <div className="relative w-full aspect-square max-w-lg rounded-3xl p-8 bg-gradient-to-b from-bg-surface to-bg-card border border-emerald-500/20 shadow-2xl flex flex-col items-center justify-between overflow-hidden">
-            {/* Ambient Background Glows */}
+          <div className="w-full max-w-md rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 sm:p-6 shadow-2xl relative overflow-hidden space-y-4">
+            {/* Ambient Glows */}
             <div className="absolute -top-20 -left-20 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Glowing Bull Geometric Icon */}
-            <div className="relative my-auto flex flex-col items-center">
-              <div className="relative w-48 h-48 drop-shadow-[0_0_35px_rgba(16,185,129,0.35)] animate-pulse">
-                <Image
-                  src="/brand/icon.png"
-                  alt="FundedGiants Emblem"
-                  fill
-                  className="object-contain"
-                  priority
-                />
-              </div>
-
-              {/* Vector Candlestick Chart Decoration */}
-              <div className="mt-8 flex items-end gap-2 h-20 opacity-80">
-                <div className="w-2.5 h-8 bg-emerald-500 rounded-sm" />
-                <div className="w-2.5 h-12 bg-emerald-400 rounded-sm" />
-                <div className="w-2.5 h-6 bg-red-400 rounded-sm" />
-                <div className="w-2.5 h-14 bg-emerald-500 rounded-sm" />
-                <div className="w-2.5 h-10 bg-emerald-400 rounded-sm" />
-                <div className="w-2.5 h-16 bg-emerald-300 rounded-sm" />
-                <div className="w-2.5 h-12 bg-emerald-500 rounded-sm" />
-                <div className="w-2.5 h-20 bg-emerald-400 rounded-sm shadow-emeraldGlow" />
-              </div>
+            {/* Visual Marketing Banner (Full Portrait Height Respected, Clean Scaling) */}
+            <div className="relative w-full rounded-xl overflow-hidden bg-black/40 border border-emerald-500/20 flex items-center justify-center group shadow-xl">
+              <img
+                src={marketingBanners[bannerIndex].src}
+                alt={marketingBanners[bannerIndex].alt}
+                className="w-full h-auto object-contain rounded-xl transition-transform duration-500 group-hover:scale-[1.01]"
+              />
             </div>
 
-            {/* Tagline Box */}
-            <div className="w-full text-center py-4 px-6 rounded-2xl bg-bg-base/70 backdrop-blur-md border border-fgBorder-subtle">
-              <span className="text-xs uppercase font-extrabold tracking-widest text-emerald-400 block mb-1">
-                FundedGiants
+            <div className="space-y-1">
+              <span className="text-[10px] font-heading font-extrabold text-emerald-400 tracking-wider uppercase block">
+                FundedGiants Spotlight
               </span>
-              <p className="text-xs text-fgText-secondary">
-                More Than Capital. It&apos;s a Platform.
+              <h4 className="text-base sm:text-lg font-heading font-extrabold text-white tracking-tight leading-snug">
+                Get Funded with FundedGiants
+              </h4>
+              <p className="text-sm font-bold text-[#00f59b] tracking-wide">
+                Get Funded, Trade, Earn and Grow
               </p>
             </div>
+
+            <a
+              href="https://fundedgiants.com/get-funded"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
+            >
+              <span>Buy Account</span>
+              <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+            </a>
           </div>
         </div>
       </main>
