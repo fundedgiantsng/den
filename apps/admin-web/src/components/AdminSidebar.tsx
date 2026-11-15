@@ -18,6 +18,7 @@ import {
   Cpu,
   ExternalLink,
   LifeBuoy,
+  Radio,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { label: 'Affiliates', href: '/affiliates', icon: Share2 },
   { label: 'Discount Coupons', href: '/affiliates/coupons', icon: Tag },
   { label: 'Support Desk', href: '/support', icon: LifeBuoy },
+  { label: 'Broadcasts', href: '/notifications', icon: Radio },
   { label: 'Audit Trail', href: '/audit-logs', icon: ClipboardList },
   { label: 'Device & API Config', href: '/settings', icon: Cpu },
 ];

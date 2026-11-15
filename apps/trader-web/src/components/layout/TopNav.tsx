@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Search, Bell, Menu } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Bell, Menu, Check, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { playNotificationChime } from '@/lib/audio';
 
 interface TopNavProps {
   onMobileMenuToggle?: () => void;
@@ -15,6 +16,40 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
     lastName?: string;
   } | null>(null);
 
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const previousUnreadRef = useRef<number | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotificationStats = () => {
+    fetch('http://localhost:4000/api/v1/notifications/unread-count', {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.unreadCount !== undefined) {
+          if (previousUnreadRef.current !== null && data.unreadCount > previousUnreadRef.current) {
+            playNotificationChime();
+          }
+          previousUnreadRef.current = data.unreadCount;
+          setUnreadCount(data.unreadCount);
+        }
+      })
+      .catch(() => {});
+
+    fetch('http://localhost:4000/api/v1/notifications', {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.data) {
+          setRecentNotifications(data.data.slice(0, 5));
+        }
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetch('http://localhost:4000/api/v1/auth/me', {
       credentials: 'include',
@@ -24,7 +59,35 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
         if (data?.user) setCurrentUser(data.user);
       })
       .catch(() => {});
+
+    fetchNotificationStats();
+    const interval = setInterval(fetchNotificationStats, 10000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch('http://localhost:4000/api/v1/notifications/read-all', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      setUnreadCount(0);
+      setRecentNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fullName = currentUser ? `${currentUser.firstName || 'Valued'} ${currentUser.lastName || 'Trader'}` : 'John Doe';
   const initials = currentUser
@@ -77,14 +140,89 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
           <span className="text-[11px] sm:text-xs font-semibold text-white tracking-wide">NGN (₦)</span>
         </div>
 
-        {/* Notification Bell */}
-        <button
-          type="button"
-          className="relative p-2 rounded-lg bg-bg-card border border-fgBorder-subtle text-fgText-secondary hover:text-white transition-all"
-        >
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-        </button>
+        {/* Notification Bell & Dropdown Popover */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            className="relative p-2 rounded-lg bg-bg-card border border-fgBorder-subtle text-fgText-secondary hover:text-white transition-all"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-bold shadow-md">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-bg-surface border border-fgBorder-subtle shadow-2xl p-4 z-50 space-y-3">
+              <div className="flex items-center justify-between border-b border-fgBorder-subtle pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white">Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="px-2 py-0.2 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 font-bold">
+                      {unreadCount} unread
+                    </span>
+                  )}
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllRead}
+                    className="text-[10px] text-emerald-400 hover:underline font-medium"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {recentNotifications.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-fgText-muted">
+                    No new notifications
+                  </div>
+                ) : (
+                  recentNotifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3 rounded-xl border transition-all ${
+                        !n.isRead
+                          ? 'bg-[#09120e] border-emerald-500/30'
+                          : 'bg-bg-card border-fgBorder-subtle/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-bold text-white line-clamp-1">
+                          {n.title}
+                        </span>
+                        <span className="text-[9px] text-fgText-muted whitespace-nowrap">
+                          {new Date(n.createdAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-fgText-secondary line-clamp-2 mt-1">
+                        {n.message}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t border-fgBorder-subtle pt-2 text-center">
+                <Link
+                  href="/dashboard/notifications"
+                  onClick={() => setDropdownOpen(false)}
+                  className="text-xs font-bold text-emerald-400 hover:text-white transition-colors block py-1"
+                >
+                  View All Notifications →
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* User Avatar */}
         <Link

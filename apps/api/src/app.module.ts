@@ -11,6 +11,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { SupportModule } from './modules/support/support.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SupportModule } from './modules/support/support.module';
     CertificatesModule,
     CardsModule,
     SupportModule,
+    NotificationsModule,
     AdminModule,
   ],
   controllers: [],
