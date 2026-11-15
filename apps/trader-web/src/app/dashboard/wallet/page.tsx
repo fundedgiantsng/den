@@ -29,6 +29,7 @@ import {
   X,
   AlertCircle,
   Coins,
+  Download,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -83,6 +84,23 @@ export default function GiantsVaultPage() {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
+  // Card Stamping & Order State
+  const [myCardData, setMyCardData] = useState<{
+    hasCard: boolean;
+    cardOrder?: any;
+    previewUrl: string;
+    stampedUrl?: string;
+  } | null>(null);
+  const [isRequestCardOpen, setIsRequestCardOpen] = useState(false);
+  const [cardFullName, setCardFullName] = useState('Olugbenga Olamide');
+  const [cardStreet, setCardStreet] = useState('14 Admiralty Way, Lekki Phase 1');
+  const [cardCity, setCardCity] = useState('Lekki');
+  const [cardState, setCardState] = useState('Lagos State');
+  const [cardPhone, setCardPhone] = useState('+234 803 123 4567');
+  const [cardSubmitting, setCardSubmitting] = useState(false);
+  const [cardSuccessMsg, setCardSuccessMsg] = useState<string | null>(null);
+  const [cardErrorMsg, setCardErrorMsg] = useState<string | null>(null);
 
   const [vault, setVault] = useState<VaultData>({
     availableBalanceNgn: 12450000.0,
@@ -208,8 +226,71 @@ export default function GiantsVaultPage() {
     }
   };
 
+  const fetchCardInfo = async () => {
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/cards/my-card', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setMyCardData(data);
+        if (data.cardOrder?.fullName) {
+          setCardFullName(data.cardOrder.fullName);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load spend card data', err);
+    }
+  };
+
+  const handleCardRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCardSubmitting(true);
+    setCardErrorMsg(null);
+    setCardSuccessMsg(null);
+
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/cards/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fullName: cardFullName,
+          deliveryAddress: {
+            street: cardStreet,
+            city: cardCity,
+            state: cardState,
+            country: 'Nigeria',
+            phone: cardPhone,
+          },
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.message || 'Failed to submit card request');
+      }
+
+      setMyCardData({
+        hasCard: true,
+        cardOrder: result.cardOrder,
+        previewUrl: '/cards/card-preview-dummy.jpg',
+        stampedUrl: result.downloadUrl,
+      });
+
+      setCardSuccessMsg('Your custom Spend Card was stamped successfully! Sent for admin approval.');
+      setTimeout(() => {
+        setIsRequestCardOpen(false);
+        setCardSuccessMsg(null);
+      }, 2000);
+    } catch (err: any) {
+      setCardErrorMsg(err.message || 'Failed to request card');
+    } finally {
+      setCardSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     fetchWalletData();
+    fetchCardInfo();
   }, []);
 
   const handleCopy = (text: string, field: string) => {
@@ -512,6 +593,23 @@ export default function GiantsVaultPage() {
         {/* RIGHT / SIDEBAR COLUMN (lg:col-span-4)                  */}
         {/* ======================================================== */}
         <div className="lg:col-span-4 space-y-5">
+          {/* BUY NEW CHALLENGE PRIMARY CALL-TO-ACTION */}
+          <Link
+            href="/dashboard/challenges/buy"
+            className="w-full p-4 rounded-2xl bg-gradient-to-r from-[#00f59b] via-[#00d685] to-[#00a86b] hover:from-[#00ffaa] hover:to-[#00c57d] text-black font-heading font-black text-sm tracking-wide transition-all shadow-[0_0_25px_rgba(0,245,155,0.25)] hover:shadow-[0_0_35px_rgba(0,245,155,0.4)] active:scale-[0.99] flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-black stroke-[2.5]" />
+              </div>
+              <div className="text-left">
+                <div className="font-extrabold text-sm uppercase leading-tight">Buy New Challenge</div>
+                <div className="text-[11px] font-semibold text-black/80">Get funded up to $300,000</div>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 stroke-[3] group-hover:translate-x-1 transition-transform" />
+          </Link>
+
           {/* 1. Dedicated Deposit Bank Details Card (Top of Sidebar) */}
           <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
@@ -591,69 +689,78 @@ export default function GiantsVaultPage() {
             </p>
           </div>
 
-          {/* 2. Giants Spend Card (Middle of Sidebar) */}
+          {/* 2. Giants Spend Card */}
           <div className="rounded-2xl bg-gradient-to-br from-[#0b1c14] via-[#07120d] to-[#040a07] border border-emerald-500/30 p-5 space-y-4 shadow-2xl relative overflow-hidden">
-            {/* Visual Virtual Card */}
-            <div className="relative rounded-xl p-4 bg-gradient-to-r from-emerald-900/40 via-emerald-800/20 to-black/60 border border-emerald-500/40 shadow-inner space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-heading font-extrabold text-white tracking-wider flex items-center gap-1.5">
-                  <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>GIANTS SPEND CARD</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-heading font-extrabold text-white tracking-wider flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                <span>GIANTS SPEND CARD</span>
+              </span>
+              {myCardData?.hasCard ? (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
+                  {myCardData.cardOrder?.status || 'PENDING APPROVAL'}
                 </span>
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono font-bold">
-                  {isCardFrozen ? 'FROZEN' : 'ACTIVE'}
+              ) : (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono font-bold uppercase">
+                  PREVIEW DESIGN
                 </span>
-              </div>
-
-              {/* Chip & Contactless */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-5 rounded bg-amber-400/80 border border-amber-300 shadow-sm" />
-                <svg className="w-4 h-4 text-emerald-400 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path d="M8.5 16.5a5 5 0 0 1 0-9" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M12 19a8.5 8.5 0 0 0 0-14" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </div>
-
-              {/* Masked Card Number */}
-              <div className="font-mono text-sm tracking-widest text-white font-bold pt-1">
-                •••• •••• •••• 4912
-              </div>
-
-              <div className="flex items-end justify-between text-[10px] text-fgText-secondary font-mono pt-1">
-                <div>
-                  <span className="text-[8px] text-fgText-muted block uppercase">Cardholder</span>
-                  <span className="text-white font-semibold">JOHN DOE</span>
-                </div>
-                <div>
-                  <span className="text-[8px] text-fgText-muted block uppercase">Expires</span>
-                  <span className="text-white font-semibold">11/29</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[8px] text-fgText-muted block uppercase">Network</span>
-                  <span className="text-emerald-400 font-bold">Mastercard</span>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Quick Card Controls */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => setIsCardFrozen(!isCardFrozen)}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold border transition text-center ${
-                  isCardFrozen
-                    ? 'bg-rose-500/15 border-rose-500/30 text-rose-400 hover:bg-rose-500/25'
-                    : 'bg-white/[0.04] border-white/[0.1] text-white hover:bg-white/[0.08]'
-                }`}
-              >
-                {isCardFrozen ? 'Unfreeze Card' : 'Freeze Card'}
-              </button>
-              <Link
-                href="/dashboard/wallet/cards"
-                className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition text-center"
-              >
-                Card Settings
-              </Link>
+            {/* Spend Card Image: Custom Stamped or Design Preview */}
+            <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-black/60">
+              <Image
+                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-dummy.jpg'}
+                alt="FundedGiants Spend Card"
+                width={1024}
+                height={696}
+                className="w-full h-auto object-cover rounded-xl transition duration-300 group-hover:scale-[1.02]"
+                priority
+              />
             </div>
+
+            {/* Card Info and Download / Request Controls */}
+            {myCardData?.hasCard ? (
+              <div className="space-y-2.5 pt-1">
+                <div className="flex items-center justify-between text-[11px] text-fgText-secondary">
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Custom Card Stamped
+                  </span>
+                  <span className="font-mono text-fgText-muted">Mastercard Debit</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={myCardData.stampedUrl || `/cards/generated/${myCardData.cardOrder?.userId || 'sample'}-spend-card.jpg`}
+                    download="FundedGiants-Spend-Card.jpg"
+                    className="flex-1 py-2 px-3 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition text-center flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Card JPEG</span>
+                  </a>
+                  <button
+                    onClick={() => setIsRequestCardOpen(true)}
+                    className="py-2 px-3 rounded-xl text-xs font-semibold bg-white/[0.04] border border-white/[0.1] text-fgText-secondary hover:text-white hover:bg-white/[0.08] transition text-center"
+                    title="Re-stamp or Update Delivery Address"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2.5 pt-1">
+                <p className="text-[11px] text-fgText-secondary leading-relaxed">
+                  Shown above is the design preview. Request your personalized debit card to stamp your name with metallic gold foil and send for admin approval & printing.
+                </p>
+                <button
+                  onClick={() => setIsRequestCardOpen(true)}
+                  className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-gradient-to-r from-emerald-500 to-[#00f59b] hover:from-emerald-400 hover:to-[#00ffaa] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Request Your Card</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 3. List of Withdrawal Accounts (Bottom of Sidebar) */}
@@ -698,73 +805,6 @@ export default function GiantsVaultPage() {
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* 4. Bull Brand Card: Trade, Grow, Earn (Snapshot Feature) */}
-          <div className="rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
-            {/* Visual Bull Art / Graphic */}
-            <div className="relative h-32 w-full rounded-xl overflow-hidden bg-black/60 border border-emerald-500/20 flex items-center justify-center">
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0e1f17] via-transparent to-transparent z-10" />
-              {/* Bull Emblem Graphic */}
-              <div className="relative z-0 flex flex-col items-center justify-center scale-90">
-                <svg
-                  className="w-24 h-24 text-emerald-400 opacity-90 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]"
-                  viewBox="0 0 100 100"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <path d="M 20 25 C 25 15, 35 15, 45 30 C 50 35, 50 40, 50 45 C 50 40, 50 35, 55 30 C 65 15, 75 15, 80 25 C 75 35, 70 45, 60 48 C 65 55, 68 65, 65 75 C 60 85, 40 85, 35 75 C 32 65, 35 55, 40 48 C 30 45, 25 35, 20 25 Z" />
-                  <circle cx="38" cy="52" r="3" fill="currentColor" />
-                  <circle cx="62" cy="52" r="3" fill="currentColor" />
-                  <path d="M 42 68 Q 50 74 58 68" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <h4 className="text-base font-heading font-extrabold text-white tracking-tight">
-                Trade, Grow, Earn.
-              </h4>
-              <p className="text-[11px] text-fgText-secondary leading-relaxed">
-                FundedGiants gives you the tools, capital and support to trade like a pro.
-              </p>
-            </div>
-
-            <Link
-              href="/dashboard/challenges/buy"
-              className="w-full py-2.5 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
-            >
-              <span>Buy New Account</span>
-              <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
-            </Link>
-          </div>
-
-          {/* 5. Community Card (Snapshot Feature) */}
-          <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 space-y-3 shadow-xl">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-heading font-bold text-white">
-                  Join the FundedGiants Community
-                </h4>
-                <p className="text-[10px] text-fgText-secondary mt-0.5">
-                  Get the latest updates, trading tips and exclusive offers.
-                </p>
-              </div>
-            </div>
-
-            <a
-              href="https://t.me/fundedgiants"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-bold text-[#00f59b] hover:text-emerald-300 transition pt-1"
-            >
-              <span>Join Now</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </a>
           </div>
         </div>
       </div>
@@ -916,6 +956,127 @@ export default function GiantsVaultPage() {
                   <ArrowUpRight className="w-4 h-4" />
                 )}
                 <span>{withdrawLoading ? 'Processing Withdrawal...' : 'Confirm Withdrawal'}</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* C. Request Spend Card Modal */}
+      {isRequestCardOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0b1612] border border-emerald-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5 relative">
+            <button
+              onClick={() => setIsRequestCardOpen(false)}
+              className="absolute top-4 right-4 text-fgText-muted hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-heading font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-emerald-400" />
+                <span>Request Custom Giants Spend Card</span>
+              </h3>
+              <p className="text-xs text-fgText-secondary">
+                Personalized metallic gold foil stamping on your Mastercard debit card.
+              </p>
+            </div>
+
+            {cardSuccessMsg && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{cardSuccessMsg}</span>
+              </div>
+            )}
+
+            {cardErrorMsg && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{cardErrorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCardRequestSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-fgText-secondary font-medium mb-1">
+                  Full Name to Stamp on Card (Uppercase Serif Foil)
+                </label>
+                <input
+                  type="text"
+                  value={cardFullName}
+                  onChange={(e) => setCardFullName(e.target.value.toUpperCase())}
+                  required
+                  placeholder="e.g. OLUGBENGA OLAMIDE"
+                  className="w-full p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 text-[#00f59b] font-heading font-extrabold text-xs tracking-wider focus:outline-none focus:border-emerald-400"
+                />
+                <span className="text-[10px] text-fgText-muted block mt-1">
+                  Stamps onto the designated gold underline baseline on the luxury template.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-fgText-secondary font-medium mb-1">
+                  Delivery Street Address
+                </label>
+                <input
+                  type="text"
+                  value={cardStreet}
+                  onChange={(e) => setCardStreet(e.target.value)}
+                  required
+                  placeholder="Street and house number"
+                  className="w-full p-2.5 rounded-xl bg-black/40 border border-white/[0.1] text-white focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-fgText-secondary font-medium mb-1">City</label>
+                  <input
+                    type="text"
+                    value={cardCity}
+                    onChange={(e) => setCardCity(e.target.value)}
+                    required
+                    placeholder="City"
+                    className="w-full p-2.5 rounded-xl bg-black/40 border border-white/[0.1] text-white focus:outline-none focus:border-emerald-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-fgText-secondary font-medium mb-1">State</label>
+                  <input
+                    type="text"
+                    value={cardState}
+                    onChange={(e) => setCardState(e.target.value)}
+                    required
+                    placeholder="State"
+                    className="w-full p-2.5 rounded-xl bg-black/40 border border-white/[0.1] text-white focus:outline-none focus:border-emerald-500 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-fgText-secondary font-medium mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={cardPhone}
+                  onChange={(e) => setCardPhone(e.target.value)}
+                  required
+                  placeholder="+234..."
+                  className="w-full p-2.5 rounded-xl bg-black/40 border border-white/[0.1] text-white font-mono focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={cardSubmitting}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-[#00f59b] hover:from-emerald-400 hover:to-[#00ffaa] disabled:opacity-50 text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5 pt-2.5 mt-2"
+              >
+                {cardSubmitting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 stroke-[2.5]" />
+                )}
+                <span>{cardSubmitting ? 'Stamping Luxury Card...' : 'Confirm & Stamp Card'}</span>
               </button>
             </form>
           </div>

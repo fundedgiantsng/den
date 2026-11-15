@@ -1,0 +1,1036 @@
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus } from '@fundedgiants/database';
+import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { LencoService } from '../integrations/lenco/lenco.service';
+
+export interface AdminActionContext {
+  adminId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  reason: string;
+}
+
+@Injectable()
+export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
+  constructor(
+    private readonly steraTraderService: SteraTraderService,
+    private readonly lencoService: LencoService,
+  ) {}
+
+  /**
+   * Helper: Calculate real-time available and locked balances for any customer
+   */
+  private async calculateCustomerBalances(walletId?: string, userId?: string) {
+    if (!walletId && !userId) return { availableBalanceNgn: 0, lockedBalanceNgn: 0 };
+
+    const resolvedWallet = walletId
+      ? await prisma.customerWallet.findUnique({ where: { id: walletId } })
+      : await prisma.customerWallet.findUnique({ where: { userId } });
+
+    if (!resolvedWallet) return { availableBalanceNgn: 0, lockedBalanceNgn: 0 };
+
+    const [deposits, withdrawals, walletOrders] = await Promise.all([
+      prisma.deposit.aggregate({
+        where: { walletId: resolvedWallet.id, status: 'SUCCESSFUL' },
+        _sum: { amount: true },
+      }),
+      prisma.withdrawal.findMany({
+        where: { walletId: resolvedWallet.id },
+      }),
+      prisma.internalOrder.aggregate({
+        where: { userId: resolvedWallet.userId, paymentMethod: 'WALLET', paymentStatus: 'SUCCESSFUL' },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const totalDeposits = Number(deposits._sum.amount || 0);
+    const totalSpent = Number(walletOrders._sum.amount || 0);
+
+    const paidWithdrawals = withdrawals
+      .filter((w) => w.status === 'PAID')
+      .reduce((sum, w) => sum + Number(w.amount), 0);
+
+    const pendingWithdrawals = withdrawals
+      .filter((w) => ['REQUESTED', 'PENDING_REVIEW', 'APPROVED', 'PROCESSING'].includes(w.status))
+      .reduce((sum, w) => sum + Number(w.amount), 0);
+
+    const availableBalanceNgn = Math.max(0, totalDeposits - paidWithdrawals - pendingWithdrawals - totalSpent);
+    const lockedBalanceNgn = pendingWithdrawals;
+
+    return { availableBalanceNgn, lockedBalanceNgn };
+  }
+
+  /**
+   * 1. Top-Level Executive Dashboard Overview
+   */
+  async getOverview() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalCustomers,
+      newCustomersToday,
+      kycApproved,
+      kycPending,
+      totalChallenges,
+      activeChallenges,
+      passedChallenges,
+      failedChallenges,
+      ordersAgg,
+      withdrawalsAgg,
+      depositsAgg,
+      totalAffiliates,
+      commissionsAgg,
+      recentBreaches,
+    ] = await Promise.all([
+      prisma.user.count({ where: { role: 'CUSTOMER' } }),
+      prisma.user.count({ where: { role: 'CUSTOMER', createdAt: { gte: todayStart } } }),
+      prisma.user.count({ where: { kycStatus: 'APPROVED' } }),
+      prisma.user.count({ where: { kycStatus: 'PENDING' } }),
+      prisma.customerChallenge.count(),
+      prisma.customerChallenge.count({ where: { status: 'ACTIVE' } }),
+      prisma.customerChallenge.count({ where: { status: 'PASSED' } }),
+      prisma.customerChallenge.count({ where: { status: 'FAILED' } }),
+      prisma.internalOrder.aggregate({
+        _sum: { amount: true },
+        where: { paymentStatus: 'SUCCESSFUL' },
+      }),
+      prisma.withdrawal.aggregate({
+        _count: { id: true },
+        _sum: { amount: true },
+        where: { status: { in: ['REQUESTED', 'PENDING_REVIEW'] } },
+      }),
+      prisma.deposit.aggregate({
+        _sum: { amount: true },
+        where: { status: 'SUCCESSFUL' },
+      }),
+      prisma.affiliateProfile.count(),
+      prisma.affiliateCommission.aggregate({
+        _sum: { amount: true },
+        where: { status: 'SUCCESSFUL' },
+      }),
+      prisma.riskEvent.findMany({
+        where: { severity: 'CRITICAL' },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          tradingAccount: true,
+          challenge: { include: { user: true, product: true } },
+        },
+      }),
+    ]);
+
+    const cashRevenueNgn = Number(ordersAgg._sum.amount || 0);
+    const totalDepositedNgn = Number(depositsAgg._sum.amount || 0);
+    const pendingWithdrawalNgn = Number(withdrawalsAgg._sum.amount || 0);
+    const pendingWithdrawalsCount = withdrawalsAgg._count.id;
+    const affiliateCommissionsPaidNgn = Number(commissionsAgg._sum?.amount || 0);
+
+    return {
+      success: true,
+      data: {
+        customers: {
+          total: totalCustomers,
+          newToday: newCustomersToday,
+          kycApproved,
+          kycPending,
+        },
+        challenges: {
+          total: totalChallenges,
+          active: activeChallenges,
+          passed: passedChallenges,
+          failed: failedChallenges,
+        },
+        financials: {
+          totalRevenueNgn: cashRevenueNgn,
+          totalDepositedNgn,
+          vaultLiabilitiesNgn: totalDepositedNgn,
+          pendingWithdrawalNgn,
+          pendingWithdrawalsCount,
+          affiliateCommissionsPaidNgn,
+        },
+        affiliates: {
+          total: totalAffiliates,
+          commissionsPaidNgn: affiliateCommissionsPaidNgn,
+        },
+        recentBreaches: recentBreaches.map((b) => ({
+          id: b.id,
+          eventType: b.eventType,
+          description: b.description,
+          accountNumber: b.tradingAccount?.accountNumber,
+          customerName: b.challenge?.user ? `${b.challenge.user.firstName || ''} ${b.challenge.user.lastName || ''}`.trim() : 'Unknown',
+          customerEmail: b.challenge?.user?.email,
+          productName: b.challenge?.product?.name,
+          snapshotEquity: Number(b.snapshotEquity),
+          snapshotBalance: Number(b.snapshotBalance),
+          createdAt: b.createdAt,
+        })),
+        systemHealth: {
+          database: 'ONLINE',
+          steraTrader: 'CONNECTED',
+          lencoBanking: 'CONNECTED',
+          ninjaKyc: 'READY',
+          wooCommerceBridge: 'CONNECTED',
+        },
+      },
+    };
+  }
+
+  /**
+   * 2. Customers Directory & Filter
+   */
+  async getCustomers(params: {
+    search?: string;
+    kycStatus?: KycStatus;
+    role?: UserRole;
+    isSuspended?: boolean;
+    skip?: number;
+    take?: number;
+  }) {
+    const { search, kycStatus, role, isSuspended, skip = 0, take = 50 } = params;
+
+    const where: any = {};
+    if (kycStatus) where.kycStatus = kycStatus;
+    if (role) where.role = role;
+    if (isSuspended !== undefined) where.isSuspended = isSuspended;
+
+    if (search) {
+      where.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+      ];
+    }
+
+    const [customers, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          wallet: true,
+          _count: {
+            select: {
+              challenges: true,
+              bankAccounts: true,
+              orders: true,
+            },
+          },
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    const formattedCustomers = await Promise.all(
+      customers.map(async (c) => {
+        const { availableBalanceNgn } = await this.calculateCustomerBalances(c.wallet?.id, c.id);
+        return {
+          id: c.id,
+          email: c.email,
+          phone: c.phone,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          role: c.role,
+          kycStatus: c.kycStatus,
+          isSuspended: c.isSuspended,
+          suspensionReason: c.suspensionReason,
+          walletBalanceNgn: availableBalanceNgn,
+          activeChallengesCount: c._count.challenges,
+          bankAccountsCount: c._count.bankAccounts,
+          ordersCount: c._count.orders,
+          createdAt: c.createdAt,
+        };
+      }),
+    );
+
+    return {
+      success: true,
+      data: formattedCustomers,
+      pagination: {
+        total,
+        skip,
+        take,
+      },
+    };
+  }
+
+  /**
+   * 3. Customer 360 Details
+   */
+  async getCustomerDetails(userId: string) {
+    const customer = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        wallet: {
+          include: {
+            deposits: { orderBy: { createdAt: 'desc' }, take: 5 },
+            withdrawals: { orderBy: { createdAt: 'desc' }, take: 5 },
+          },
+        },
+        challenges: {
+          include: {
+            product: true,
+            tradingAccount: true,
+            riskEvents: { orderBy: { createdAt: 'desc' }, take: 5 },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        bankAccounts: { orderBy: { createdAt: 'desc' } },
+        orders: { orderBy: { createdAt: 'desc' }, take: 10 },
+        cardOrders: { orderBy: { createdAt: 'desc' } },
+        kycRecords: { orderBy: { createdAt: 'desc' } },
+        affiliateProfile: {
+          include: {
+            referrals: { take: 10, orderBy: { createdAt: 'desc' } },
+            commissions: { take: 10, orderBy: { createdAt: 'desc' } },
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException(`Customer with ID ${userId} not found`);
+    }
+
+    const { availableBalanceNgn, lockedBalanceNgn } = await this.calculateCustomerBalances(
+      customer.wallet?.id,
+      customer.id,
+    );
+
+    const auditLogs = await prisma.auditEvent.findMany({
+      where: {
+        OR: [{ userId }, { resourceId: userId }],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    return {
+      success: true,
+      data: {
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          phone: customer.phone,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          role: customer.role,
+          kycStatus: customer.kycStatus,
+          isSuspended: customer.isSuspended,
+          suspensionReason: customer.suspensionReason,
+          createdAt: customer.createdAt,
+          updatedAt: customer.updatedAt,
+        },
+        wallet: customer.wallet
+          ? {
+              id: customer.wallet.id,
+              availableBalanceNgn,
+              lockedBalanceNgn,
+              currency: customer.wallet.currency,
+              virtualAccount: customer.wallet.lencoAccountNumber,
+              virtualBank: customer.wallet.lencoVirtualBankName || 'Wema Bank',
+              recentDeposits: customer.wallet.deposits,
+              recentWithdrawals: customer.wallet.withdrawals,
+            }
+          : null,
+        challenges: customer.challenges.map((ch) => ({
+          id: ch.id,
+          challengeNumber: ch.challengeNumber,
+          productName: ch.product?.name,
+          sku: ch.product?.sku,
+          type: ch.type,
+          status: ch.status,
+          ruleVersion: ch.ruleVersion,
+          accountNumber: ch.tradingAccount?.accountNumber,
+          initialBalanceNgn: Number(ch.tradingAccount?.initialBalance || 0),
+          currentBalanceNgn: Number(ch.tradingAccount?.currentBalance || 0),
+          currentEquityNgn: Number(ch.tradingAccount?.currentEquity || 0),
+          totalProfitNgn: Number(ch.tradingAccount?.totalProfit || 0),
+          dailyDrawdownLimitNgn: Number(ch.tradingAccount?.dailyDrawdownLimit || 0),
+          maxDrawdownLimitNgn: Number(ch.tradingAccount?.maxDrawdownLimit || 0),
+          tradingStatus: ch.tradingAccount?.status,
+          failureReason: ch.failureReason,
+          startDate: ch.startDate,
+          createdAt: ch.createdAt,
+        })),
+        bankAccounts: customer.bankAccounts,
+        orders: customer.orders,
+        cardOrders: customer.cardOrders,
+        kycRecords: customer.kycRecords,
+        affiliate: customer.affiliateProfile,
+        auditLogs,
+      },
+    };
+  }
+
+  /**
+   * 4. Update Customer Status (Suspend / Reinstate / KYC override)
+   */
+  async updateCustomerStatus(
+    userId: string,
+    dto: {
+      isSuspended?: boolean;
+      suspensionReason?: string;
+      kycStatus?: KycStatus;
+      role?: UserRole;
+    },
+    context: AdminActionContext,
+  ) {
+    const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+      throw new NotFoundException(`Customer with ID ${userId} not found`);
+    }
+
+    if (!context.reason || context.reason.trim().length < 5) {
+      throw new BadRequestException('A descriptive audit reason is mandatory for administrative customer updates.');
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: {
+          isSuspended: dto.isSuspended !== undefined ? dto.isSuspended : existing.isSuspended,
+          suspensionReason: dto.suspensionReason !== undefined ? dto.suspensionReason : existing.suspensionReason,
+          kycStatus: dto.kycStatus || existing.kycStatus,
+          role: dto.role || existing.role,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          adminId: context.adminId,
+          action: 'ADMIN_CUSTOMER_STATUS_UPDATE',
+          resource: 'User',
+          resourceId: userId,
+          details: {
+            changes: dto,
+            previous: {
+              isSuspended: existing.isSuspended,
+              kycStatus: existing.kycStatus,
+              role: existing.role,
+            },
+            reason: context.reason,
+          },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return user;
+    });
+
+    return {
+      success: true,
+      message: 'Customer record successfully updated.',
+      data: updated,
+    };
+  }
+
+  /**
+   * 5. Challenges Management
+   */
+  async getChallenges(params: {
+    status?: ChallengeStatus;
+    search?: string;
+    skip?: number;
+    take?: number;
+  }) {
+    const { status, search, skip = 0, take = 50 } = params;
+    const where: any = {};
+    if (status) where.status = status;
+
+    if (search) {
+      where.OR = [
+        { challengeNumber: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { user: { firstName: { contains: search, mode: 'insensitive' } } },
+        { user: { lastName: { contains: search, mode: 'insensitive' } } },
+        { tradingAccount: { accountNumber: { contains: search } } },
+      ];
+    }
+
+    const [challenges, total] = await Promise.all([
+      prisma.customerChallenge.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: true,
+          product: true,
+          tradingAccount: true,
+        },
+      }),
+      prisma.customerChallenge.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: challenges.map((ch) => ({
+        id: ch.id,
+        challengeNumber: ch.challengeNumber,
+        type: ch.type,
+        status: ch.status,
+        productName: ch.product?.name,
+        accountSizeNgn: Number(ch.product?.accountSize || 0),
+        customerName: ch.user ? `${ch.user.firstName || ''} ${ch.user.lastName || ''}`.trim() : 'Unknown',
+        customerEmail: ch.user?.email,
+        accountNumber: ch.tradingAccount?.accountNumber,
+        initialBalanceNgn: Number(ch.tradingAccount?.initialBalance || 0),
+        currentBalanceNgn: Number(ch.tradingAccount?.currentBalance || 0),
+        currentEquityNgn: Number(ch.tradingAccount?.currentEquity || 0),
+        tradingStatus: ch.tradingAccount?.status,
+        failureReason: ch.failureReason,
+        createdAt: ch.createdAt,
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * 6. SteraTrader Accounts & Administrative Kill-Switch
+   */
+  async getTradingAccounts(params: { search?: string; status?: string; skip?: number; take?: number }) {
+    const { search, status, skip = 0, take = 50 } = params;
+    const where: any = {};
+    if (status) where.status = status as any;
+    if (search) {
+      where.OR = [
+        { accountNumber: { contains: search } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [accounts, total] = await Promise.all([
+      prisma.tradingAccount.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: true,
+          challenge: { include: { product: true } },
+          riskEvents: { orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+      }),
+      prisma.tradingAccount.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: accounts.map((acc) => ({
+        id: acc.id,
+        accountNumber: acc.accountNumber,
+        platform: acc.platform,
+        status: acc.status,
+        customerName: acc.user ? `${acc.user.firstName || ''} ${acc.user.lastName || ''}`.trim() : 'Unknown',
+        customerEmail: acc.user?.email,
+        challengeNumber: acc.challenge?.challengeNumber,
+        productName: acc.challenge?.product?.name,
+        initialBalanceNgn: Number(acc.initialBalance),
+        currentBalanceNgn: Number(acc.currentBalance),
+        currentEquityNgn: Number(acc.currentEquity),
+        totalProfitNgn: Number(acc.totalProfit),
+        dailyDrawdownLimitNgn: Number(acc.dailyDrawdownLimit),
+        maxDrawdownLimitNgn: Number(acc.maxDrawdownLimit),
+        lastSyncedAt: acc.lastSyncedAt,
+        latestRiskEvent: acc.riskEvents[0]?.eventType,
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * Administrative Termination / Kill-Switch
+   */
+  async terminateTradingAccount(accountId: string, context: AdminActionContext) {
+    const account = await prisma.tradingAccount.findUnique({
+      where: { id: accountId },
+      include: { challenge: true },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Trading account ${accountId} not found`);
+    }
+
+    if (!context.reason || context.reason.trim().length < 5) {
+      throw new BadRequestException('A descriptive reason is required for manual account termination.');
+    }
+
+    await this.steraTraderService.terminateAccount(account.accountNumber, `Admin termination: ${context.reason}`);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.tradingAccount.update({
+        where: { id: accountId },
+        data: { status: 'CLOSED' },
+      });
+
+      if (account.challengeId) {
+        await tx.customerChallenge.update({
+          where: { id: account.challengeId },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: `Admin termination: ${context.reason}`,
+          },
+        });
+      }
+
+      await tx.riskEvent.create({
+        data: {
+          challengeId: account.challengeId,
+          tradingAccountId: account.id,
+          eventType: 'ADMIN_MANUAL_LIQUIDATION',
+          description: context.reason,
+          severity: 'CRITICAL',
+          snapshotBalance: Number(account.currentBalance),
+          snapshotEquity: Number(account.currentEquity),
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          userId: account.userId,
+          adminId: context.adminId,
+          action: 'ADMIN_TRADING_ACCOUNT_TERMINATION',
+          resource: 'TradingAccount',
+          resourceId: account.accountNumber,
+          details: {
+            accountNumber: account.accountNumber,
+            reason: context.reason,
+          },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      message: `Trading account ${account.accountNumber} successfully terminated and challenge marked as FAILED.`,
+    };
+  }
+
+  /**
+   * 7. Risk Events Log
+   */
+  async getRiskEvents(params: { eventType?: string; severity?: string; skip?: number; take?: number }) {
+    const { eventType, severity, skip = 0, take = 50 } = params;
+    const where: any = {};
+    if (eventType) where.eventType = eventType;
+    if (severity) where.severity = severity;
+
+    const [events, total] = await Promise.all([
+      prisma.riskEvent.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tradingAccount: true,
+          challenge: { include: { user: true, product: true } },
+        },
+      }),
+      prisma.riskEvent.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: events.map((ev) => ({
+        id: ev.id,
+        eventType: ev.eventType,
+        description: ev.description,
+        severity: ev.severity,
+        accountNumber: ev.tradingAccount?.accountNumber,
+        customerName: ev.challenge?.user ? `${ev.challenge.user.firstName || ''} ${ev.challenge.user.lastName || ''}`.trim() : 'Unknown',
+        customerEmail: ev.challenge?.user?.email,
+        productName: ev.challenge?.product?.name,
+        snapshotBalanceNgn: Number(ev.snapshotBalance),
+        snapshotEquityNgn: Number(ev.snapshotEquity),
+        createdAt: ev.createdAt,
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * 8. Financial Ledger & Journal Entries
+   */
+  async getLedgerEntries(params: { transactionType?: any; skip?: number; take?: number }) {
+    const { transactionType, skip = 0, take = 50 } = params;
+    const where: any = {};
+    if (transactionType) where.transactionType = transactionType;
+
+    const [entries, total] = await Promise.all([
+      prisma.journalEntry.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { postedAt: 'desc' },
+        include: {
+          lines: {
+            include: {
+              account: true,
+            },
+          },
+        },
+      }),
+      prisma.journalEntry.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: entries.map((entry) => ({
+        id: entry.id,
+        entryNumber: entry.entryNumber,
+        transactionType: entry.transactionType,
+        reference: entry.reference,
+        narration: entry.narration,
+        postedAt: entry.postedAt,
+        isReversed: entry.isReversed,
+        lines: entry.lines.map((l) => ({
+          accountCode: l.account?.code,
+          accountName: l.account?.name,
+          accountType: l.account?.type,
+          debitNgn: Number(l.debit),
+          creditNgn: Number(l.credit),
+        })),
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * 9. Withdrawals Queue & Approval
+   */
+  async getWithdrawals(params: { status?: WithdrawalStatus; skip?: number; take?: number }) {
+    const { status, skip = 0, take = 50 } = params;
+    const where: any = {};
+    if (status) where.status = status;
+
+    const [withdrawals, total] = await Promise.all([
+      prisma.withdrawal.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          wallet: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      }),
+      prisma.withdrawal.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: withdrawals.map((w) => ({
+        id: w.id,
+        reference: w.reference,
+        customerName: w.wallet?.user ? `${w.wallet.user.firstName || ''} ${w.wallet.user.lastName || ''}`.trim() : 'Unknown',
+        customerEmail: w.wallet?.user?.email,
+        amountNgn: Number(w.amount),
+        feeNgn: Number(w.fee),
+        netAmountNgn: Number(w.netAmount),
+        status: w.status,
+        lencoDisbursementRef: w.lencoDisbursementRef,
+        approvedBy: w.approvedBy,
+        approvedAt: w.approvedAt,
+        createdAt: w.createdAt,
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * Process Withdrawal Approval or Rejection
+   */
+  async processWithdrawal(
+    withdrawalId: string,
+    dto: { action: 'APPROVE' | 'REJECT'; reason?: string },
+    context: AdminActionContext,
+  ) {
+    const withdrawal = await prisma.withdrawal.findUnique({
+      where: { id: withdrawalId },
+      include: {
+        wallet: { include: { user: true } },
+      },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException(`Withdrawal ${withdrawalId} not found`);
+    }
+
+    if (withdrawal.status !== 'REQUESTED' && withdrawal.status !== 'PENDING_REVIEW') {
+      throw new BadRequestException(`Withdrawal is already in ${withdrawal.status} state`);
+    }
+
+    if (dto.action === 'APPROVE') {
+      const disbursementRes = await this.lencoService.createTransfer({
+        amountNgn: Number(withdrawal.netAmount),
+        accountNumber: '0000000000',
+        bankCode: '058',
+        narration: `FundedGiants Withdrawal ${withdrawal.reference}`,
+        reference: withdrawal.reference,
+      });
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const w = await tx.withdrawal.update({
+          where: { id: withdrawalId },
+          data: {
+            status: 'PAID',
+            approvedBy: context.adminId || 'STAFF_ADMIN',
+            approvedAt: new Date(),
+            lencoDisbursementRef: disbursementRes?.data?.reference || `LNC-DISB-${Date.now()}`,
+          },
+        });
+
+        await tx.auditEvent.create({
+          data: {
+            userId: withdrawal.wallet.userId,
+            adminId: context.adminId,
+            action: 'ADMIN_WITHDRAWAL_APPROVED',
+            resource: 'Withdrawal',
+            resourceId: withdrawal.id,
+            details: {
+              reference: withdrawal.reference,
+              amount: Number(withdrawal.amount),
+              lencoRef: w.lencoDisbursementRef,
+            },
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent,
+          },
+        });
+
+        return w;
+      });
+
+      return {
+        success: true,
+        message: `Withdrawal ${withdrawal.reference} approved and disbursed successfully.`,
+        data: updated,
+      };
+    } else {
+      const updated = await prisma.$transaction(async (tx) => {
+        const w = await tx.withdrawal.update({
+          where: { id: withdrawalId },
+          data: {
+            status: 'REJECTED',
+          },
+        });
+
+        await tx.auditEvent.create({
+          data: {
+            userId: withdrawal.wallet.userId,
+            adminId: context.adminId,
+            action: 'ADMIN_WITHDRAWAL_REJECTED',
+            resource: 'Withdrawal',
+            resourceId: withdrawal.id,
+            details: {
+              reference: withdrawal.reference,
+              amount: Number(withdrawal.amount),
+              reason: dto.reason || context.reason,
+            },
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent,
+          },
+        });
+
+        return w;
+      });
+
+      return {
+        success: true,
+        message: `Withdrawal ${withdrawal.reference} rejected and funds restored to trader vault.`,
+        data: updated,
+      };
+    }
+  }
+
+  /**
+   * 10. Affiliates & Coupons Management
+   */
+  async getAffiliates(params: { skip?: number; take?: number }) {
+    const { skip = 0, take = 50 } = params;
+    const [affiliates, total] = await Promise.all([
+      prisma.affiliateProfile.findMany({
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: true,
+          _count: {
+            select: {
+              referrals: true,
+              commissions: true,
+            },
+          },
+          commissions: true,
+        },
+      }),
+      prisma.affiliateProfile.count(),
+    ]);
+
+    return {
+      success: true,
+      data: affiliates.map((aff) => {
+        const totalEarnings = aff.commissions.reduce((acc, c) => acc + Number(c.amount), 0);
+        const paidEarnings = aff.commissions
+          .filter((c) => c.status === 'SUCCESSFUL')
+          .reduce((acc, c) => acc + Number(c.amount), 0);
+
+        return {
+          id: aff.id,
+          handle: aff.referralCode,
+          customerName: aff.user ? `${aff.user.firstName || ''} ${aff.user.lastName || ''}`.trim() : 'Unknown',
+          customerEmail: aff.user?.email,
+          referralsCount: aff._count.referrals,
+          totalEarningsNgn: totalEarnings,
+          paidEarningsNgn: paidEarnings,
+          pendingEarningsNgn: totalEarnings - paidEarnings,
+          createdAt: aff.createdAt,
+        };
+      }),
+      pagination: { total, skip, take },
+    };
+  }
+
+  async getCoupons() {
+    const coupons = await prisma.coupon.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: coupons.map((c) => ({
+        id: c.id,
+        code: c.code,
+        discountPercent: Number(c.discountPercent),
+        maxDiscountNgn: c.maxDiscountNgn ? Number(c.maxDiscountNgn) : null,
+        isActive: c.isActive,
+        usageCount: c.usageCount,
+        maxUsage: c.maxUsage,
+        createdAt: c.createdAt,
+      })),
+    };
+  }
+
+  async createCoupon(
+    dto: { code: string; discountPercent: number; maxDiscountNgn?: number; maxUsage?: number },
+    context: AdminActionContext,
+  ) {
+    const code = dto.code.trim().toUpperCase();
+    const existing = await prisma.coupon.findUnique({ where: { code } });
+    if (existing) {
+      throw new BadRequestException(`Coupon code ${code} already exists.`);
+    }
+
+    const coupon = await prisma.$transaction(async (tx) => {
+      const c = await tx.coupon.create({
+        data: {
+          code,
+          discountPercent: dto.discountPercent,
+          maxDiscountNgn: dto.maxDiscountNgn,
+          maxUsage: dto.maxUsage,
+          isActive: true,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_COUPON_CREATED',
+          resource: 'Coupon',
+          resourceId: c.id,
+          details: { code, discountPercent: dto.discountPercent },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return c;
+    });
+
+    return {
+      success: true,
+      message: `Coupon ${code} created successfully.`,
+      data: coupon,
+    };
+  }
+
+  async toggleCoupon(code: string, isActive: boolean, context: AdminActionContext) {
+    const updated = await prisma.$transaction(async (tx) => {
+      const c = await tx.coupon.update({
+        where: { code: code.toUpperCase() },
+        data: { isActive },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_COUPON_TOGGLED',
+          resource: 'Coupon',
+          resourceId: c.id,
+          details: { code, isActive },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return c;
+    });
+
+    return {
+      success: true,
+      message: `Coupon ${code} is now ${isActive ? 'ACTIVE' : 'DISABLED'}.`,
+      data: updated,
+    };
+  }
+
+  /**
+   * 11. Immutable Audit Trail
+   */
+  async getAuditLogs(params: { action?: string; skip?: number; take?: number }) {
+    const { action, skip = 0, take = 100 } = params;
+    const where: any = {};
+    if (action) where.action = action;
+
+    const [logs, total] = await Promise.all([
+      prisma.auditEvent.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: true,
+        },
+      }),
+      prisma.auditEvent.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: logs.map((log) => ({
+        id: log.id,
+        action: log.action,
+        resource: log.resource,
+        resourceId: log.resourceId,
+        details: log.details,
+        ipAddress: log.ipAddress,
+        adminId: log.adminId,
+        userName: log.user ? `${log.user.firstName || ''} ${log.user.lastName || ''}`.trim() : null,
+        userEmail: log.user?.email,
+        createdAt: log.createdAt,
+      })),
+      pagination: { total, skip, take },
+    };
+  }
+}

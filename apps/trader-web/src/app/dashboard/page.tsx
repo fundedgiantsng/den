@@ -128,6 +128,32 @@ export default function DashboardOverviewPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const affiliateLink = 'https://fundedgiants.com/?ref=giantstrader';
 
+  // Marketing banners rotated every hour
+  const marketingBanners = [
+    {
+      id: 'eat-like-a-giant',
+      src: '/banners/banner-eat-like-a-giant.jpg',
+      alt: 'If You Can Trade You Eat Like a Giant',
+    },
+    {
+      id: 'withdraw-today',
+      src: '/banners/banner-withdraw-today.jpg',
+      alt: 'Withdraw Today, again tomorrow, & the next',
+    },
+  ];
+
+  const [bannerIndex, setBannerIndex] = useState(0);
+
+  useEffect(() => {
+    const updateBanner = () => {
+      const currentHour = new Date().getHours();
+      setBannerIndex(currentHour % marketingBanners.length);
+    };
+    updateBanner();
+    const interval = setInterval(updateBanner, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(affiliateLink);
     setCopiedLink(true);
@@ -400,38 +426,25 @@ export default function DashboardOverviewPage() {
         <div className="lg:col-span-4 space-y-5">
           {/* 1. Top Ad Placement: Explore Trading Accounts */}
           <div className="rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
-            {/* Bull art with neon candles */}
-            <div className="relative h-28 w-full rounded-xl overflow-hidden bg-black/60 border border-emerald-500/20 flex items-center justify-center">
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0e1f17] via-transparent to-transparent z-10" />
-              <div className="relative z-0 flex items-center justify-center gap-3 scale-90">
-                <svg
-                  className="w-16 h-16 text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                  viewBox="0 0 100 100"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <path d="M 20 25 C 25 15, 35 15, 45 30 C 50 35, 50 40, 50 45 C 50 40, 50 35, 55 30 C 65 15, 75 15, 80 25 C 75 35, 70 45, 60 48 C 65 55, 68 65, 65 75 C 60 85, 40 85, 35 75 C 32 65, 35 55, 40 48 C 30 45, 25 35, 20 25 Z" />
-                </svg>
-                {/* Candlestick graphics */}
-                <div className="flex items-end gap-1.5 h-12">
-                  <div className="w-1.5 h-8 bg-emerald-400 rounded-sm" />
-                  <div className="w-1.5 h-12 bg-emerald-400 rounded-sm" />
-                  <div className="w-1.5 h-6 bg-rose-400 rounded-sm" />
-                  <div className="w-1.5 h-10 bg-emerald-400 rounded-sm" />
-                </div>
-              </div>
+            {/* Dynamic Marketing Banner (Rotates Hourly) */}
+            <div className="relative w-full rounded-xl overflow-hidden bg-black/60 border border-emerald-500/20 flex items-center justify-center group shadow-lg">
+              <img
+                src={marketingBanners[bannerIndex].src}
+                alt={marketingBanners[bannerIndex].alt}
+                className="w-full h-auto aspect-[697/1024] max-h-64 object-cover object-top transition-transform duration-700 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0e1f17] via-transparent to-transparent opacity-50 pointer-events-none" />
             </div>
 
             <div className="space-y-1">
-              <span className="text-[10px] font-heading font-extrabold text-[#00f59b] tracking-wider uppercase block">
-                FundedGiants
+              <span className="text-[10px] font-heading font-extrabold text-emerald-400 tracking-wider uppercase block">
+                FundedGiants Spotlight
               </span>
-              <h4 className="text-base font-heading font-extrabold text-white tracking-tight leading-snug">
-                Trade Smarter. Grow Faster.
+              <h4 className="text-base sm:text-lg font-heading font-extrabold text-white tracking-tight leading-snug">
+                Get Funded with FundedGiants
               </h4>
-              <p className="text-[11px] text-fgText-secondary">
-                Get funded. Trade. Earn.
+              <p className="text-sm font-bold text-[#00f59b] tracking-wide">
+                Get Funded, Trade, Earn and Grow
               </p>
             </div>
 
