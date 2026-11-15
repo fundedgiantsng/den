@@ -89,7 +89,32 @@ async function main() {
     });
   }
 
-  // 3. Verified Customer Account for Local Development & Real Ledger Testing
+  // 3. Challenge Products
+  const challengeProducts = [
+    { id: 'prod-rhino-rush-1000000', sku: 'rhino-rush-1000000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦1M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 1000000, priceNgn: 27500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+    { id: 'prod-rhino-rush-2500000', sku: 'rhino-rush-2500000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦2.5M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 2500000, priceNgn: 67500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+    { id: 'prod-rhino-rush-5000000', sku: 'rhino-rush-5000000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦5M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 5000000, priceNgn: 127500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+    { id: 'prod-rhino-rush-10000000', sku: 'rhino-rush-10000000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦10M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 10000000, priceNgn: 247500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+    { id: 'prod-rhino-rush-25000000', sku: 'rhino-rush-25000000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦25M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 25000000, priceNgn: 487500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+    { id: 'prod-rhino-rush-50000000', sku: 'rhino-rush-50000000', skuPrefix: 'rhino-rush', name: 'Rhino Rush ₦50M (1-Step)', type: 'RHINO_RUSH_ONE_STEP' as any, accountSize: 50000000, priceNgn: 967500, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 10.0, profitTargetPercent: 10.0, leverage: '1:100', profitSplit: 'Upto 80%' },
+
+    { id: 'prod-phoenix-rise-1000000', sku: 'phoenix-rise-1000000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦1M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 1000000, priceNgn: 43000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+    { id: 'prod-phoenix-rise-2500000', sku: 'phoenix-rise-2500000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦2.5M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 2500000, priceNgn: 106000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+    { id: 'prod-phoenix-rise-5000000', sku: 'phoenix-rise-5000000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦5M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 5000000, priceNgn: 209000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+    { id: 'prod-phoenix-rise-10000000', sku: 'phoenix-rise-10000000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦10M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 10000000, priceNgn: 412000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+    { id: 'prod-phoenix-rise-25000000', sku: 'phoenix-rise-25000000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦25M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 25000000, priceNgn: 1015000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+    { id: 'prod-phoenix-rise-50000000', sku: 'phoenix-rise-50000000', skuPrefix: 'phoenix-rise', name: 'Phoenix Rise ₦50M (Instant)', type: 'PHOENIX_RISE_INSTANT' as any, accountSize: 50000000, priceNgn: 2018000, dailyDrawdownPercent: 4.0, maxDrawdownPercent: 7.0, profitTargetPercent: 10.0, leverage: '1:30', profitSplit: 'Upto 80%' },
+  ];
+
+  for (const prod of challengeProducts) {
+    await prisma.challengeProduct.upsert({
+      where: { id: prod.id },
+      update: prod,
+      create: prod,
+    });
+  }
+
+  // 4. Verified Customer Account for Local Development & Real Ledger Testing
   const existingCustomer = await prisma.user.findFirst({
     where: { role: 'CUSTOMER' },
     include: { wallet: true },

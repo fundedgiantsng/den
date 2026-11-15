@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { CertificatesService } from '../certificates/certificates.service';
+import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 
 export interface SteraTraderAccountMetrics {
   accountNumber: string;
@@ -63,7 +64,8 @@ export class RiskEngineService {
 
   constructor(
     private readonly steraTraderService: SteraTraderService,
-    private readonly certificatesService: CertificatesService
+    private readonly certificatesService: CertificatesService,
+    private readonly woocommerceService: WooCommerceService
   ) {}
 
   /**
@@ -1054,10 +1056,34 @@ export class RiskEngineService {
           this.logger.log(
             `3% Recurring Affiliate Commission of ₦${recurringCommissionNgn.toLocaleString()} credited to affiliate ${referral.affiliateProfile.referralCode} for payout ${reference}`
           );
+
+          // 6. Notify WordPress Affiliate Platform Webhook
+          await this.woocommerceService.notifyAffiliatePayout({
+            payoutId: reference,
+            traderEmail: user.email || '',
+            amountNgn: payoutAmount,
+            referralCode: referral.affiliateProfile.referralCode,
+          });
         }
       }
     } catch (affErr: any) {
       this.logger.error(`Error processing recurring affiliate commission: ${affErr.message}`);
+    }
+
+    // 7. Sync to Public Payout Tracker on WordPress
+    try {
+      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
+      await this.woocommerceService.syncPublicPayoutTracker({
+        payoutId: reference,
+        traderName: traderFullName,
+        amountNgn: payoutAmount,
+        certificateId: generatedCertificate?.certificateId || `FG-CERT-${Date.now()}`,
+        profitSplitRate: eligibility.traderSplitPercent,
+        programType: account.challenge ? 'Funded' : 'Trading',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (wpErr: any) {
+      this.logger.warn(`Could not sync to WordPress payout tracker: ${wpErr.message}`);
     }
 
     return {

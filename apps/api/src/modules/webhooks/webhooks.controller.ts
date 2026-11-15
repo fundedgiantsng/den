@@ -15,6 +15,7 @@ import { prisma } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 import { RiskEngineService } from '../risk/risk-engine.service';
 
 @ApiTags('Webhooks')
@@ -26,7 +27,8 @@ export class WebhooksController {
     private readonly lencoService: LencoService,
     private readonly ninjaKycService: NinjaKycService,
     private readonly steraTraderService: SteraTraderService,
-    private readonly riskEngineService: RiskEngineService
+    private readonly riskEngineService: RiskEngineService,
+    private readonly woocommerceService: WooCommerceService
   ) {}
 
   /**
@@ -38,36 +40,66 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Receive verified completed order webhooks from WooCommerce' })
   async handleWooCommerceWebhook(
     @Body() payload: any,
-    @Headers('x-fundedgiants-signature') signature: string
+    @Headers('x-fundedgiants-signature') signature: string,
+    @Headers('x-wc-webhook-signature') wcSignature: string
   ) {
-    this.logger.log(`Received WooCommerce order webhook: ${payload.order_number}`);
-
-    // 1. Verify webhook signature
-    const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
-    const computedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(JSON.stringify(payload))
-      .digest('hex');
-
-    if (signature && signature !== computedSignature) {
-      throw new UnauthorizedException('Invalid WooCommerce webhook signature');
+    // 1. Support both AES-256 encrypted payloads from fgt-core.php and direct WooCommerce webhooks
+    let orderData = payload;
+    if (payload?.payload && typeof payload.payload === 'string') {
+      const decrypted = this.woocommerceService.decryptPayload(payload.payload);
+      if (decrypted) {
+        orderData = {
+          order_id: decrypted.order_id,
+          order_number: `FG-ORD-${decrypted.order_id}`,
+          billing: {
+            email: decrypted.email,
+            first_name: decrypted.first_name,
+            last_name: decrypted.last_name,
+            phone: decrypted.phone,
+          },
+          total: decrypted.price,
+          account_size: decrypted.size,
+          plan_sku: `${decrypted.plan}-${decrypted.size}`,
+          payment_method: 'WOOCOMMERCE_CHECKOUT',
+          currency: decrypted.currency || 'NGN',
+          affiliate_code: decrypted.affiliate_code,
+        };
+      }
     }
 
-    const orderId = payload.order_id;
-    const orderNumber = payload.order_number || `FG-ORD-${orderId}`;
-    const email = payload.billing?.email?.trim().toLowerCase();
-    const phone = payload.billing?.phone?.trim();
-    const firstName = payload.billing?.first_name?.trim();
-    const lastName = payload.billing?.last_name?.trim();
-    const accountSizeNgn = Number(payload.account_size || payload.total || 0);
-    const planSku = payload.plan_sku || 'rhino-rush-10000000';
+    const orderNumber = orderData.order_number || `FG-ORD-${orderData.order_id || Date.now()}`;
+    this.logger.log(`Received WooCommerce order webhook: ${orderNumber}`);
+
+    // 2. Verify webhook signature if provided
+    const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
+    const activeSignature = signature || wcSignature;
+    if (activeSignature) {
+      const computedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+      if (activeSignature !== computedSignature) {
+        throw new UnauthorizedException('Invalid WooCommerce webhook signature');
+      }
+    }
+
+    const orderId = orderData.order_id || Date.now();
+    const email = orderData.billing?.email?.trim().toLowerCase();
+    const phone = orderData.billing?.phone?.trim();
+    const firstName = orderData.billing?.first_name?.trim();
+    const lastName = orderData.billing?.last_name?.trim();
+    const accountSizeNgn = Number(orderData.account_size || orderData.total || 5000000);
+    const planSku = orderData.plan_sku || 'rhino-rush-5000000';
     const planType = planSku.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
+    const totalAmount = Number(orderData.total || 0);
+    const affiliateCode = orderData.affiliate_code || orderData.coupon_lines?.[0]?.code;
 
     if (!email) {
       throw new BadRequestException('Order missing customer email address');
     }
 
-    // 2. Prevent duplicate order processing
+    // 3. Prevent duplicate order processing
     const existingOrder = await prisma.internalOrder.findFirst({
       where: { orderNumber },
     });
@@ -77,7 +109,7 @@ export class WebhooksController {
       return { status: 'already_processed' };
     }
 
-    // 3. Find or Create Customer
+    // 4. Find or Create Customer
     let user = await prisma.user.findFirst({
       where: {
         OR: [{ email }, ...(phone ? [{ phone }] : [])],
@@ -104,7 +136,7 @@ export class WebhooksController {
       });
     }
 
-    // 4. Create Internal Order & Challenge in database
+    // 5. Create Internal Order & Challenge in database
     const challengeNumber = `FG-CH-${Date.now()}`;
     const leverage = planType === 'phoenix-rise' ? '1:30' : '1:100';
 
@@ -113,30 +145,136 @@ export class WebhooksController {
         orderNumber,
         userId: user.id,
         wooCommerceOrderId: Number(orderId),
-        amount: payload.total,
+        amount: totalAmount,
         currency: 'NGN',
-        paymentMethod: payload.payment_method || 'WOOCOMMERCE_CHECKOUT',
+        paymentMethod: orderData.payment_method || 'WOOCOMMERCE_CHECKOUT',
         paymentStatus: 'SUCCESSFUL',
       },
     });
 
-    // Find challenge product
-    const product = await prisma.challengeProduct.findFirst({
-      where: { skuPrefix: planType },
+    // Post to Double-Entry Ledger (1000-CASH-LENCO debit, 4000-CHALLENGE-REVENUE credit)
+    try {
+      const cashAccount = await prisma.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
+      const revenueAccount = await prisma.ledgerAccount.findFirst({ where: { code: '4000-CHALLENGE-REVENUE' } });
+      if (cashAccount && revenueAccount && totalAmount > 0) {
+        const entry = await prisma.journalEntry.create({
+          data: {
+            entryNumber: `JE-CHL-${Date.now()}`,
+            transactionType: 'CHALLENGE_PURCHASE',
+            reference: orderNumber,
+            narration: `Challenge Purchase (${planType} ₦${accountSizeNgn.toLocaleString()}) via WooCommerce Order #${orderId}`,
+          },
+        });
+        await prisma.journalLine.createMany({
+          data: [
+            { journalEntryId: entry.id, accountId: cashAccount.id, debit: totalAmount, credit: 0 },
+            { journalEntryId: entry.id, accountId: revenueAccount.id, debit: 0, credit: totalAmount },
+          ],
+        });
+      }
+    } catch (ledgerErr: any) {
+      this.logger.error(`Error posting WooCommerce purchase to ledger: ${ledgerErr.message}`);
+    }
+
+    // Credit Affiliate 10% CPA if referred
+    if (affiliateCode) {
+      try {
+        const cleanAff = affiliateCode.trim();
+        const affiliate = await prisma.affiliateProfile.findFirst({
+          where: {
+            OR: [
+              { referralCode: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } },
+              { user: { username: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } } },
+            ],
+          },
+        });
+
+        if (affiliate && totalAmount > 0) {
+          let referral = await prisma.affiliateReferral.findUnique({
+            where: { referredUserId: user.id },
+          });
+
+          if (!referral) {
+            referral = await prisma.affiliateReferral.create({
+              data: {
+                affiliateProfileId: affiliate.id,
+                referredUserId: user.id,
+              },
+            });
+            await prisma.affiliateProfile.update({
+              where: { id: affiliate.id },
+              data: { totalReferrals: { increment: 1 } },
+            });
+          }
+
+          const cpaAmount = Math.round(totalAmount * 0.10);
+          await prisma.affiliateCommission.create({
+            data: {
+              affiliateProfileId: affiliate.id,
+              referralId: referral.id,
+              orderNumber,
+              amount: cpaAmount,
+              currency: 'NGN',
+              status: 'SUCCESSFUL',
+            },
+          });
+
+          await prisma.affiliateProfile.update({
+            where: { id: affiliate.id },
+            data: {
+              totalCommissions: { increment: cpaAmount },
+            },
+          });
+
+          this.logger.log(`10% CPA Commission of ₦${cpaAmount.toLocaleString()} credited to affiliate ${affiliate.referralCode} for order ${orderNumber}`);
+        }
+      } catch (affErr: any) {
+        this.logger.error(`Error calculating affiliate CPA for order ${orderNumber}: ${affErr.message}`);
+      }
+    }
+
+    // Find or ensure challenge product
+    let product = await prisma.challengeProduct.findFirst({
+      where: {
+        OR: [
+          { id: `prod-${planType}-${accountSizeNgn}` },
+          { sku: `${planType}-${accountSizeNgn}` },
+          { skuPrefix: planType },
+        ],
+      },
     });
+
+    if (!product) {
+      product = await prisma.challengeProduct.create({
+        data: {
+          id: `prod-${planType}-${accountSizeNgn}`,
+          sku: `${planType}-${accountSizeNgn}`,
+          skuPrefix: planType,
+          name: `${planType === 'phoenix-rise' ? 'Phoenix Rise' : 'Rhino Rush'} ₦${accountSizeNgn.toLocaleString()}`,
+          type: planType === 'phoenix-rise' ? 'PHOENIX_RISE_INSTANT' : 'RHINO_RUSH_ONE_STEP',
+          accountSize: accountSizeNgn,
+          priceNgn: totalAmount || 127500,
+          dailyDrawdownPercent: 4.0,
+          maxDrawdownPercent: planType === 'phoenix-rise' ? 7.0 : 10.0,
+          profitTargetPercent: 10.0,
+          leverage: planType === 'phoenix-rise' ? '1:30' : '1:100',
+          profitSplit: 'Upto 80%',
+        },
+      });
+    }
 
     const challenge = await prisma.customerChallenge.create({
       data: {
         challengeNumber,
         userId: user.id,
         orderId: order.id,
-        productId: product?.id || 'prod-default',
+        productId: product.id,
         type: planType === 'phoenix-rise' ? 'PHOENIX_RISE_INSTANT' : 'RHINO_RUSH_ONE_STEP',
         status: 'PENDING_PROVISIONING',
       },
     });
 
-    // 5. Provision Trading Account directly on SteraTrader NGN broker subset
+    // 6. Provision Trading Account directly on SteraTrader NGN broker subset
     try {
       const steraRes = await this.steraTraderService.provisionAccount({
         userEmail: email,

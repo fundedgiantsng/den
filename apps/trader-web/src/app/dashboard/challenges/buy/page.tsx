@@ -516,38 +516,50 @@ export default function InDashboardBuyChallengePage() {
                 </div>
               )}
 
-              {/* Action Button */}
-              {hasSufficientFunds ? (
-                <button
-                  onClick={handlePayFromWallet}
-                  disabled={loading}
-                  type="button"
-                  className={`w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                    selectedPlan === 'phoenix-rise'
-                      ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-[0_0_20px_rgba(245,158,11,0.25)]'
-                      : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(34,197,94,0.25)]'
-                  }`}
+              {/* Action Buttons */}
+              <div className="space-y-2.5">
+                {hasSufficientFunds ? (
+                  <button
+                    onClick={handlePayFromWallet}
+                    disabled={loading}
+                    type="button"
+                    className={`w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                      selectedPlan === 'phoenix-rise'
+                        ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-[0_0_20px_rgba(245,158,11,0.25)]'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(34,197,94,0.25)]'
+                    }`}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Provisioning SteraTrader Account...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wallet className="w-4 h-4" />
+                        <span>Pay from Giants Vault • {formatNaira(finalTotalNgn)}</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <Link
+                    href="/dashboard/wallet?tab=DEPOSIT"
+                    className="w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black shadow-emeraldGlow transition-all text-center"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    <span>Deposit into Giants Vault • {formatNaira(finalTotalNgn)}</span>
+                  </Link>
+                )}
+
+                <a
+                  href={`${process.env.NEXT_PUBLIC_WORDPRESS_URL || 'http://localhost:10005'}/checkout/?plan=${selectedPlan}&size=${selectedSize}${discountCode ? `&coupon=${encodeURIComponent(discountCode)}` : ''}${affiliateCode ? `&ref=${encodeURIComponent(affiliateCode)}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl font-heading font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-neutral-300 hover:text-white transition-all text-center"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Provisioning SteraTrader Account...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="w-4 h-4" />
-                      <span>Pay from Giants Vault • {formatNaira(finalTotalNgn)}</span>
-                    </>
-                  )}
-                </button>
-              ) : (
-                <Link
-                  href="/dashboard/wallet?tab=DEPOSIT"
-                  className="w-full py-3 px-4 rounded-xl font-heading font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-all text-center"
-                >
-                  Deposit into Giants Vault
-                </Link>
-              )}
+                  <span>Pay Online (Direct Bank Transfer / Card / Crypto)</span>
+                </a>
+              </div>
 
               <p className="text-[10px] text-fgText-secondary text-center leading-relaxed">
                 One-time activation fee • Instant SteraTrader credentials • {currentPlan.profitSplit} Split
