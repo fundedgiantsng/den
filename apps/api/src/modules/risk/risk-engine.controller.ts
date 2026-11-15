@@ -89,6 +89,17 @@ export class RiskEngineController {
     return this.riskEngineService.runFleetAudit();
   }
 
+  /**
+   * Admin endpoint: Trigger 23:00 GMT+1 session reset manually
+   * (Enforces 2% daily profit cap banking & open/closed trades inclusive baseline reset)
+   */
+  @Post('admin/trigger-session-reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Trigger daily session reset (23:00 GMT+1) manually' })
+  async triggerSessionReset() {
+    return this.riskEngineService.executeDailySessionReset();
+  }
+
   private async resolveUserId(req: Request): Promise<string> {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
     if (!token) {

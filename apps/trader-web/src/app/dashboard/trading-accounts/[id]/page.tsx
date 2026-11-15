@@ -68,6 +68,20 @@ export default function AccountAnalyticsTerminalPage() {
     maxDrawdownNgn: 250000,
     maxDrawdownLimitNgn: 1000000,
     maxLossHeadroomNgn: 750000,
+    targetEvaluation: null as {
+      profitTargetNgn: number;
+      profitTargetPercent: number;
+      dailyProfitCapNgn: number;
+      dailyProfitCapPercent: number;
+      bankedTargetProfitNgn: number;
+      todayProfitTotalNgn: number;
+      todayCreditedTowardsTargetNgn: number;
+      todayExcessProfitClearedAtResetNgn: number;
+      cumulativeQualifiedProfitNgn: number;
+      progressPercent: number;
+      resetTime: string;
+      excessNotice: string | null;
+    } | null,
     isPayoutEligible: true,
     payoutIneligibilityReason: undefined as string | undefined,
     minPayoutPercent: 2,
@@ -108,6 +122,7 @@ export default function AccountAnalyticsTerminalPage() {
           maxDrawdownNgn: riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn,
           maxDrawdownLimitNgn: riskData.maximumDrawdown?.limitNgn ?? prev.maxDrawdownLimitNgn,
           maxLossHeadroomNgn: riskData.maximumDrawdown?.headroomRemainingNgn ?? prev.maxLossHeadroomNgn,
+          targetEvaluation: riskData.targetEvaluation ?? prev.targetEvaluation,
           isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
           payoutIneligibilityReason: riskData.payoutEligibility?.reason,
           traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? prev.traderSplitPercent,
@@ -339,6 +354,87 @@ export default function AccountAnalyticsTerminalPage() {
         </div>
       </div>
 
+      {/* 2b. Rhino Rush 10% Profit Target & 2% Daily Profit Cap Terminal */}
+      {(!isPhoenix && account.currentPhase !== 'Funded') && (
+        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#0c1a13] via-[#09140f] to-[#050b08] border border-emerald-500/30 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-heading font-bold text-white">
+                Rhino Rush Evaluation Target &bull; 10% Profit Goal
+              </h3>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
+                2% Max Daily Profit Cap
+              </span>
+              <span className="text-[10px] font-mono text-fgText-secondary">
+                Session Reset: 23:00 GMT+1
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-fgText-secondary">
+                Qualified Target Progress:{' '}
+                <strong className="text-emerald-400">
+                  {formatNaira(account.targetEvaluation?.cumulativeQualifiedProfitNgn ?? account.profitNgn)}
+                </strong>{' '}
+                /{' '}
+                {formatNaira(account.targetEvaluation?.profitTargetNgn ?? account.sizeNgn * 0.1)}
+              </span>
+              <span className="font-bold text-white">
+                {account.targetEvaluation?.progressPercent ?? Math.min(100, Math.round((account.profitNgn / (account.sizeNgn * 0.1)) * 100))}%
+              </span>
+            </div>
+
+            <div className="w-full bg-black/60 h-3 rounded-full overflow-hidden border border-white/[0.08]">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-[#00f59b] transition-all duration-500 rounded-full"
+                style={{
+                  width: `${account.targetEvaluation?.progressPercent ?? Math.min(100, Math.round((account.profitNgn / (account.sizeNgn * 0.1)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-[11px] font-mono text-fgText-secondary">
+            <div className="p-3 rounded-xl bg-black/40 border border-white/[0.04]">
+              <span className="text-[10px] text-fgText-muted uppercase block">Today&apos;s Profit</span>
+              <span className="text-sm font-bold text-white">
+                +{formatNaira(account.targetEvaluation?.todayProfitTotalNgn ?? account.profitNgn)}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-black/40 border border-white/[0.04]">
+              <span className="text-[10px] text-fgText-muted uppercase block">Credited Towards Target (Max 2%)</span>
+              <span className="text-sm font-bold text-emerald-400">
+                +{formatNaira(account.targetEvaluation?.todayCreditedTowardsTargetNgn ?? Math.min(account.profitNgn, account.sizeNgn * 0.02))}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-black/40 border border-white/[0.04]">
+              <span className="text-[10px] text-fgText-muted uppercase block">Cleared at 23:00 GMT+1 Reset</span>
+              <span className={`text-sm font-bold ${
+                (account.targetEvaluation?.todayExcessProfitClearedAtResetNgn ?? 0) > 0 ? 'text-amber-400' : 'text-fgText-muted'
+              }`}>
+                {formatNaira(account.targetEvaluation?.todayExcessProfitClearedAtResetNgn ?? 0)}
+              </span>
+            </div>
+          </div>
+
+          {(account.targetEvaluation?.todayExcessProfitClearedAtResetNgn ?? 0) > 0 && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>
+                {formatNaira(account.targetEvaluation?.todayExcessProfitClearedAtResetNgn || 0)} generated above the 2% daily cap does not count towards the 10% target and is removed/cleared at 23:00 GMT+1 session reset.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 3. Risk Engine Live Meters */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Daily Drawdown Meter */}
@@ -346,7 +442,9 @@ export default function AccountAnalyticsTerminalPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-heading font-bold text-white">Daily Drawdown (4% Limit)</span>
+              <span className="text-xs font-heading font-bold text-white">
+                Daily Drawdown (4% Limit &bull; Open/Closed Trades Inclusive)
+              </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400">
               23:00 GMT+1 Reset

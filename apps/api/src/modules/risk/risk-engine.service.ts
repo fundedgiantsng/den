@@ -112,6 +112,139 @@ export class RiskEngineService {
   }
 
   /**
+   * Daily Session Reset at 23:00 (GMT +1) [22:00 UTC]:
+   * 1. Open/Closed trades inclusive baseline reset: new starting baseline = max(balance, equity).
+   * 2. Rhino Rush 2% Max Daily Profit Cap:
+   *    Any profit generated above the 2% cap does not count towards the target and is cleared/removed at reset.
+   *    Capped credit for the completed day is banked into DAILY_RESET_SNAPSHOT.
+   *    If banked cumulative qualified profit >= 10% target, account passes and is promoted to Funded!
+   */
+  @Cron('0 22 * * *')
+  async handleDailySessionReset() {
+    this.logger.log('Executing daily session reset at 23:00 GMT+1 (22:00 UTC)...');
+    return this.executeDailySessionReset();
+  }
+
+  async executeDailySessionReset() {
+    const activeAccounts = await prisma.tradingAccount.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        challenge: {
+          include: { product: true },
+        },
+      },
+    });
+
+    const resetResults = [];
+
+    for (const account of activeAccounts) {
+      try {
+        const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+        const currentBalance = metrics?.balance ?? Number(account.currentBalance);
+        const currentEquity = metrics?.equity ?? Number(account.currentEquity);
+        const initialBal = Number(account.initialBalance);
+
+        const isRhinoRushEvaluation =
+          account.challenge.product.skuPrefix === 'rhino-rush' &&
+          account.challenge.status === 'ACTIVE';
+
+        let sessionInfo: any = {};
+
+        if (isRhinoRushEvaluation) {
+          const startingDayBaseline = Math.max(metrics?.startingDayEquity || initialBal, currentBalance);
+          const todayRawProfit = Math.max(0, currentEquity - startingDayBaseline);
+          const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
+          const cappedCredit = Math.min(todayRawProfit, dailyCap);
+          const excessProfitCleared = Math.max(0, todayRawProfit - dailyCap);
+
+          // Previous banked
+          const previousSnapshots = await prisma.riskEvent.findMany({
+            where: {
+              tradingAccountId: account.id,
+              eventType: 'DAILY_RESET_SNAPSHOT',
+            },
+          });
+          let bankedSoFar = 0;
+          for (const snap of previousSnapshots) {
+            try {
+              const parsed = JSON.parse(snap.description);
+              bankedSoFar += Number(parsed.cappedCredit || 0);
+            } catch {}
+          }
+
+          const cumulativeQualifiedProfit = bankedSoFar + cappedCredit;
+          const profitTarget = initialBal * 0.10;
+
+          // Record session reset snapshot banking the capped credit and discarding excess
+          await prisma.riskEvent.create({
+            data: {
+              challengeId: account.challengeId,
+              tradingAccountId: account.id,
+              eventType: 'DAILY_RESET_SNAPSHOT',
+              description: JSON.stringify({
+                sessionDate: new Date().toISOString().split('T')[0],
+                todayRawProfit,
+                cappedCredit,
+                excessProfitCleared,
+                cumulativeQualifiedProfit,
+                profitTarget,
+              }),
+              severity: 'INFO',
+              snapshotBalance: currentBalance,
+              snapshotEquity: currentEquity,
+            },
+          });
+
+          sessionInfo = {
+            todayRawProfit,
+            cappedCredit,
+            excessProfitCleared,
+            cumulativeQualifiedProfit,
+            passed: cumulativeQualifiedProfit >= profitTarget,
+          };
+
+          // If reached 10% target with banked daily capped profits, promote to funded!
+          if (cumulativeQualifiedProfit >= profitTarget) {
+            await this.handlePromotion(account, cumulativeQualifiedProfit, currentEquity);
+          }
+        }
+
+        // New starting baseline for tomorrow: higher of balance or equity (open/closed trades inclusive)
+        const newStartingBaseline = Math.max(currentBalance, currentEquity);
+        const newDailyLimit = newStartingBaseline * 0.04;
+
+        await prisma.tradingAccount.update({
+          where: { id: account.id },
+          data: {
+            currentBalance,
+            currentEquity,
+            dailyDrawdownLimit: newDailyLimit,
+            lastSyncedAt: new Date(),
+          },
+        });
+
+        resetResults.push({
+          accountNumber: account.accountNumber,
+          newStartingBaseline,
+          newDailyLimit,
+          sessionInfo,
+        });
+      } catch (err: any) {
+        this.logger.error(`Error in session reset for account ${account.accountNumber}: ${err.message}`);
+      }
+    }
+
+    this.logger.log(`Daily session reset completed for ${resetResults.length} active accounts.`);
+    return {
+      status: 'SUCCESS',
+      resetAt: new Date().toISOString(),
+      timezone: '23:00 GMT+1 (22:00 UTC)',
+      accountsProcessed: resetResults.length,
+      details: resetResults,
+    };
+  }
+
+  /**
    * Event-Driven Trade & Equity Processing (O(1) execution path):
    * Triggered immediately when SteraTrader broadcasts trade events
    * (e.g. order placed, trade closed, equity tick).
@@ -200,12 +333,15 @@ export class RiskEngineService {
     const currentEquity = metrics.equity;
     const currentBalance = metrics.balance;
 
-    // 1. Calculate Daily Drawdown:
-    // Daily loss is evaluated against starting day equity / balance at 00:00 UTC
-    const startingEquity = metrics.startingDayEquity || initialBal;
-    const dailyLoss = startingEquity - currentEquity;
+    // 1. Calculate Daily Drawdown (Open & Closed Trades Inclusive):
+    // Evaluated against 23:00 GMT+1 baseline: higher of starting day balance or equity.
+    // Current equity = current balance (all closed trades) + floating PnL (all open trades).
+    const startingDayBaseline = Math.max(metrics.startingDayEquity || initialBal, metrics.balance || initialBal);
+    const dailyLoss = Math.max(0, startingDayBaseline - currentEquity);
 
-    // 2. Calculate Maximum Loss (Overall Drawdown from initial capital):
+    // 2. Calculate Maximum Loss (100% Static Floor - Zero Trailing):
+    // Rhino Rush: permanently fixed at 90% of initial balance (10% max DD)
+    // Phoenix Rise: permanently fixed at 93% of initial balance (7% max DD)
     const maxLoss = initialBal - currentEquity;
 
     // 3. Update account snapshot in database
@@ -219,27 +355,27 @@ export class RiskEngineService {
       },
     });
 
-    // CHECK RULE 1: 4% Daily Drawdown Breach
+    // CHECK RULE 1: 4% Daily Drawdown Breach (Open & Closed Trades Inclusive)
     if (dailyLoss >= dailyLimit) {
       this.totalBreachesCaught++;
       await this.handleBreach(
         account,
         'DAILY_DD_BREACH',
-        `Daily drawdown breach: ₦${dailyLoss.toLocaleString()} lost today exceeding 4% limit of ₦${dailyLimit.toLocaleString()}`,
+        `Daily drawdown breach (open & closed trades inclusive): ₦${dailyLoss.toLocaleString()} lost today exceeding 4% limit of ₦${dailyLimit.toLocaleString()} (Starting Baseline: ₦${startingDayBaseline.toLocaleString()})`,
         currentBalance,
         currentEquity
       );
       return { status: 'breached', rule: 'DAILY_DD_BREACH' };
     }
 
-    // CHECK RULE 2: Max Drawdown Breach (10% Rhino / 7% Phoenix)
+    // CHECK RULE 2: Max Drawdown Breach (10% Rhino / 7% Phoenix - 100% Static Floor)
     if (maxLoss >= maxLimit) {
       this.totalBreachesCaught++;
       const percent = challenge.product.skuPrefix === 'phoenix-rise' ? '7%' : '10%';
       await this.handleBreach(
         account,
         'MAX_DD_BREACH',
-        `Maximum total drawdown breach: ₦${maxLoss.toLocaleString()} overall loss exceeding ${percent} limit of ₦${maxLimit.toLocaleString()}`,
+        `Maximum static drawdown breach: ₦${maxLoss.toLocaleString()} overall loss exceeding ${percent} limit of ₦${maxLimit.toLocaleString()} (Static Floor: ₦${(initialBal - maxLimit).toLocaleString()})`,
         currentBalance,
         currentEquity
       );
@@ -247,18 +383,38 @@ export class RiskEngineService {
     }
 
     // CHECK RULE 3: Profit Target Evaluation for Rhino Rush (1-Step Challenge)
+    // Applies 2% Max Daily Profit Cap: any profit generated above 2% does not count towards target and is cleared at session reset time
     if (
       challenge.product.skuPrefix === 'rhino-rush' &&
       challenge.status === 'ACTIVE'
     ) {
       const profitTarget = initialBal * 0.10; // 10% Profit Target
-      const currentProfit = currentEquity - initialBal;
+      const dailyCap = initialBal * 0.02; // 2% Max Daily Profit Cap
 
-      if (currentProfit >= profitTarget) {
-        // Enforce 2% Daily Profit Cap:
-        // Trader cannot pass challenge purely from an outlier single-day gamble
-        await this.handlePromotion(account, currentProfit, currentEquity);
-        return { status: 'promoted', profit: currentProfit };
+      // Retrieve previously banked daily capped profit from completed session resets
+      const sessionSnapshots = await prisma.riskEvent.findMany({
+        where: {
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+        },
+      });
+
+      let bankedQualifiedProfit = 0;
+      for (const snap of sessionSnapshots) {
+        try {
+          const parsed = JSON.parse(snap.description);
+          bankedQualifiedProfit += Number(parsed.cappedCredit || 0);
+        } catch {}
+      }
+
+      // Today's contribution: capped at 2% daily limit; excess above 2% will be cleared at 23:00 GMT+1 reset
+      const todayRawProfit = Math.max(0, currentEquity - startingDayBaseline);
+      const todayCreditedTowardsTarget = Math.min(todayRawProfit, dailyCap);
+      const totalQualifiedProfit = bankedQualifiedProfit + todayCreditedTowardsTarget;
+
+      if (totalQualifiedProfit >= profitTarget) {
+        await this.handlePromotion(account, totalQualifiedProfit, currentEquity);
+        return { status: 'promoted', profit: totalQualifiedProfit };
       }
     }
 
@@ -631,9 +787,12 @@ export class RiskEngineService {
 
     const isPhoenix = account.challenge.product.skuPrefix === 'phoenix-rise';
     const isFunded = account.challenge.status === 'PASSED' || account.challenge.status === 'COMPLETED';
+    const isEvaluation = !isPhoenix && !isFunded;
 
-    // 1. Daily Drawdown calculations (4% from 23:00 GMT+1 HWM)
-    const startingDayHwm = metrics?.startingDayEquity || initialBal;
+    // 1. Daily Drawdown calculations (4% from 23:00 GMT+1 baseline, Open & Closed Trades Inclusive)
+    // Starting baseline is the higher of balance or equity at 23:00 GMT+1 session reset.
+    // Current equity reflects all closed trades (in balance) + all open trades (in floating PnL).
+    const startingDayHwm = Math.max(metrics?.startingDayEquity || initialBal, currentBalance);
     const dailyLimitAmount = startingDayHwm * 0.04;
     const dailyBreachFloor = startingDayHwm - dailyLimitAmount;
     const dailyLossCurrent = Math.max(0, startingDayHwm - currentEquity);
@@ -647,6 +806,54 @@ export class RiskEngineService {
     const maxBreachFloor = initialBal - maxDrawdownLimitAmount;
     const maxLossCurrent = Math.max(0, initialBal - currentEquity);
     const maxHeadroom = Math.max(0, currentEquity - maxBreachFloor);
+
+    // 3. Rhino Rush Evaluation Target Progress with 2% Daily Profit Cap
+    let targetEvaluation: any = null;
+    if (isEvaluation) {
+      const profitTargetNgn = initialBal * 0.10; // 10% Target
+      const dailyProfitCapNgn = initialBal * 0.02; // 2% Max Daily Profit Cap
+
+      // Retrieve previously banked daily capped profits from completed session resets
+      const sessionSnapshots = await prisma.riskEvent.findMany({
+        where: {
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      let bankedTargetProfitNgn = 0;
+      for (const snap of sessionSnapshots) {
+        try {
+          const parsed = JSON.parse(snap.description);
+          bankedTargetProfitNgn += Number(parsed.cappedCredit || 0);
+        } catch {}
+      }
+
+      const todayRawProfitNgn = Math.max(0, currentEquity - startingDayHwm);
+      const todayCreditedTowardsTargetNgn = Math.min(todayRawProfitNgn, dailyProfitCapNgn);
+      const todayExcessProfitClearedAtResetNgn = Math.max(0, todayRawProfitNgn - dailyProfitCapNgn);
+      const cumulativeQualifiedProfitNgn = bankedTargetProfitNgn + todayCreditedTowardsTargetNgn;
+      const progressPercent = Math.min(100, Math.round((cumulativeQualifiedProfitNgn / profitTargetNgn) * 100));
+
+      targetEvaluation = {
+        profitTargetNgn,
+        profitTargetPercent: 10.0,
+        dailyProfitCapNgn,
+        dailyProfitCapPercent: 2.0,
+        bankedTargetProfitNgn,
+        todayProfitTotalNgn: todayRawProfitNgn,
+        todayCreditedTowardsTargetNgn,
+        todayExcessProfitClearedAtResetNgn,
+        cumulativeQualifiedProfitNgn,
+        progressPercent,
+        resetTime: '23:00 (GMT +1)',
+        excessNotice:
+          todayExcessProfitClearedAtResetNgn > 0
+            ? `₦${todayExcessProfitClearedAtResetNgn.toLocaleString()} generated above the 2% daily cap does not count towards target and will be cleared at 23:00 GMT+1 reset.`
+            : null,
+      };
+    }
 
     // Payout eligibility
     const eligibility = await this.checkPayoutEligibility(account.id);
@@ -664,6 +871,8 @@ export class RiskEngineService {
       openTradesCount,
       dailyDrawdown: {
         percent: 4.0,
+        model: '4% Daily Floor (Open & Closed Trades Inclusive)',
+        resetTime: '23:00 (GMT +1)',
         startingDayHwmNgn: startingDayHwm,
         dailyLimitNgn: dailyLimitAmount,
         dailyBreachFloorNgn: dailyBreachFloor,
@@ -680,6 +889,7 @@ export class RiskEngineService {
         headroomRemainingNgn: maxHeadroom,
         isSafe: currentEquity > maxBreachFloor,
       },
+      targetEvaluation,
       payoutEligibility: eligibility,
       lastSyncedAt: account.lastSyncedAt || new Date(),
     };
