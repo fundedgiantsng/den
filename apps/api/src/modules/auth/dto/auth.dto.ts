@@ -94,3 +94,30 @@ export class NinjaBvnVerifyDto {
   @IsString()
   email?: string;
 }
+
+export class UpdateProfileDto {
+  @ApiPropertyOptional({ example: 'johndoe' })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiPropertyOptional({ example: 'John' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Doe' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @ApiPropertyOptional({ example: '+2348012345678' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ example: '14 Admiralty Way, Lekki Phase 1, Lagos' })
+  @IsOptional()
+  @IsString()
+  address?: string;
+}

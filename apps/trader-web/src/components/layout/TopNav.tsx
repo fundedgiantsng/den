@@ -1,14 +1,35 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface TopNavProps {
   onMobileMenuToggle?: () => void;
 }
 
 export function TopNav({ onMobileMenuToggle }: TopNavProps) {
+  const [currentUser, setCurrentUser] = useState<{
+    firstName?: string;
+    lastName?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch('http://localhost:4000/api/v1/auth/me', {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.user) setCurrentUser(data.user);
+      })
+      .catch(() => {});
+  }, []);
+
+  const fullName = currentUser ? `${currentUser.firstName || 'Valued'} ${currentUser.lastName || 'Trader'}` : 'John Doe';
+  const initials = currentUser
+    ? `${(currentUser.firstName?.[0] || 'V').toUpperCase()}${(currentUser.lastName?.[0] || 'T').toUpperCase()}`
+    : 'JD';
   return (
     <header className="h-16 px-4 sm:px-6 lg:px-8 border-b border-fgBorder-subtle bg-bg-surface/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between gap-3">
       {/* Mobile Brand & Hamburger Button */}
@@ -66,12 +87,17 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
         </button>
 
         {/* User Avatar */}
-        <div className="flex items-center gap-2 sm:gap-2.5 pl-1 sm:pl-2 border-l border-fgBorder-subtle">
-          <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs">
-            JD
+        <Link
+          href="/dashboard/profile"
+          className="flex items-center gap-2 sm:gap-2.5 pl-1 sm:pl-2 border-l border-fgBorder-subtle hover:opacity-80 transition group"
+        >
+          <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-500/30 group-hover:border-emerald-400 transition-colors">
+            {initials}
           </div>
-          <span className="text-xs font-medium text-white hidden lg:inline-block">John Doe</span>
-        </div>
+          <span className="text-xs font-medium text-white hidden lg:inline-block group-hover:text-emerald-400 transition-colors">
+            {fullName}
+          </span>
+        </Link>
       </div>
     </header>
   );

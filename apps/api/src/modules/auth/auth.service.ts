@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
-import { RequestOtpDto, LoginIdentifierType, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto } from './dto/auth.dto';
+import { RequestOtpDto, LoginIdentifierType, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, UpdateProfileDto } from './dto/auth.dto';
 import { RobaseService } from '../integrations/robase/robase.service';
 
 @Injectable()
@@ -424,12 +424,80 @@ export class AuthService {
           include: {
             wallet: true,
             affiliateProfile: true,
+            kycRecords: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
         },
       },
     });
     if (!session?.user) return null;
     return session.user;
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new NotFoundException('User profile not found');
+    }
+
+    const dataToUpdate: any = {};
+    if (dto.firstName) dataToUpdate.firstName = dto.firstName.trim();
+    if (dto.lastName) dataToUpdate.lastName = dto.lastName.trim();
+    if (dto.phone) dataToUpdate.phone = dto.phone.trim();
+    if (dto.address !== undefined) dataToUpdate.address = dto.address.trim();
+
+    if (dto.username) {
+      const cleanUsername = dto.username.trim().toLowerCase();
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(cleanUsername)) {
+        throw new BadRequestException('Username must be 3-20 characters long and contain only letters, numbers, and underscores.');
+      }
+      const existing = await prisma.user.findFirst({
+        where: {
+          username: cleanUsername,
+          NOT: { id: userId },
+        },
+      });
+      if (existing) {
+        throw new BadRequestException('Username is already taken.');
+      }
+      dataToUpdate.username = cleanUsername;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: dataToUpdate,
+      include: {
+        wallet: true,
+        affiliateProfile: true,
+        kycRecords: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: updated.id,
+        email: updated.email,
+        phone: updated.phone,
+        username: updated.username,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        address: updated.address,
+        role: updated.role,
+        kycStatus: updated.kycStatus,
+        wallet: updated.wallet,
+        affiliateProfile: updated.affiliateProfile,
+        kycRecord: updated.kycRecords[0] || null,
+      },
+    };
   }
 
   /**

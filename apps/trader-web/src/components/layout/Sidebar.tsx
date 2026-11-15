@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -13,7 +13,7 @@ import {
   Users,
   Bell,
   LifeBuoy,
-  Settings,
+  User,
   ShieldCheck,
   ChevronRight,
   Sparkles,
@@ -37,11 +37,33 @@ const navItems: NavItem[] = [
 const secondaryNav: NavItem[] = [
   { name: 'Notifications', href: '/dashboard/notifications', icon: Bell, badge: '3' },
   { name: 'Help & Support', href: '/dashboard/support', icon: LifeBuoy },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  { name: 'Profile', href: '/dashboard/profile', icon: User },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<{
+    firstName?: string;
+    lastName?: string;
+    kycStatus?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch('http://localhost:4000/api/v1/auth/me', {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.user) setCurrentUser(data.user);
+      })
+      .catch(() => {});
+  }, []);
+
+  const fullName = currentUser ? `${currentUser.firstName || 'Valued'} ${currentUser.lastName || 'Trader'}` : 'John Doe';
+  const initials = currentUser
+    ? `${(currentUser.firstName?.[0] || 'V').toUpperCase()}${(currentUser.lastName?.[0] || 'T').toUpperCase()}`
+    : 'JD';
+  const isVerified = currentUser?.kycStatus === 'APPROVED';
 
   return (
     <aside className="w-64 h-screen sticky top-0 flex flex-col justify-between bg-[#080f0c] border-r border-white/[0.08] p-4 select-none overflow-y-auto">
@@ -165,20 +187,24 @@ export function Sidebar() {
 
         {/* User Profile Chip (Bottom of Sidebar) */}
         <Link
-          href="/dashboard/settings"
+          href="/dashboard/profile"
           className="p-2 rounded-xl bg-black/40 border border-white/[0.06] hover:border-emerald-500/30 flex items-center justify-between transition-colors group"
         >
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold flex items-center justify-center text-xs">
-              JD
+              {initials}
             </div>
             <div className="text-left">
               <span className="text-xs font-bold text-white block group-hover:text-emerald-400 transition-colors">
-                John Doe
+                {fullName}
               </span>
-              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
+              <span
+                className={`inline-flex items-center gap-1 text-[10px] font-mono ${
+                  isVerified ? 'text-emerald-400' : 'text-amber-400'
+                }`}
+              >
                 <ShieldCheck className="w-2.5 h-2.5" />
-                <span>Verified</span>
+                <span>{isVerified ? 'Verified' : 'Unverified'}</span>
               </span>
             </div>
           </div>

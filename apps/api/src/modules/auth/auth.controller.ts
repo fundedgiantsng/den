@@ -1,8 +1,8 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
-import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto } from './dto/auth.dto';
+import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto, UpdateProfileDto } from './dto/auth.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -76,6 +76,7 @@ export class AuthController {
         id: user.id,
         email: user.email,
         phone: user.phone,
+        username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
         address: user.address,
@@ -83,8 +84,24 @@ export class AuthController {
         kycStatus: user.kycStatus,
         wallet: user.wallet,
         affiliateProfile: user.affiliateProfile,
+        kycRecord: (user as any).kycRecords?.[0] || null,
       },
     };
+  }
+
+  @Put('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update user profile (username, names, phone/whatsapp, address)' })
+  async updateMe(@Body() dto: UpdateProfileDto, @Req() req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) {
+      throw new UnauthorizedException('Not authenticated');
+    }
+    const user = await this.authService.getSessionUser(token);
+    if (!user) {
+      throw new UnauthorizedException('Session expired or invalid');
+    }
+    return this.authService.updateProfile(user.id, dto);
   }
 
   @Post('ninja-bvn-verify')
