@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { label: 'Trading Accounts', href: '/trading-accounts', icon: Activity },
   { label: 'Risk Monitor', href: '/risk', icon: ShieldAlert },
   { label: 'General Ledger', href: '/finance/ledger', icon: Wallet },
-  { label: 'Withdrawals Queue', href: '/finance/withdrawals', icon: ArrowDownLeft },
+  { label: 'Withdrawals Log', href: '/finance/withdrawals', icon: ArrowDownLeft },
   { label: 'Affiliates', href: '/affiliates', icon: Share2 },
   { label: 'Discount Coupons', href: '/affiliates/coupons', icon: Tag },
   { label: 'Audit Trail', href: '/audit-logs', icon: ClipboardList },

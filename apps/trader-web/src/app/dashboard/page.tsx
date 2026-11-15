@@ -427,13 +427,13 @@ export default function DashboardOverviewPage() {
           {/* 1. Top Ad Placement: Explore Trading Accounts */}
           <div className="rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
             {/* Dynamic Marketing Banner (Rotates Hourly) */}
-            <div className="relative w-full rounded-xl overflow-hidden bg-black/60 border border-emerald-500/20 flex items-center justify-center group shadow-lg">
+            {/* Visual Marketing Banner (Full Portrait Height Respected, Clean Scaling) */}
+            <div className="relative w-full rounded-xl overflow-hidden bg-black/40 border border-emerald-500/20 flex items-center justify-center group shadow-xl">
               <img
                 src={marketingBanners[bannerIndex].src}
                 alt={marketingBanners[bannerIndex].alt}
-                className="w-full h-auto aspect-[697/1024] max-h-64 object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                className="w-full h-auto object-contain rounded-xl transition-transform duration-500 group-hover:scale-[1.01]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0e1f17] via-transparent to-transparent opacity-50 pointer-events-none" />
             </div>
 
             <div className="space-y-1">

@@ -78,7 +78,37 @@ export class AdminController {
     return this.adminService.updateCustomerStatus(id, body, context);
   }
 
-  // 5. Challenges Management
+  // 5. Challenges & Full Cycle Rule Management
+  @Get('challenges/products')
+  getChallengeProducts() {
+    return this.adminService.getChallengeProducts();
+  }
+
+  @Post('challenges/products')
+  @HttpCode(HttpStatus.CREATED)
+  createChallengeProduct(@Body() body: any, @Req() req: any) {
+    const context = this.extractContext(req, body);
+    return this.adminService.createChallengeProduct(body, context);
+  }
+
+  @Patch('challenges/products/:id')
+  @HttpCode(HttpStatus.OK)
+  updateChallengeProduct(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req, body);
+    return this.adminService.updateChallengeProduct(id, body, context);
+  }
+
+  @Post('challenges/grant')
+  @HttpCode(HttpStatus.CREATED)
+  grantChallengeToUser(@Body() body: any, @Req() req: any) {
+    const context = this.extractContext(req, body);
+    return this.adminService.grantChallengeToUser(body, context);
+  }
+
   @Get('challenges')
   getChallenges(
     @Query('status') status?: ChallengeStatus,

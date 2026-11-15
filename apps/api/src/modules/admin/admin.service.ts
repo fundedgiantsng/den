@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus } from '@fundedgiants/database';
+import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus, ChallengeType } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
 
@@ -432,8 +432,249 @@ export class AdminService {
   }
 
   /**
-   * 5. Challenges Management
+   * 5. Challenges Management & Full-Cycle Rule Authoring
    */
+  async getChallengeProducts() {
+    const products = await prisma.challengeProduct.findMany({
+      orderBy: { accountSize: 'asc' },
+      include: {
+        _count: { select: { challenges: true } },
+      },
+    });
+
+    return {
+      success: true,
+      data: products.map((p) => ({
+        id: p.id,
+        sku: p.sku,
+        skuPrefix: p.skuPrefix,
+        name: p.name,
+        type: p.type,
+        accountSize: Number(p.accountSize),
+        priceNgn: Number(p.priceNgn),
+        dailyDrawdownPercent: Number(p.dailyDrawdownPercent),
+        maxDrawdownPercent: Number(p.maxDrawdownPercent),
+        profitTargetPercent: Number(p.profitTargetPercent),
+        leverage: p.leverage,
+        profitSplit: p.profitSplit,
+        isActive: p.isActive,
+        activeChallengesCount: p._count.challenges,
+        createdAt: p.createdAt,
+      })),
+    };
+  }
+
+  async createChallengeProduct(
+    dto: {
+      sku: string;
+      skuPrefix: string;
+      name: string;
+      type: ChallengeType | string;
+      accountSize: number;
+      priceNgn: number;
+      dailyDrawdownPercent: number;
+      maxDrawdownPercent: number;
+      profitTargetPercent: number;
+      leverage: string;
+      profitSplit: string;
+      isActive?: boolean;
+    },
+    context: AdminActionContext,
+  ) {
+    const sku = dto.sku.toLowerCase().trim();
+    const existing = await prisma.challengeProduct.findUnique({ where: { sku } });
+    if (existing) {
+      throw new BadRequestException(`Challenge SKU ${sku} already exists.`);
+    }
+
+    const challengeType: ChallengeType =
+      dto.type === 'PHOENIX_RISE_INSTANT' || (dto.type as any) === 'INSTANT_FUNDING'
+        ? ChallengeType.PHOENIX_RISE_INSTANT
+        : ChallengeType.RHINO_RUSH_ONE_STEP;
+
+    const product = await prisma.$transaction(async (tx) => {
+      const p = await tx.challengeProduct.create({
+        data: {
+          sku,
+          skuPrefix: dto.skuPrefix.toLowerCase().trim(),
+          name: dto.name.trim(),
+          type: challengeType,
+          accountSize: dto.accountSize,
+          priceNgn: dto.priceNgn,
+          dailyDrawdownPercent: dto.dailyDrawdownPercent,
+          maxDrawdownPercent: dto.maxDrawdownPercent,
+          profitTargetPercent: dto.profitTargetPercent,
+          leverage: dto.leverage || '1:100',
+          profitSplit: dto.profitSplit || '80:20',
+          isActive: dto.isActive !== undefined ? dto.isActive : true,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_CHALLENGE_PRODUCT_CREATED',
+          resource: 'ChallengeProduct',
+          resourceId: p.id,
+          details: { sku, name: dto.name, accountSize: dto.accountSize },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return p;
+    });
+
+    return {
+      success: true,
+      message: `Challenge program "${dto.name}" created successfully.`,
+      data: product,
+    };
+  }
+
+  async updateChallengeProduct(id: string, dto: any, context: AdminActionContext) {
+    const product = await prisma.challengeProduct.findUnique({ where: { id } });
+    if (!product) {
+      throw new NotFoundException(`Challenge product ${id} not found.`);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const data: any = {};
+      if (dto.name !== undefined) data.name = dto.name;
+      if (dto.priceNgn !== undefined) data.priceNgn = dto.priceNgn;
+      if (dto.dailyDrawdownPercent !== undefined) data.dailyDrawdownPercent = dto.dailyDrawdownPercent;
+      if (dto.maxDrawdownPercent !== undefined) data.maxDrawdownPercent = dto.maxDrawdownPercent;
+      if (dto.profitTargetPercent !== undefined) data.profitTargetPercent = dto.profitTargetPercent;
+      if (dto.leverage !== undefined) data.leverage = dto.leverage;
+      if (dto.profitSplit !== undefined) data.profitSplit = dto.profitSplit;
+      if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+      const p = await tx.challengeProduct.update({
+        where: { id },
+        data,
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_CHALLENGE_PRODUCT_UPDATED',
+          resource: 'ChallengeProduct',
+          resourceId: id,
+          details: dto,
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return p;
+    });
+
+    return {
+      success: true,
+      message: `Challenge program "${updated.name}" updated successfully.`,
+      data: updated,
+    };
+  }
+
+  async grantChallengeToUser(
+    dto: {
+      userId: string;
+      productId: string;
+      grantReason: string;
+      discountPercent?: number;
+    },
+    context: AdminActionContext,
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: dto.userId } });
+    if (!user) throw new NotFoundException(`User ${dto.userId} not found.`);
+
+    const product = await prisma.challengeProduct.findUnique({ where: { id: dto.productId } });
+    if (!product) throw new NotFoundException(`Challenge product ${dto.productId} not found.`);
+
+    const challengeNumber = `FG-CH-${Math.floor(10000 + Math.random() * 90000)}`;
+    const orderNumber = `FG-ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+    const discount = dto.discountPercent !== undefined ? dto.discountPercent : 100;
+    const effectivePrice = discount === 100 ? 0 : Number(product.priceNgn) * (1 - discount / 100);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create Internal Order
+      const order = await tx.internalOrder.create({
+        data: {
+          orderNumber,
+          userId: user.id,
+          amount: effectivePrice,
+          currency: 'NGN',
+          paymentMethod: 'ADMIN_DIRECT_GRANT',
+          paymentStatus: PaymentStatus.SUCCESSFUL,
+          paymentReference: `ADMIN-GRANT-${Date.now()}`,
+        },
+      });
+
+      // 2. Create CustomerChallenge
+      const challenge = await tx.customerChallenge.create({
+        data: {
+          challengeNumber,
+          userId: user.id,
+          orderId: order.id,
+          productId: product.id,
+          type: product.type,
+          status: 'ACTIVE',
+          startDate: new Date(),
+        },
+      });
+
+      // 3. Provision SteraTrader Account
+      const steraAccountNum = `ST-${Math.floor(700000 + Math.random() * 200000)}`;
+      const dailyDrawdownLimit = Number(product.accountSize) * (Number(product.dailyDrawdownPercent) / 100);
+      const maxDrawdownLimit = Number(product.accountSize) * (Number(product.maxDrawdownPercent) / 100);
+
+      const tradingAccount = await tx.tradingAccount.create({
+        data: {
+          accountNumber: steraAccountNum,
+          userId: user.id,
+          challengeId: challenge.id,
+          platform: 'SteraTrader',
+          initialBalance: product.accountSize,
+          currentBalance: product.accountSize,
+          currentEquity: product.accountSize,
+          dailyDrawdownLimit,
+          maxDrawdownLimit,
+          status: 'ACTIVE',
+        },
+      });
+
+      // 4. Audit Log
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_CHALLENGE_OFFER_GRANTED',
+          resource: 'CustomerChallenge',
+          resourceId: challenge.id,
+          details: {
+            userId: user.id,
+            userEmail: user.email,
+            productId: product.id,
+            productName: product.name,
+            accountSize: Number(product.accountSize),
+            grantReason: dto.grantReason,
+            steraAccountNumber: steraAccountNum,
+            discountPercent: discount,
+          },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+
+      return { order, challenge, tradingAccount };
+    });
+
+    return {
+      success: true,
+      message: `Challenge "${product.name}" granted to ${user.email} successfully. Account #${result.tradingAccount.accountNumber} provisioned.`,
+      data: result,
+    };
+  }
+
   async getChallenges(params: {
     status?: ChallengeStatus;
     search?: string;

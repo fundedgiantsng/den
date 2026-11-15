@@ -694,27 +694,27 @@ export default function GiantsVaultPage() {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-heading font-extrabold text-white tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                <span>GIANTS SPEND CARD</span>
+                <span>REQUEST GIANTS CARD</span>
               </span>
               {myCardData?.hasCard ? (
                 <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
                   {myCardData.cardOrder?.status || 'PENDING APPROVAL'}
                 </span>
               ) : (
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono font-bold uppercase">
-                  PREVIEW DESIGN
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono font-bold uppercase">
+                  MASTERCARD DEBIT
                 </span>
               )}
             </div>
 
-            {/* Spend Card Image: Custom Stamped or Design Preview */}
-            <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-black/60">
+            {/* Spend Card Image: Custom Stamped or Official Perspective Card Design */}
+            <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-black/60 flex items-center justify-center p-2">
               <Image
-                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-dummy.jpg'}
+                src={myCardData?.hasCard && myCardData?.stampedUrl ? myCardData.stampedUrl : '/cards/card-preview-perspective.png'}
                 alt="FundedGiants Spend Card"
                 width={1024}
                 height={696}
-                className="w-full h-auto object-cover rounded-xl transition duration-300 group-hover:scale-[1.02]"
+                className="w-full h-auto object-contain rounded-lg transition duration-300 group-hover:scale-[1.02]"
                 priority
               />
             </div>
@@ -725,32 +725,25 @@ export default function GiantsVaultPage() {
                 <div className="flex items-center justify-between text-[11px] text-fgText-secondary">
                   <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Custom Card Stamped
+                    Request Giants Card
                   </span>
-                  <span className="font-mono text-fgText-muted">Mastercard Debit</span>
+                  <span className="font-mono text-fgText-muted">Physical Print Ready</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <a
                     href={myCardData.stampedUrl || `/cards/generated/${myCardData.cardOrder?.userId || 'sample'}-spend-card.jpg`}
                     download="FundedGiants-Spend-Card.jpg"
-                    className="flex-1 py-2 px-3 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition text-center flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-heading font-extrabold bg-[#00e575] hover:bg-[#00c966] text-black shadow-lg shadow-emerald-500/20 active:scale-95 transition text-center flex items-center justify-center gap-1.5"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download Card JPEG</span>
                   </a>
-                  <button
-                    onClick={() => setIsRequestCardOpen(true)}
-                    className="py-2 px-3 rounded-xl text-xs font-semibold bg-white/[0.04] border border-white/[0.1] text-fgText-secondary hover:text-white hover:bg-white/[0.08] transition text-center"
-                    title="Re-stamp or Update Delivery Address"
-                  >
-                    Update
-                  </button>
                 </div>
               </div>
             ) : (
               <div className="space-y-2.5 pt-1">
                 <p className="text-[11px] text-fgText-secondary leading-relaxed">
-                  Shown above is the design preview. Request your personalized debit card to stamp your name with metallic gold foil and send for admin approval & printing.
+                  Request your personalized physical Mastercard debit card. Choose your custom print name and receive your high-res digital card instantly.
                 </p>
                 <button
                   onClick={() => setIsRequestCardOpen(true)}
@@ -1000,7 +993,7 @@ export default function GiantsVaultPage() {
             <form onSubmit={handleCardRequestSubmit} className="space-y-3.5 text-xs">
               <div>
                 <label className="block text-fgText-secondary font-medium mb-1">
-                  Full Name to Stamp on Card (Uppercase Serif Foil)
+                  Name Desired on Card (For Physical Printing & Digital JPEG)
                 </label>
                 <input
                   type="text"
@@ -1010,8 +1003,8 @@ export default function GiantsVaultPage() {
                   placeholder="e.g. OLUGBENGA OLAMIDE"
                   className="w-full p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 text-[#00f59b] font-heading font-extrabold text-xs tracking-wider focus:outline-none focus:border-emerald-400"
                 />
-                <span className="text-[10px] text-fgText-muted block mt-1">
-                  Stamps onto the designated gold underline baseline on the luxury template.
+                <span className="text-[10px] text-fgText-muted block mt-1 leading-relaxed">
+                  Note: This custom name is exclusively for physical card printing and digital JPEG stamping. The legal cardholder profile submitted to the card provider and banking network will remain your KYC-verified legal identity.
                 </span>
               </div>
 
