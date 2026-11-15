@@ -33,6 +33,28 @@ export class WalletController {
     return this.walletService.getTransactions(userId);
   }
 
+  @Get('banks')
+  @ApiOperation({ summary: 'List verified Nigerian commercial banks and fintechs' })
+  getBanks() {
+    return this.walletService.getNigerianBanks();
+  }
+
+  @Post('bind-bank-account')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bind a verified withdrawal bank account (must match KYC name)' })
+  async bindBankAccount(
+    @Body() body: { bankCode: string; bankName: string; accountNumber: string },
+    @Req() req: Request
+  ) {
+    const userId = await this.resolveUserId(req);
+    return this.walletService.bindBankAccount({
+      userId,
+      bankCode: body.bankCode,
+      bankName: body.bankName,
+      accountNumber: body.accountNumber,
+    });
+  }
+
   @Post('withdraw')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request profit or balance withdrawal to bound bank account' })

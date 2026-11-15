@@ -1020,6 +1020,46 @@ export class RiskEngineService {
       this.logger.error(`Error auto-generating payout certificate: ${err.message}`);
     }
 
+    // 5. Credit 3% recurring commission to referring affiliate (if trader was referred)
+    try {
+      const referral = await prisma.affiliateReferral.findUnique({
+        where: { referredUserId: user.id },
+        include: { affiliateProfile: true },
+      });
+
+      if (referral && referral.affiliateProfile) {
+        const payoutRate = Number(referral.affiliateProfile.payoutCommissionRate || 3.0);
+        const recurringCommissionNgn = Math.round((payoutAmount * payoutRate) / 100);
+
+        if (recurringCommissionNgn > 0) {
+          await prisma.$transaction([
+            prisma.affiliateCommission.create({
+              data: {
+                affiliateProfileId: referral.affiliateProfileId,
+                referralId: referral.id,
+                orderNumber: reference,
+                amount: recurringCommissionNgn,
+                currency: 'NGN',
+                status: 'SUCCESSFUL',
+              },
+            }),
+            prisma.affiliateProfile.update({
+              where: { id: referral.affiliateProfileId },
+              data: {
+                totalCommissions: { increment: recurringCommissionNgn },
+              },
+            }),
+          ]);
+
+          this.logger.log(
+            `3% Recurring Affiliate Commission of ₦${recurringCommissionNgn.toLocaleString()} credited to affiliate ${referral.affiliateProfile.referralCode} for payout ${reference}`
+          );
+        }
+      }
+    } catch (affErr: any) {
+      this.logger.error(`Error processing recurring affiliate commission: ${affErr.message}`);
+    }
+
     return {
       success: true,
       reference,

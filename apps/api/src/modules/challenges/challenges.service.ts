@@ -139,32 +139,54 @@ export class ChallengesService implements OnModuleInit {
     let affiliateUsername = '';
 
     if (dto.affiliateCode && dto.affiliateCode.trim()) {
-      const cleanAffCode = dto.affiliateCode.trim().toLowerCase();
+      const cleanAffCode = dto.affiliateCode.trim();
 
-      // Check by referralCode on AffiliateProfile or username on User
-      const profile = await prisma.affiliateProfile.findFirst({
-        where: {
-          OR: [
-            { referralCode: { equals: cleanAffCode, mode: 'insensitive' } },
-            { user: { username: { equals: cleanAffCode, mode: 'insensitive' } } },
-          ],
+      // 1. Check if it matches a custom affiliate discount code (e.g. VIPGIANT)
+      const customCoupon = await prisma.coupon.findUnique({
+        where: { code: cleanAffCode.toUpperCase() },
+        include: {
+          affiliateProfile: {
+            include: { user: true },
+          },
         },
-        include: { user: true },
       });
 
-      if (profile) {
-        isAffiliateValid = true;
-        affiliateUsername = profile.referralCode || profile.user.username || cleanAffCode;
-        affiliateDiscountPercent = Number(profile.customDiscountPercent || 0);
-
-        if (affiliateDiscountPercent > 0) {
+      if (customCoupon && customCoupon.affiliateProfile && customCoupon.isActive) {
+        if (customCoupon.maxUsage && customCoupon.usageCount >= customCoupon.maxUsage) {
+          affiliateMessage = `Affiliate discount code '${customCoupon.code}' has reached its maximum user limit.`;
+        } else {
+          isAffiliateValid = true;
+          affiliateUsername = customCoupon.affiliateProfile.referralCode || customCoupon.affiliateProfile.user.username || 'trader';
+          affiliateDiscountPercent = Number(customCoupon.discountPercent);
           affiliateDiscountNgn = Math.round((subtotalNgn * affiliateDiscountPercent) / 100);
           affiliateMessage = `Affiliate code applied (${affiliateDiscountPercent}% partner discount)`;
-        } else {
-          affiliateMessage = `Affiliate partner @${affiliateUsername} verified.`;
         }
       } else {
-        affiliateMessage = 'Invalid affiliate code.';
+        // 2. Check by referralCode on AffiliateProfile or username on User
+        const profile = await prisma.affiliateProfile.findFirst({
+          where: {
+            OR: [
+              { referralCode: { equals: cleanAffCode.toLowerCase(), mode: 'insensitive' } },
+              { user: { username: { equals: cleanAffCode.toLowerCase(), mode: 'insensitive' } } },
+            ],
+          },
+          include: { user: true },
+        });
+
+        if (profile) {
+          isAffiliateValid = true;
+          affiliateUsername = profile.referralCode || profile.user.username || cleanAffCode;
+          affiliateDiscountPercent = Number(profile.customDiscountPercent || 0);
+
+          if (affiliateDiscountPercent > 0) {
+            affiliateDiscountNgn = Math.round((subtotalNgn * affiliateDiscountPercent) / 100);
+            affiliateMessage = `Affiliate code applied (${affiliateDiscountPercent}% partner discount)`;
+          } else {
+            affiliateMessage = `Affiliate partner @${affiliateUsername} verified.`;
+          }
+        } else {
+          affiliateMessage = 'Invalid affiliate code.';
+        }
       }
     }
 
@@ -256,26 +278,42 @@ export class ChallengesService implements OnModuleInit {
     // 3. Check Affiliate Partner attribution and Commission
     let referringAffiliateProfile: any = null;
     let affiliateCommissionAmount = 0;
+    let customCouponToIncrement: string | null = null;
 
     if (validation.affiliateCoupon.isValid && dto.affiliateCode) {
-      const cleanAff = dto.affiliateCode.trim().toLowerCase();
-      referringAffiliateProfile = await prisma.affiliateProfile.findFirst({
-        where: {
-          OR: [
-            { referralCode: { equals: cleanAff, mode: 'insensitive' } },
-            { user: { username: { equals: cleanAff, mode: 'insensitive' } } },
-          ],
-        },
+      const cleanAff = dto.affiliateCode.trim();
+
+      // Check if it was a custom coupon code
+      const customCoupon = await prisma.coupon.findUnique({
+        where: { code: cleanAff.toUpperCase() },
+        include: { affiliateProfile: true },
       });
+
+      let sharedDiscount = 0;
+      if (customCoupon && customCoupon.affiliateProfile) {
+        referringAffiliateProfile = customCoupon.affiliateProfile;
+        sharedDiscount = Number(customCoupon.discountPercent);
+        customCouponToIncrement = customCoupon.id;
+      } else {
+        referringAffiliateProfile = await prisma.affiliateProfile.findFirst({
+          where: {
+            OR: [
+              { referralCode: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } },
+              { user: { username: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } } },
+            ],
+          },
+        });
+        sharedDiscount = Number(referringAffiliateProfile?.customDiscountPercent || 0.0);
+      }
 
       // Self-referral prevention: affiliate cannot refer themselves
       if (referringAffiliateProfile && referringAffiliateProfile.userId === user.id) {
         this.logger.warn(`Self-referral detected for user ${user.id}. No commission awarded.`);
         referringAffiliateProfile = null;
+        customCouponToIncrement = null;
       } else if (referringAffiliateProfile) {
         // Base CPA rate is 10%, minus any custom discount percent shared with the buyer
         const baseCpaRate = Number(referringAffiliateProfile.cpaCommissionRate || 10.0);
-        const sharedDiscount = Number(referringAffiliateProfile.customDiscountPercent || 0.0);
         const effectiveCpaRate = Math.max(0, baseCpaRate - sharedDiscount);
 
         // Commission is calculated on original subtotal (or net sale price)
@@ -328,6 +366,14 @@ export class ChallengesService implements OnModuleInit {
       if (validation.siteCoupon.isValid && dto.siteCouponCode) {
         await tx.coupon.update({
           where: { code: dto.siteCouponCode.trim().toUpperCase() },
+          data: { usageCount: { increment: 1 } },
+        });
+      }
+
+      // If custom affiliate coupon was used, increment its usage count
+      if (customCouponToIncrement) {
+        await tx.coupon.update({
+          where: { id: customCouponToIncrement },
           data: { usageCount: { increment: 1 } },
         });
       }
