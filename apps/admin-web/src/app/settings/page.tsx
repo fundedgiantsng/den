@@ -470,7 +470,7 @@ export default function SettingsAndDevicePage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {renderInputField('Store REST API URL', 'wooCommerceApiUrl', 'https://fundedgiants.com/wp-json/wc/v3')}
+                {renderInputField('Store REST API URL', 'wooCommerceApiUrl', 'https://fundedgiants.ng/wp-json/wc/v3')}
                 {renderInputField('Consumer Key (ck_...)', 'wooCommerceConsumerKey', 'ck_...', false, undefined, statusData?.credentialsSummary?.wooCommerce?.consumerKeyMasked)}
                 {renderInputField('Consumer Secret (cs_...)', 'wooCommerceConsumerSecret', 'cs_...', true)}
                 {renderInputField('Order Webhook Secret', 'wooCommerceWebhookSecret', 'Webhook signature secret', true)}
@@ -568,9 +568,9 @@ export default function SettingsAndDevicePage() {
                 </div>
                 {renderInputField('SMTP Host', 'smtpHost', 'smtp-relay.brevo.com')}
                 {renderInputField('SMTP Port', 'smtpPort', '587')}
-                {renderInputField('SMTP Username / Email', 'smtpUser', 'login@fundedgiants.com')}
+                {renderInputField('SMTP Username / Email', 'smtpUser', 'login@fundedgiants.ng')}
                 {renderInputField('SMTP Password', 'smtpPass', 'password', true)}
-                {renderInputField('Sender Address (From)', 'smtpFrom', 'support@fundedgiants.com')}
+                {renderInputField('Sender Address (From)', 'smtpFrom', 'support@fundedgiants.ng')}
                 {renderInputField('Sender Display Name', 'smtpFromName', 'FundedGiants Operations')}
                 {renderInputField('Brevo API Key (Optional)', 'brevoApiKey', 'xkeysib-...', true)}
               </div>

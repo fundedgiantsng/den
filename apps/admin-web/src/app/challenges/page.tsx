@@ -748,7 +748,7 @@ export default function AdminChallengesPage() {
                     value={grantUserEmail}
                     onChange={(e) => setGrantUserEmail(e.target.value)}
                     required
-                    placeholder="trader@fundedgiants.com"
+                    placeholder="trader@fundedgiants.ng"
                     className="w-full p-2.5 rounded-lg bg-[#070a08] border border-[#1b3322] text-white focus:outline-none focus:border-amber-400 font-mono"
                   />
                   <span className="text-[10px] text-slate-500 block mt-1">

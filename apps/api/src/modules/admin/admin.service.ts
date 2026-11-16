@@ -1412,7 +1412,7 @@ export class AdminService {
     assignedSize?: number;
   }) {
     const { code, discountPercent, emails, assignedPlan, assignedSize } = params;
-    const wpBase = process.env.NEXT_PUBLIC_WORDPRESS_URL || process.env.WORDPRESS_URL || 'https://fundedgiants.com';
+    const wpBase = process.env.NEXT_PUBLIC_WORDPRESS_URL || process.env.WORDPRESS_URL || 'https://fundedgiants.ng';
     const planParam = assignedPlan ? `&plan=${encodeURIComponent(assignedPlan)}` : '';
     const sizeParam = assignedSize ? `&size=${encodeURIComponent(assignedSize)}` : '';
     const checkoutUrl = `${wpBase}/checkout/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`;
@@ -1430,7 +1430,7 @@ export class AdminService {
               'api-key': brevoKey,
             },
             body: JSON.stringify({
-              sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.com' },
+              sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.ng' },
               to: [{ email }],
               subject: discountPercent === 100 ? 'Your 100% Free FundedGiants Account Offer!' : `Exclusive ${discountPercent}% Off Your FundedGiants Challenge`,
               htmlContent: `

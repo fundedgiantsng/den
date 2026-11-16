@@ -501,9 +501,9 @@ export class RiskEngineService {
         where: { id: account.userId },
       });
 
-      const traderEmail = user?.email || 'trader@fundedgiants.com';
+      const traderEmail = user?.email || 'trader@fundedgiants.ng';
       const traderName = `${user?.firstName || 'Trader'} ${user?.lastName || ''}`.trim();
-      const adminEmail = process.env.ADMIN_ALERT_EMAIL || 'admin@fundedgiants.com';
+      const adminEmail = process.env.ADMIN_ALERT_EMAIL || 'admin@fundedgiants.ng';
 
       // 1. Record AuditEvent in ledger
       await prisma.auditEvent.create({

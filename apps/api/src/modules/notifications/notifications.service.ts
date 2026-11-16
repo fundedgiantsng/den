@@ -15,7 +15,7 @@ export class NotificationsService {
    */
   async sendEmail(toEmail: string, toName: string, subject: string, bodyText: string, actionUrl?: string) {
     const brevoApiKey = process.env.BREVO_API_KEY;
-    const senderEmail = process.env.BREVO_SENDER_EMAIL || 'support@fundedgiants.com';
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || 'support@fundedgiants.ng';
     const senderName = process.env.BREVO_SENDER_NAME || 'FundedGiants Operations';
 
     const fullActionUrl = actionUrl

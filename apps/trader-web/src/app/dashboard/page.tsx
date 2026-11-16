@@ -127,7 +127,7 @@ export default function DashboardOverviewPage() {
 
   // Affiliate link copy
   const [copiedLink, setCopiedLink] = useState(false);
-  const affiliateLink = 'https://fundedgiants.com/?ref=giantstrader';
+  const affiliateLink = 'https://fundedgiants.ng/?ref=giantstrader';
 
   // Marketing banners rotated every hour
   const marketingBanners = [

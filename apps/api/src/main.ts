@@ -22,7 +22,13 @@ async function bootstrap() {
 
   // CORS configuration
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'https://fundedgiants.com'],
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://fundedgiants.ng',
+      'https://trader.fundedgiants.ng',
+      'https://admin.fundedgiants.ng',
+    ],
     credentials: true,
   });
 

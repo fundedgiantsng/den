@@ -374,7 +374,7 @@ export class AuthService {
             'api-key': brevoKey,
           },
           body: JSON.stringify({
-            sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.com' },
+            sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.ng' },
             to: [{ email: cleanEmail, name: `${cleanFirstName} ${cleanLastName}` }],
             subject: 'Confirm Your FundedGiants Registration Code',
             htmlContent: `

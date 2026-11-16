@@ -444,7 +444,7 @@ export default function LoginPage() {
             </div>
 
             <a
-              href="https://fundedgiants.com/get-funded"
+              href="https://fundedgiants.ng/get-funded"
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-3 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"

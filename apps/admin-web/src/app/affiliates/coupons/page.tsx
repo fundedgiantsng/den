@@ -55,7 +55,7 @@ export default function DiscountCouponsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
-  const wpBaseUrl = process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://fundedgiants.com';
+  const wpBaseUrl = process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://fundedgiants.ng';
 
   const loadCoupons = async () => {
     setLoading(true);
