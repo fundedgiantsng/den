@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WebhooksController } from './webhooks.controller';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
@@ -9,7 +10,7 @@ import { RiskEngineModule } from '../risk/risk-engine.module';
 @Module({
   imports: [RiskEngineModule, WooCommerceModule],
   controllers: [WebhooksController],
-  providers: [LencoService, NinjaKycService, SteraTraderService],
-  exports: [LencoService, NinjaKycService, SteraTraderService],
+  providers: [NombaService, LencoService, NinjaKycService, SteraTraderService],
+  exports: [NombaService, LencoService, NinjaKycService, SteraTraderService],
 })
 export class WebhooksModule {}

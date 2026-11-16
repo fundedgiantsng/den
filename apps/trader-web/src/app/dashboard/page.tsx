@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 import { NinjaKycPromptModal } from '@/components/auth/NinjaKycPromptModal';
+import { ChooseUsernameModal } from '@/components/auth/ChooseUsernameModal';
 
 interface AccountItem {
   id: string;
@@ -146,11 +147,13 @@ export default function DashboardOverviewPage() {
   const [bannerIndex, setBannerIndex] = useState(0);
   const [currentUser, setCurrentUser] = useState<{
     id?: string;
+    username?: string;
     firstName?: string;
     lastName?: string;
     email?: string;
     kycStatus?: string;
   } | null>(null);
+  const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
 
   useEffect(() => {
@@ -169,7 +172,10 @@ export default function DashboardOverviewPage() {
       .then((data) => {
         if (data?.user) {
           setCurrentUser(data.user);
-          if (data.user.kycStatus !== 'APPROVED') {
+          // If customer has no username (e.g. bought account via WordPress), prompt them to create their username first!
+          if (!data.user.username) {
+            setIsUsernameModalOpen(true);
+          } else if (data.user.kycStatus !== 'APPROVED') {
             setIsKycModalOpen(true);
           }
         }
@@ -187,6 +193,18 @@ export default function DashboardOverviewPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-16">
+      {/* Choose Username Modal on First Login (e.g. from WordPress purchase) */}
+      <ChooseUsernameModal
+        isOpen={isUsernameModalOpen}
+        onSuccess={(claimed) => {
+          setCurrentUser((prev) => (prev ? { ...prev, username: claimed } : null));
+          setIsUsernameModalOpen(false);
+          if (currentUser?.kycStatus !== 'APPROVED') {
+            setIsKycModalOpen(true);
+          }
+        }}
+      />
+
       {/* NinjaKYC First Login Modal */}
       <NinjaKycPromptModal
         isOpen={isKycModalOpen}

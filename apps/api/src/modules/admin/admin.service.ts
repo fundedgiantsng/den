@@ -1,8 +1,10 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus, ChallengeType } from '@fundedgiants/database';
+import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus, ChallengeType, TransactionType } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface AdminActionContext {
   adminId?: string;
@@ -17,8 +19,10 @@ export class AdminService {
 
   constructor(
     private readonly steraTraderService: SteraTraderService,
+    private readonly nombaService: NombaService,
     private readonly lencoService: LencoService,
     private readonly woocommerceService: WooCommerceService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -949,7 +953,7 @@ export class AdminService {
   }
 
   /**
-   * 9. Withdrawals Queue & Approval
+   * 9. Withdrawals Queue & Manual Nomba Approval
    */
   async getWithdrawals(params: { status?: WithdrawalStatus; skip?: number; take?: number }) {
     const { status, skip = 0, take = 50 } = params;
@@ -968,6 +972,7 @@ export class AdminService {
               user: true,
             },
           },
+          bankAccount: true,
         },
       }),
       prisma.withdrawal.count({ where }),
@@ -984,9 +989,14 @@ export class AdminService {
         feeNgn: Number(w.fee),
         netAmountNgn: Number(w.netAmount),
         status: w.status,
-        lencoDisbursementRef: w.lencoDisbursementRef,
+        bankName: w.bankAccount?.bankName,
+        accountNumber: w.bankAccount?.accountNumber,
+        accountName: w.bankAccount?.accountName,
+        bankCode: w.bankAccount?.bankCode,
+        nombaDisbursementRef: w.nombaDisbursementRef || w.lencoDisbursementRef,
         approvedBy: w.approvedBy,
         approvedAt: w.approvedAt,
+        rejectionReason: w.rejectionReason,
         createdAt: w.createdAt,
       })),
       pagination: { total, skip, take },
@@ -994,7 +1004,7 @@ export class AdminService {
   }
 
   /**
-   * Process Withdrawal Approval or Rejection
+   * Process Withdrawal Manual Approval (Nomba Transfer) or Rejection
    */
   async processWithdrawal(
     withdrawalId: string,
@@ -1005,6 +1015,7 @@ export class AdminService {
       where: { id: withdrawalId },
       include: {
         wallet: { include: { user: true } },
+        bankAccount: true,
       },
     });
 
@@ -1017,13 +1028,51 @@ export class AdminService {
     }
 
     if (dto.action === 'APPROVE') {
-      const disbursementRes = await this.lencoService.createTransfer({
+      if (!withdrawal.bankAccount) {
+        throw new BadRequestException('Withdrawal does not have an attached destination bank account.');
+      }
+
+      // Execute transfer via Nomba API
+      const disbursementRes = await this.nombaService.createTransfer({
         amountNgn: Number(withdrawal.netAmount),
-        accountNumber: '0000000000',
-        bankCode: '058',
-        narration: `FundedGiants Withdrawal ${withdrawal.reference}`,
+        accountNumber: withdrawal.bankAccount.accountNumber,
+        bankCode: withdrawal.bankAccount.bankCode,
+        accountName: withdrawal.bankAccount.accountName,
+        narration: `FundedGiants Payout ${withdrawal.reference}`,
         reference: withdrawal.reference,
       });
+
+      if (!disbursementRes.status) {
+        throw new BadRequestException(`Nomba transfer failed: ${disbursementRes.message || 'Unknown provider error'}`);
+      }
+
+      // Record to Double-Entry Ledger (Debit 2000-WALLET-LIABILITY, Credit 1000-CASH-NOMBA)
+      try {
+        const cashAccount = await prisma.ledgerAccount.findFirst({
+          where: { OR: [{ code: '1000-CASH-NOMBA' }, { code: '1000-CASH-LENCO' }] },
+        });
+        const liabilityAccount = await prisma.ledgerAccount.findFirst({
+          where: { code: '2000-WALLET-LIABILITY' },
+        });
+        if (cashAccount && liabilityAccount) {
+          const entry = await prisma.journalEntry.create({
+            data: {
+              entryNumber: `JE-PAYOUT-${Date.now()}`,
+              transactionType: TransactionType.TRADER_EARNINGS_PAYOUT,
+              reference: withdrawal.reference,
+              narration: `Disbursed payout ₦${Number(withdrawal.netAmount).toLocaleString()} to ${withdrawal.bankAccount.bankName} (${withdrawal.bankAccount.accountNumber}) via Nomba`,
+            },
+          });
+          await prisma.journalLine.createMany({
+            data: [
+              { journalEntryId: entry.id, accountId: liabilityAccount.id, debit: Number(withdrawal.netAmount), credit: 0 },
+              { journalEntryId: entry.id, accountId: cashAccount.id, debit: 0, credit: Number(withdrawal.netAmount) },
+            ],
+          });
+        }
+      } catch (jeErr: any) {
+        this.logger.error(`Error posting payout to ledger: ${jeErr.message}`);
+      }
 
       const updated = await prisma.$transaction(async (tx) => {
         const w = await tx.withdrawal.update({
@@ -1032,7 +1081,7 @@ export class AdminService {
             status: 'PAID',
             approvedBy: context.adminId || 'STAFF_ADMIN',
             approvedAt: new Date(),
-            lencoDisbursementRef: disbursementRes?.data?.reference || `LNC-DISB-${Date.now()}`,
+            nombaDisbursementRef: disbursementRes?.data?.reference || `NOMBA-DISB-${Date.now()}`,
           },
         });
 
@@ -1046,7 +1095,7 @@ export class AdminService {
             details: {
               reference: withdrawal.reference,
               amount: Number(withdrawal.amount),
-              lencoRef: w.lencoDisbursementRef,
+              nombaRef: w.nombaDisbursementRef,
             },
             ipAddress: context.ipAddress,
             userAgent: context.userAgent,
@@ -1056,17 +1105,31 @@ export class AdminService {
         return w;
       });
 
+      // Dispatch real-time in-app notification & Brevo email to trader
+      await this.notificationsService.createNotification({
+        userId: withdrawal.wallet.userId,
+        title: 'Payout Disbursed to Your Bank Account',
+        message: `Your withdrawal of ₦${Number(withdrawal.netAmount).toLocaleString()} (Ref: ${withdrawal.reference}) has been approved and successfully disbursed to ${withdrawal.bankAccount.bankName} (${withdrawal.bankAccount.accountNumber}) via Nomba.`,
+        category: 'FINANCE',
+        priority: 'HIGH',
+        actionUrl: '/dashboard/wallet',
+        sendEmail: true,
+      });
+
       return {
         success: true,
-        message: `Withdrawal ${withdrawal.reference} approved and disbursed successfully.`,
+        message: `Withdrawal ${withdrawal.reference} approved and disbursed successfully via Nomba.`,
         data: updated,
       };
     } else {
+      const rejectionReason = dto.reason || context.reason || 'Withdrawal declined by compliance verification';
+
       const updated = await prisma.$transaction(async (tx) => {
         const w = await tx.withdrawal.update({
           where: { id: withdrawalId },
           data: {
             status: 'REJECTED',
+            rejectionReason,
           },
         });
 
@@ -1080,7 +1143,7 @@ export class AdminService {
             details: {
               reference: withdrawal.reference,
               amount: Number(withdrawal.amount),
-              reason: dto.reason || context.reason,
+              reason: rejectionReason,
             },
             ipAddress: context.ipAddress,
             userAgent: context.userAgent,
@@ -1088,6 +1151,17 @@ export class AdminService {
         });
 
         return w;
+      });
+
+      // Dispatch rejection notification to trader
+      await this.notificationsService.createNotification({
+        userId: withdrawal.wallet.userId,
+        title: 'Withdrawal Request Update',
+        message: `Your withdrawal request of ₦${Number(withdrawal.amount).toLocaleString()} (Ref: ${withdrawal.reference}) was rejected. Reason: ${rejectionReason}. The funds remain available in your Giants Vault.`,
+        category: 'FINANCE',
+        priority: 'HIGH',
+        actionUrl: '/dashboard/wallet',
+        sendEmail: true,
       });
 
       return {

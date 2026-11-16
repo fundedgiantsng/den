@@ -2,7 +2,7 @@ import { Controller, Post, Get, Put, Body, HttpCode, HttpStatus, Res, Req, UseGu
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
-import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto, UpdateProfileDto } from './dto/auth.dto';
+import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto, UpdateProfileDto, SetUsernameDto } from './dto/auth.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -102,6 +102,21 @@ export class AuthController {
       throw new UnauthorizedException('Session expired or invalid');
     }
     return this.authService.updateProfile(user.id, dto);
+  }
+
+  @Post('set-username')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Claim and set custom username on first login or after WordPress purchase' })
+  async setUsername(@Body() dto: SetUsernameDto, @Req() req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) {
+      throw new UnauthorizedException('Not authenticated');
+    }
+    const user = await this.authService.getSessionUser(token);
+    if (!user) {
+      throw new UnauthorizedException('Session expired or invalid');
+    }
+    return this.authService.setUsername(user.id, dto.username);
   }
 
   @Post('ninja-bvn-verify')

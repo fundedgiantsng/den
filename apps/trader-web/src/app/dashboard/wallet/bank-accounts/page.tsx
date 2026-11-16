@@ -169,7 +169,7 @@ export default function BankAccountsPage() {
       <div className="p-4 rounded-xl bg-bg-surface border border-fgBorder-subtle flex items-start gap-3 text-xs text-fgText-secondary">
         <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <p className="font-semibold text-white">Lenco & CBN Strict KYC Name-Matching Regulation</p>
+          <p className="font-semibold text-white">Nomba & CBN Strict KYC Name-Matching Regulation</p>
           <p className="leading-relaxed">
             In compliance with Anti-Money Laundering (AML) standards, withdrawals are strictly restricted to bank accounts matching the verified legal name on your Ninja KYC record. Third-party accounts are strictly rejected.
           </p>
@@ -336,7 +336,7 @@ export default function BankAccountsPage() {
               <div className="p-3 rounded-xl bg-black/50 border border-white/[0.06] text-[11px] text-fgText-muted flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  The account holder name on this NUBAN will be resolved via Lenco and checked against your verified KYC name.
+                  The account holder name on this NUBAN will be resolved via Nomba Banking and checked against your verified KYC name.
                 </span>
               </div>
 

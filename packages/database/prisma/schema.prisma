@@ -153,6 +153,7 @@ enum AccountType {
 }
 
 enum TransactionType {
+  DEPOSIT_NOMBA_VIRTUAL
   DEPOSIT_LENCO_VIRTUAL
   DEPOSIT_CRYPTO_USDT
   CHALLENGE_PURCHASE
@@ -216,7 +217,13 @@ model CustomerWallet {
   userId               String     @unique
   currency             String     @default("NGN")
   
-  // Dedicated Lenco Virtual Bank Account
+  // Dedicated Nomba Virtual Bank Account
+  nombaVirtualBankName String?
+  nombaAccountName     String?
+  nombaAccountNumber   String?    @unique
+  nombaAccountReference String?   @unique
+
+  // Retain legacy Lenco columns
   lencoVirtualBankName String?
   lencoAccountName     String?
   lencoAccountNumber   String?    @unique
@@ -280,6 +287,7 @@ model Withdrawal {
   netAmount            Decimal          @db.Decimal(18, 2)
   currency             String           @default("NGN")
   status               WithdrawalStatus @default(REQUESTED)
+  nombaDisbursementRef String?
   lencoDisbursementRef String?
   approvedBy           String?
   approvedAt           DateTime?

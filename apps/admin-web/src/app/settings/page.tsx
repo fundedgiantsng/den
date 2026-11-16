@@ -27,7 +27,7 @@ import { fetchAdminApi } from '@/lib/api';
 export default function SettingsAndDevicePage() {
   const [statusData, setStatusData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'lenco' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'nomba' | 'lenco' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto'>('all');
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   // Full-scope credentials state
@@ -43,7 +43,15 @@ export default function SettingsAndDevicePage() {
     steraTraderManagerPassword: '',
     steraTraderWebhookSecret: '',
 
-    // Lenco
+    // Nomba Banking Gateway
+    nombaEnvironment: 'sandbox',
+    nombaBaseUrl: 'https://api.nomba.com',
+    nombaClientId: '',
+    nombaClientSecret: '',
+    nombaAccountId: '',
+    nombaWebhookSecret: '',
+
+    // Lenco (Legacy)
     lencoEnvironment: 'sandbox',
     lencoBaseUrl: '',
     lencoPublicKey: '',
@@ -285,11 +293,12 @@ export default function SettingsAndDevicePage() {
           {[
             { id: 'all', label: 'All Providers', icon: Server },
             { id: 'steratrader', label: 'SteraTrader Broker', icon: Zap },
-            { id: 'lenco', label: 'Lenco Banking', icon: Building2 },
+            { id: 'nomba', label: 'Nomba Banking', icon: Building2 },
             { id: 'woocommerce', label: 'WooCommerce', icon: ShoppingCart },
             { id: 'kyc', label: 'NinjaKYC Identity', icon: UserCheck },
             { id: 'smtp', label: 'Email & SMTP', icon: Mail },
             { id: 'alerts', label: 'Risk Alerts', icon: Bell },
+            { id: 'lenco', label: 'Lenco (Legacy)', icon: Building2 },
             { id: 'crypto', label: 'Crypto & Alternative', icon: Coins },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -390,7 +399,59 @@ export default function SettingsAndDevicePage() {
             </div>
           )}
 
-          {/* 2. Lenco Banking Rails */}
+          {/* 2. Nomba Banking & Settlement Gateway */}
+          {(activeTab === 'all' || activeTab === 'nomba') && (
+            <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Nomba Nigerian Banking & Settlement Gateway</h3>
+                    <p className="text-[11px] text-slate-400">Dedicated virtual accounts (branded Fundedgiants), automatic bank reconciliations, and payout disbursements</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    {statusData?.credentialsSummary?.nomba?.hasClientSecret ? 'ACTIVE RAILS' : 'PENDING CREDENTIALS'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleTestConnection('nomba')}
+                    disabled={testingProvider === 'nomba'}
+                    className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
+                  >
+                    {testingProvider === 'nomba' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
+                    <span>Test Nomba API</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Environment
+                  </label>
+                  <select
+                    value={formData.nombaEnvironment}
+                    onChange={(e) => setFormData({ ...formData, nombaEnvironment: e.target.value })}
+                    className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                  >
+                    <option value="sandbox">Sandbox (https://sandbox.nomba.com)</option>
+                    <option value="live">Live Production (https://api.nomba.com)</option>
+                  </select>
+                </div>
+                {renderInputField('Nomba Base URL', 'nombaBaseUrl', 'https://api.nomba.com')}
+                {renderInputField('Client ID', 'nombaClientId', 'client_id_...', false, undefined, statusData?.credentialsSummary?.nomba?.clientIdMasked)}
+                {renderInputField('Client Secret', 'nombaClientSecret', 'Leave blank to retain current secret', true)}
+                {renderInputField('Parent Nomba Account ID', 'nombaAccountId', 'Your primary parent account ID on Nomba')}
+                {renderInputField('Webhook Signature Secret', 'nombaWebhookSecret', 'HMAC SHA256 Signature Key', true)}
+              </div>
+            </div>
+          )}
+
+          {/* 3. Lenco Banking Rails (Legacy) */}
           {(activeTab === 'all' || activeTab === 'lenco') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">

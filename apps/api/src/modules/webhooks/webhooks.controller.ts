@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import * as crypto from 'crypto';
 import { prisma, PaymentStatus, TransactionType } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
@@ -25,6 +26,7 @@ export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
 
   constructor(
+    private readonly nombaService: NombaService,
     private readonly lencoService: LencoService,
     private readonly ninjaKycService: NinjaKycService,
     private readonly steraTraderService: SteraTraderService,
@@ -452,6 +454,157 @@ export class WebhooksController {
       challengeNumber,
       steraLogin: provisionedLogin,
       surplusCredited,
+    };
+  }
+
+  /**
+   * Nomba Dedicated Virtual Account Funding Webhook
+   * Dispatched on payment_success when customer transfers funds to their dedicated virtual account
+   */
+  @Post('nomba')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Receive and process Nomba virtual account deposit notifications' })
+  async handleNombaWebhook(
+    @Body() payload: any,
+    @Headers('nomba-signature') signature: string,
+    @Headers('nomba-sig-value') sigValue: string,
+  ) {
+    this.logger.log(`Received Nomba webhook: ${JSON.stringify(payload)}`);
+
+    const activeSig = signature || sigValue;
+    if (activeSig) {
+      const isValid = this.nombaService.verifyWebhookSignature(JSON.stringify(payload), activeSig);
+      if (!isValid) {
+        this.logger.warn(`Invalid Nomba webhook signature received: ${activeSig}`);
+      }
+    }
+
+    const eventType = payload.event_type || payload.event;
+    if (eventType && eventType !== 'payment_success' && eventType !== 'collection.successful') {
+      this.logger.log(`Ignoring Nomba event type: ${eventType}`);
+      return { status: 'ignored', eventType };
+    }
+
+    const reference =
+      payload.data?.transaction?.transactionId ||
+      payload.data?.transactionId ||
+      payload.data?.merchantTxRef ||
+      payload.requestId ||
+      payload.reference ||
+      `NOMBA-DEP-${Date.now()}`;
+
+    const existingDeposit = await prisma.deposit.findFirst({
+      where: { reference },
+    });
+
+    if (existingDeposit) {
+      this.logger.log(`Deposit ${reference} already processed. Skipping duplicate.`);
+      return { status: 'already_processed' };
+    }
+
+    const accountNumber =
+      payload.data?.account?.bankAccountNumber ||
+      payload.data?.bankAccountNumber ||
+      payload.data?.accountNumber;
+
+    const accountRef =
+      payload.data?.account?.accountRef ||
+      payload.data?.accountRef;
+
+    const amount = Number(
+      payload.data?.transaction?.transactionAmount ||
+      payload.data?.amount ||
+      0
+    );
+
+    if (amount <= 0) {
+      throw new BadRequestException('Invalid deposit amount in webhook payload');
+    }
+
+    const wallet = await prisma.customerWallet.findFirst({
+      where: {
+        OR: [
+          ...(accountNumber ? [{ nombaAccountNumber: accountNumber }, { lencoAccountNumber: accountNumber }] : []),
+          ...(accountRef ? [{ nombaAccountReference: accountRef }, { lencoAccountReference: accountRef }] : []),
+        ],
+      },
+      include: { user: true },
+    });
+
+    if (!wallet) {
+      this.logger.warn(`No wallet found matching account number ${accountNumber} or ref ${accountRef}`);
+      return { status: 'wallet_not_found', accountNumber, accountRef };
+    }
+
+    const senderName = payload.data?.sender?.senderName || payload.data?.senderName || 'Bank Transfer';
+    const senderBank = payload.data?.sender?.senderBankName || payload.data?.senderBank;
+    const senderAccount = payload.data?.sender?.senderAccountNumber || payload.data?.senderAccount;
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Record deposit in wallet history (automatically increments available balance via dynamic calculation)
+      await tx.deposit.create({
+        data: {
+          walletId: wallet.id,
+          reference,
+          amount,
+          currency: 'NGN',
+          status: PaymentStatus.SUCCESSFUL,
+          senderAccount,
+          senderBank,
+          senderName,
+          rawWebhookData: payload,
+          reconciled: true,
+        },
+      });
+
+      // 2. Post to Double-Entry Ledger (Debit 1000-CASH-NOMBA, Credit 2000-WALLET-LIABILITY)
+      try {
+        const cashAccount = await tx.ledgerAccount.findFirst({
+          where: { OR: [{ code: '1000-CASH-NOMBA' }, { code: '1000-CASH-LENCO' }] },
+        });
+        const liabilityAccount = await tx.ledgerAccount.findFirst({
+          where: { code: '2000-WALLET-LIABILITY' },
+        });
+
+        if (cashAccount && liabilityAccount) {
+          const entry = await tx.journalEntry.create({
+            data: {
+              entryNumber: `JE-DEP-${Date.now()}`,
+              transactionType: TransactionType.DEPOSIT_NOMBA_VIRTUAL,
+              reference,
+              narration: `Virtual account deposit of ₦${amount.toLocaleString()} from ${senderName} via Nomba`,
+            },
+          });
+
+          await tx.journalLine.createMany({
+            data: [
+              { journalEntryId: entry.id, accountId: cashAccount.id, debit: amount, credit: 0 },
+              { journalEntryId: entry.id, accountId: liabilityAccount.id, debit: 0, credit: amount },
+            ],
+          });
+        }
+      } catch (jeErr: any) {
+        this.logger.error(`Error posting Nomba deposit to ledger: ${jeErr.message}`);
+      }
+    });
+
+    // 3. Dispatch in-app notification with chime sound + Brevo email to trader
+    await this.notificationsService.createNotification({
+      userId: wallet.userId,
+      title: 'Giants Vault Deposit Credited',
+      message: `Your dedicated account received a deposit of ₦${amount.toLocaleString()} from ${senderName}. Funds are available immediately in your Giants Vault for withdrawal or purchasing trading accounts.`,
+      category: 'FINANCE',
+      priority: 'HIGH',
+      actionUrl: '/dashboard/wallet',
+      sendEmail: true,
+    });
+
+    this.logger.log(`Nomba deposit of ₦${amount.toLocaleString()} successfully credited to wallet of user ${wallet.userId}`);
+
+    return {
+      status: 'success',
+      reference,
+      amount,
     };
   }
 

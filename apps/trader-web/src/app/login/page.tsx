@@ -29,6 +29,7 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
 
   // Sign up state
+  const [signupUsername, setSignupUsername] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -100,6 +101,16 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
+    const cleanUsername = signupUsername.trim().toLowerCase();
+    if (!cleanUsername) {
+      setError('Please choose a username for your account.');
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      setError('Username must be 3-20 characters long and contain only lowercase letters, numbers, or underscores.');
+      return;
+    }
+
     if (!firstName.trim() || !lastName.trim()) {
       setError('Please provide your first and last name.');
       return;
@@ -119,6 +130,7 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          username: cleanUsername,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           email: signupEmail.trim(),
@@ -298,6 +310,25 @@ export default function LoginPage() {
           {/* 2. DIRECT SIGN UP FORM */}
           {authMode === 'SIGNUP' && (
             <form onSubmit={handleSignupSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-fgText-secondary font-medium mb-1">
+                  Choose Username / Trader Handle
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-emerald-400 font-mono font-bold text-xs pointer-events-none">@</span>
+                  <input
+                    type="text"
+                    value={signupUsername}
+                    onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    placeholder="favourtrade"
+                    required
+                    maxLength={20}
+                    className="w-full pl-8 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+                <span className="text-[10px] text-fgText-muted mt-0.5 block">Alphanumeric (3-20 chars). Used for your public handle & affiliate referral tag</span>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-fgText-secondary font-medium mb-1">First Name</label>

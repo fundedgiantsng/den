@@ -72,6 +72,7 @@ export interface WalletBalance {
 }
 
 export type TransactionType =
+  | 'DEPOSIT_NOMBA_VIRTUAL'
   | 'DEPOSIT_LENCO_VIRTUAL'
   | 'CHALLENGE_PURCHASE'
   | 'TRADING_PAYOUT'

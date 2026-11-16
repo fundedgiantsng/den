@@ -26,6 +26,8 @@ export default function WithdrawalsLogPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<any | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadWithdrawals = async () => {
     setLoading(true);
@@ -41,6 +43,28 @@ export default function WithdrawalsLogPage() {
       console.error('Failed to load withdrawals log:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProcess = async (id: string, action: 'APPROVE' | 'REJECT', reason?: string) => {
+    setProcessingId(id);
+    setActionError(null);
+    try {
+      const res = await fetchAdminApi(`/admin/withdrawals/${id}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason }),
+      });
+      if (res.success) {
+        await loadWithdrawals();
+        setSelectedWithdrawal(null);
+      } else {
+        setActionError(res.message || 'Operation failed');
+      }
+    } catch (err: any) {
+      setActionError(err.message || 'Error processing payout');
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -68,7 +92,7 @@ export default function WithdrawalsLogPage() {
     <>
       <AdminHeader
         title="Automated Withdrawals & Settlement Log"
-        subtitle="Real-time execution log of withdrawals automated directly by the FundedGiants Risk Engine and Lenco banking rails"
+        subtitle="Real-time execution log of withdrawals reviewed by compliance and disbursed via Nomba Banking"
       />
 
       <div className="p-8 space-y-6 max-w-7xl">
@@ -93,7 +117,7 @@ export default function WithdrawalsLogPage() {
             <span className="font-heading font-extrabold text-xl text-white font-mono mt-1 block">
               &lt; 90 Seconds
             </span>
-            <span className="text-[10px] text-slate-500 mt-0.5 block">NIBSS Instant Payment via Lenco</span>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">NIBSS Instant Payment via Nomba Banking</span>
           </div>
           <div className="rounded-xl bg-[#0f1712] border border-[#1b3322] p-4">
             <span className="text-xs text-slate-400 block">Settlement Rail Health</span>
@@ -213,8 +237,8 @@ export default function WithdrawalsLogPage() {
                           status={
                             w.status === 'PAID'
                               ? 'DISBURSED'
-                              : w.status === 'REQUESTED'
-                              ? 'PROCESSING'
+                              : w.status === 'REQUESTED' || w.status === 'PENDING_REVIEW'
+                              ? 'PENDING'
                               : w.status
                           }
                         />
@@ -223,13 +247,24 @@ export default function WithdrawalsLogPage() {
                         {formatDateTime(w.createdAt)}
                       </td>
                       <td className="py-3.5 px-6 text-right">
-                        <button
-                          onClick={() => setSelectedWithdrawal(w)}
-                          className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] hover:border-emerald-500/40 text-[11px] font-semibold text-emerald-400 hover:text-white transition flex items-center gap-1 ml-auto"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Inspect</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {(w.status === 'REQUESTED' || w.status === 'PENDING_REVIEW') && (
+                            <button
+                              onClick={() => handleProcess(w.id, 'APPROVE')}
+                              disabled={processingId === w.id}
+                              className="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-[11px] font-bold text-emerald-400 transition"
+                            >
+                              {processingId === w.id ? 'Disbursing...' : 'Approve & Pay (Nomba)'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setSelectedWithdrawal(w)}
+                            className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] hover:border-emerald-500/40 text-[11px] font-semibold text-emerald-400 hover:text-white transition flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Inspect</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -307,19 +342,51 @@ export default function WithdrawalsLogPage() {
 
                 <div className="space-y-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Lenco Automated Bank Transfer
+                    Nomba Bank Disbursement Rail
                   </span>
                   <div className="p-3 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-1 text-slate-300 font-mono text-[11px]">
-                    <div>Lenco Session Ref: <span className="text-white">{selectedWithdrawal.reference}-LNC</span></div>
-                    <div>Status: <span className="text-emerald-400 font-bold">AUTOMATICALLY SETTLED</span></div>
-                    <div>Ledger Journal ID: <span className="text-slate-400">{selectedWithdrawal.journalEntryId || 'JRN-AUTOWITHDRAW-9921'}</span></div>
+                    <div>Nomba Ref: <span className="text-white">{selectedWithdrawal.nombaDisbursementRef || selectedWithdrawal.lencoDisbursementRef || 'Pending Manual Approval'}</span></div>
+                    <div>Status: <span className="text-emerald-400 font-bold">{selectedWithdrawal.status}</span></div>
+                    <div>Ledger Reference: <span className="text-slate-400">{selectedWithdrawal.reference}</span></div>
+                    {selectedWithdrawal.rejectionReason && (
+                      <div className="text-rose-400">Rejection Reason: {selectedWithdrawal.rejectionReason}</div>
+                    )}
                   </div>
                 </div>
+
+                {actionError && (
+                  <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                    {actionError}
+                  </div>
+                )}
+
+                {/* Manual Approval Action Buttons */}
+                {(selectedWithdrawal.status === 'REQUESTED' || selectedWithdrawal.status === 'PENDING_REVIEW') && (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <button
+                      onClick={() => handleProcess(selectedWithdrawal.id, 'APPROVE')}
+                      disabled={processingId === selectedWithdrawal.id}
+                      className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-extrabold text-xs transition shadow-emeraldGlow disabled:opacity-50"
+                    >
+                      {processingId === selectedWithdrawal.id ? 'Sending to Nomba...' : 'Approve & Pay via Nomba'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt('Please enter rejection reason:');
+                        if (reason) handleProcess(selectedWithdrawal.id, 'REJECT', reason);
+                      }}
+                      disabled={processingId === selectedWithdrawal.id}
+                      className="py-2.5 px-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition disabled:opacity-50"
+                    >
+                      Reject Payout
+                    </button>
+                  </div>
+                )}
               </div>
 
               <button
                 onClick={() => setSelectedWithdrawal(null)}
-                className="w-full py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 text-xs font-bold transition"
+                className="w-full py-2 rounded-xl bg-[#070a08] border border-[#1b3322] text-slate-400 hover:text-white text-xs font-bold transition"
               >
                 Dismiss Audit Trace
               </button>

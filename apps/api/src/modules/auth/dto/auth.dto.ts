@@ -56,6 +56,12 @@ export class VerifyOtpDto {
 }
 
 export class SignupDto {
+  @ApiProperty({ example: 'favourtrade', description: 'Unique trader username/handle' })
+  @IsNotEmpty()
+  @IsString()
+  @Matches(/^[a-z0-9_]{3,20}$/, { message: 'Username must be 3-20 characters long and contain only lowercase letters, numbers, or underscores' })
+  username!: string;
+
   @ApiProperty({ example: 'John' })
   @IsNotEmpty()
   @IsString()
@@ -80,6 +86,14 @@ export class SignupDto {
   @IsOptional()
   @IsString()
   address?: string;
+}
+
+export class SetUsernameDto {
+  @ApiProperty({ example: 'favourtrade', description: 'Unique user handle' })
+  @IsNotEmpty()
+  @IsString()
+  @Matches(/^[a-z0-9_]{3,20}$/, { message: 'Username must be 3-20 characters long and contain only lowercase letters, numbers, or underscores' })
+  username!: string;
 }
 
 export class NinjaBvnVerifyDto {
@@ -121,3 +135,4 @@ export class UpdateProfileDto {
   @IsString()
   address?: string;
 }
+

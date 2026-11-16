@@ -281,12 +281,18 @@ export class AuthService {
 
   /**
    * Direct Sign Up for traders and affiliates without prior account purchase
+   * Username is explicitly chosen by the user (no auto-generation)
    */
   async signup(dto: SignupDto) {
     const cleanEmail = dto.email.trim().toLowerCase();
     const cleanPhone = dto.phone.trim();
     const cleanFirstName = dto.firstName.trim();
     const cleanLastName = dto.lastName.trim();
+    const cleanUsername = dto.username.trim().toLowerCase();
+
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      throw new BadRequestException('Username must be 3-20 characters long and contain only lowercase letters, numbers, or underscores.');
+    }
 
     // 1. Check if user already exists
     let existingUser = await prisma.user.findFirst({
@@ -294,6 +300,15 @@ export class AuthService {
         OR: [{ email: cleanEmail }, { phone: cleanPhone }],
       },
     });
+
+    // Check if username is already claimed by someone else
+    const existingWithUsername = await prisma.user.findFirst({
+      where: { username: cleanUsername },
+    });
+
+    if (existingWithUsername && (!existingUser || existingWithUsername.id !== existingUser.id)) {
+      throw new BadRequestException(`The username '${cleanUsername}' is already taken. Please choose another username.`);
+    }
 
     let targetUserId: string;
 
@@ -306,14 +321,23 @@ export class AuthService {
           firstName: existingUser.firstName || cleanFirstName,
           lastName: existingUser.lastName || cleanLastName,
           address: existingUser.address || dto.address?.trim() || null,
+          username: existingUser.username || cleanUsername,
         },
       });
-    } else {
-      // Create new user with generated sitewide handle / username
-      const baseHandle = (cleanFirstName + cleanLastName).toLowerCase().replace(/[^a-z0-9]/g, '');
-      const uniqueSuffix = Math.floor(100 + Math.random() * 900);
-      const username = `${baseHandle}${uniqueSuffix}`;
 
+      // Ensure affiliate profile has referral code
+      const aff = await prisma.affiliateProfile.findUnique({ where: { userId: existingUser.id } });
+      if (!aff) {
+        await prisma.affiliateProfile.create({
+          data: {
+            userId: existingUser.id,
+            referralCode: existingUser.username || cleanUsername,
+            cpaCommissionRate: 10.0,
+          },
+        });
+      }
+    } else {
+      // Create new user with user's explicitly chosen username
       const createdUser = await prisma.user.create({
         data: {
           email: cleanEmail,
@@ -321,7 +345,7 @@ export class AuthService {
           firstName: cleanFirstName,
           lastName: cleanLastName,
           address: dto.address?.trim() || null,
-          username,
+          username: cleanUsername,
           role: 'CUSTOMER',
           kycStatus: 'UNVERIFIED',
           wallet: {
@@ -331,7 +355,7 @@ export class AuthService {
           },
           affiliateProfile: {
             create: {
-              referralCode: username,
+              referralCode: cleanUsername,
               cpaCommissionRate: 10.0,
             },
           },
@@ -579,37 +603,37 @@ export class AuthService {
       },
     });
 
-    // 4. Automatically provision Lenco dedicated deposit account if not present
-    if (!user.wallet?.lencoAccountNumber) {
+    // 4. Automatically provision Nomba dedicated virtual account if not present
+    if (!user.wallet?.nombaAccountNumber && !user.wallet?.lencoAccountNumber) {
       try {
-        const lencoService = new (require('../integrations/lenco/lenco.service').LencoService)();
-        const lencoRes = await lencoService.createVirtualAccount({
+        const nombaService = new (require('../integrations/nomba/nomba.service').NombaService)();
+        const nombaRes = await nombaService.createVirtualAccount({
           userId: user.id,
           firstName,
           lastName,
           bvn: cleanBvn,
         });
 
-        if (lencoRes.status && lencoRes.data) {
+        if (nombaRes.status && nombaRes.data) {
           await prisma.customerWallet.upsert({
             where: { userId: user.id },
             update: {
-              lencoVirtualBankName: lencoRes.data.bankName,
-              lencoAccountName: lencoRes.data.accountName,
-              lencoAccountNumber: lencoRes.data.accountNumber,
-              lencoAccountReference: lencoRes.data.reference,
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
             },
             create: {
               userId: user.id,
-              lencoVirtualBankName: lencoRes.data.bankName,
-              lencoAccountName: lencoRes.data.accountName,
-              lencoAccountNumber: lencoRes.data.accountNumber,
-              lencoAccountReference: lencoRes.data.reference,
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
             },
           });
         }
       } catch (err: any) {
-        console.warn('Could not auto-provision Lenco account after KYC:', err.message);
+        console.warn('Could not auto-provision Nomba virtual account after KYC:', err.message);
       }
     }
 
@@ -624,6 +648,52 @@ export class AuthService {
         email: updatedUser.email,
         kycStatus: updatedUser.kycStatus,
       },
+    };
+  }
+
+  /**
+   * Set user's custom chosen username (for WordPress purchasers or users without a username)
+   */
+  async setUsername(userId: string, username: string) {
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      throw new BadRequestException('Username must be 3-20 characters long and contain only lowercase letters, numbers, or underscores.');
+    }
+
+    const existingWithUsername = await prisma.user.findFirst({
+      where: { username: cleanUsername },
+    });
+
+    if (existingWithUsername && existingWithUsername.id !== userId) {
+      throw new BadRequestException(`The username '${cleanUsername}' is already taken. Please choose another username.`);
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { username: cleanUsername },
+    });
+
+    // Also update or ensure their affiliate profile uses their chosen username as referralCode
+    const aff = await prisma.affiliateProfile.findUnique({ where: { userId } });
+    if (aff) {
+      await prisma.affiliateProfile.update({
+        where: { id: aff.id },
+        data: { referralCode: cleanUsername },
+      });
+    } else {
+      await prisma.affiliateProfile.create({
+        data: {
+          userId,
+          referralCode: cleanUsername,
+          cpaCommissionRate: 10.0,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      username: updatedUser.username,
+      message: 'Username successfully claimed and set.',
     };
   }
 }

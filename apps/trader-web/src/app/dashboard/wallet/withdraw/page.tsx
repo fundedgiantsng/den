@@ -130,7 +130,7 @@ export default function WithdrawFundsPage() {
           </div>
           <h2 className="text-xl font-heading font-bold text-white">Withdrawal Request Dispatched</h2>
           <p className="text-xs text-fgText-secondary max-w-md mx-auto">
-            Your withdrawal of <span className="text-white font-mono font-bold">{formatNaira(Number(amount))}</span> has been initiated via the Lenco disbursement network to your bound bank account.
+            Your withdrawal of <span className="text-white font-mono font-bold">{formatNaira(Number(amount))}</span> has been submitted for compliance review and will be disbursed via Nomba Banking to your bound bank account upon approval.
           </p>
           <div className="p-3 bg-bg-surface rounded-xl border border-fgBorder-subtle font-mono text-xs text-fgText-muted inline-block">
             Reference: <span className="text-emerald-400 font-bold">{withdrawalRef}</span>
@@ -267,7 +267,7 @@ export default function WithdrawFundsPage() {
           <div className="p-4 rounded-xl bg-bg-surface border border-fgBorder-subtle flex items-start gap-3 text-xs text-fgText-secondary">
             <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              In accordance with security requirements and Lenco regulatory guidelines, withdrawals are permitted only to bank accounts with verified name matching against your Ninja KYC record. Destination accounts cannot be altered once verified.
+              In accordance with security requirements and Nomba banking regulations, withdrawals are permitted only to bank accounts with verified name matching against your Ninja KYC record. All payouts are reviewed by compliance before disbursement.
             </p>
           </div>
 
@@ -287,7 +287,7 @@ export default function WithdrawFundsPage() {
             {loading ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Processing via Lenco...</span>
+                <span>Submitting Request...</span>
               </>
             ) : (
               <span>Confirm & Withdraw {amount ? formatNaira(Number(amount)) : ''}</span>

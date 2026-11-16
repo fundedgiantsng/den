@@ -5,13 +5,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { prisma } from '@fundedgiants/database';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
 
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
 
-  constructor(private readonly lencoService: LencoService) {}
+  constructor(
+    private readonly nombaService: NombaService,
+    private readonly lencoService: LencoService,
+  ) {}
 
   /**
    * Get user wallet balances derived from double-entry ledger & dedicated virtual account details
@@ -57,20 +61,14 @@ export class WalletService {
     const totalSpentNgn = Number(previousWalletOrders._sum.amount || 0);
     const availableBalanceNgn = Math.max(0, totalDepositsNgn - totalWithdrawalsNgn - totalSpentNgn);
 
-    // Provide dedicated NGN account without exposing external provider branding
-    const dedicatedVirtualAccount = user.wallet?.lencoAccountNumber
-      ? {
-          bankName: user.wallet.lencoVirtualBankName || 'Wema Bank',
-          accountName: user.wallet.lencoAccountName || `FG / ${user.firstName || 'TRADER'} ${user.lastName || ''}`.trim(),
-          accountNumber: user.wallet.lencoAccountNumber,
-          currency: 'NGN (₦)',
-        }
-      : {
-          bankName: 'Wema Bank',
-          accountName: `FG / ${user.firstName || 'TRADER'} ${user.lastName || ''}`.trim(),
-          accountNumber: '7041289410',
-          currency: 'NGN (₦)',
-        };
+    // Dedicated Nomba Virtual Bank Account
+    const customerFullName = `${user.firstName || 'Trader'} ${user.lastName || ''}`.trim();
+    const dedicatedVirtualAccount = {
+      bankName: user.wallet?.nombaVirtualBankName || user.wallet?.lencoVirtualBankName || 'Nomba Bank MFB',
+      accountName: user.wallet?.nombaAccountName || user.wallet?.lencoAccountName || `Fundedgiants/${customerFullName}`,
+      accountNumber: user.wallet?.nombaAccountNumber || user.wallet?.lencoAccountNumber || '7041289410',
+      currency: 'NGN (₦)',
+    };
 
     return {
       walletId: user.wallet?.id,
@@ -193,8 +191,12 @@ export class WalletService {
       throw new BadRequestException('You can bind a maximum of 3 withdrawal bank accounts.');
     }
 
-    // 1. Resolve account details via Lenco API
-    const resolveResult = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
+    // 1. Resolve account details via Nomba Bank Lookup API
+    let resolveResult = await this.nombaService.resolveAccount(params.accountNumber, params.bankCode);
+    if (!resolveResult.status || !resolveResult.data) {
+      // Fallback to secondary resolution if Nomba is not yet configured with live credentials
+      resolveResult = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
+    }
 
     if (!resolveResult.status || !resolveResult.data) {
       throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network');
@@ -259,7 +261,7 @@ export class WalletService {
 
     const reference = `FG-WTH-${Date.now()}`;
 
-    // Create withdrawal record
+    // Create withdrawal record in REQUESTED status awaiting manual admin approval
     const withdrawal = await prisma.withdrawal.create({
       data: {
         walletId: overview.walletId!,
@@ -273,56 +275,16 @@ export class WalletService {
       },
     });
 
-    // Post to Double-Entry Ledger
-    try {
-      const entry = await prisma.journalEntry.create({
-        data: {
-          entryNumber: `JE-WTH-${Date.now()}`,
-          transactionType: 'TRADER_EARNINGS_PAYOUT',
-          reference,
-          narration: `Bank withdrawal of ₦${params.amountNgn.toLocaleString()} to ${bankAccount.bankName} (${bankAccount.accountNumber})`,
-        },
-      });
-
-      const cashAccount = await prisma.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
-      const walletLiabilityAccount = await prisma.ledgerAccount.findFirst({ where: { code: '2000-WALLET-LIABILITY' } });
-
-      if (cashAccount && walletLiabilityAccount) {
-        await prisma.journalLine.createMany({
-          data: [
-            { journalEntryId: entry.id, accountId: walletLiabilityAccount.id, debit: params.amountNgn, credit: 0 },
-            { journalEntryId: entry.id, accountId: cashAccount.id, debit: 0, credit: params.amountNgn },
-          ],
-        });
-      }
-    } catch (ledgerErr: any) {
-      this.logger.error(`Error posting withdrawal to ledger: ${ledgerErr.message}`);
-    }
-
-    // Execute transfer via Lenco
-    const transferResult = await this.lencoService.createTransfer({
-      amountNgn: params.amountNgn,
-      accountNumber: bankAccount.accountNumber,
-      bankCode: bankAccount.bankCode,
-      narration: `FundedGiants Withdrawal ${reference}`,
-      reference,
-    });
-
-    if (transferResult.status) {
-      await prisma.withdrawal.update({
-        where: { id: withdrawal.id },
-        data: {
-          status: 'PROCESSING',
-          lencoDisbursementRef: transferResult.data?.reference,
-        },
-      });
-    }
+    this.logger.log(
+      `Withdrawal ${reference} for ₦${params.amountNgn.toLocaleString()} submitted by user ${params.userId} — queued for manual admin approval.`
+    );
 
     return {
       success: true,
       withdrawalId: withdrawal.id,
       reference,
-      status: transferResult.status ? 'PROCESSING' : 'PENDING_APPROVAL',
+      status: 'PENDING_APPROVAL',
+      message: 'Withdrawal request submitted successfully. It is now awaiting compliance review and admin approval before disbursement.',
     };
   }
 

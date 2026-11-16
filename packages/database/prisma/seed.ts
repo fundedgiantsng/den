@@ -8,8 +8,14 @@ async function main() {
   // 1. Double-Entry Chart of Accounts
   const ledgerAccounts = [
     {
+      code: '1000-CASH-NOMBA',
+      name: 'Nomba Settlement & Clearing Account',
+      type: AccountType.ASSET,
+      currency: 'NGN',
+    },
+    {
       code: '1000-CASH-LENCO',
-      name: 'Lenco Settlement & Clearing Account',
+      name: 'Legacy Settlement & Clearing Account',
       type: AccountType.ASSET,
       currency: 'NGN',
     },

@@ -319,7 +319,7 @@ export default function CustomerDetailPage() {
                 </div>
               </div>
               <div className="p-5 rounded-xl bg-[#0f1712] border border-[#1b3322]">
-                <div className="text-xs text-slate-400 uppercase font-semibold">Dedicated Lenco Virtual Account</div>
+                <div className="text-xs text-slate-400 uppercase font-semibold">Dedicated Nomba Virtual Account</div>
                 <div className="text-lg font-bold text-white mt-2 font-mono">
                   {wallet?.virtualAccount || 'Unassigned'}
                 </div>

@@ -403,14 +403,14 @@ export default function ProfilePage() {
               Dedicated Vault Account
             </span>
             <span className="text-xs font-bold text-emerald-400">
-              {profile.wallet?.lencoAccountNumber ? 'Active (Lenco MFB)' : 'Pending Verification'}
+              {profile.wallet?.nombaAccountNumber || profile.wallet?.lencoAccountNumber ? 'Active (Nomba Banking)' : 'Pending Verification'}
             </span>
           </div>
         </div>
       </div>
 
       {/* Dedicated Bank Account (FundedGiants Deposit Vault) */}
-      {profile.wallet?.lencoAccountNumber && (
+      {(profile.wallet?.nombaAccountNumber || profile.wallet?.lencoAccountNumber) && (
         <div className="p-6 sm:p-8 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
@@ -419,7 +419,7 @@ export default function ProfilePage() {
             <div>
               <h3 className="text-base font-bold text-white">FundedGiants Dedicated Deposit Account</h3>
               <p className="text-xs text-fgText-secondary">
-                Auto-provisioned via Lenco upon successful NinjaKYC verification
+                Auto-provisioned via Nomba Banking upon successful NinjaKYC verification
               </p>
             </div>
           </div>
@@ -428,19 +428,19 @@ export default function ProfilePage() {
             <div>
               <span className="text-[11px] text-fgText-muted block">Bank Name</span>
               <span className="text-xs font-bold text-white">
-                {profile.wallet.lencoVirtualBankName || 'Lenco / Providus Bank'}
+                {profile.wallet.nombaVirtualBankName || profile.wallet.lencoVirtualBankName || 'Nomba / Wema Bank'}
               </span>
             </div>
             <div>
               <span className="text-[11px] text-fgText-muted block">Account Number</span>
               <span className="text-sm font-mono font-bold text-emerald-400 tracking-wider">
-                {profile.wallet.lencoAccountNumber}
+                {profile.wallet.nombaAccountNumber || profile.wallet.lencoAccountNumber}
               </span>
             </div>
             <div>
               <span className="text-[11px] text-fgText-muted block">Account Name</span>
               <span className="text-xs font-bold text-white truncate block">
-                {profile.wallet.lencoAccountName || `${profile.firstName} ${profile.lastName} / FG`}
+                {profile.wallet.nombaAccountName || profile.wallet.lencoAccountName || `Fundedgiants/${profile.firstName} ${profile.lastName}`}
               </span>
             </div>
           </div>

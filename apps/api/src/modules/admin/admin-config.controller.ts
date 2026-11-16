@@ -9,6 +9,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { DeviceBindingGuard } from './device-binding.guard';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -24,7 +25,15 @@ export class UpdateFullConfigDto {
   steraTraderManagerPassword?: string;
   steraTraderWebhookSecret?: string;
 
-  // Lenco Banking
+  // Nomba Banking & Settlement Gateway
+  nombaEnvironment?: string; // sandbox | live
+  nombaBaseUrl?: string;
+  nombaClientId?: string;
+  nombaClientSecret?: string;
+  nombaAccountId?: string;
+  nombaWebhookSecret?: string;
+
+  // Lenco Banking (Legacy)
   lencoEnvironment?: string; // sandbox | live
   lencoBaseUrl?: string;
   lencoPublicKey?: string;
@@ -84,6 +93,8 @@ export class AdminConfigController {
   private readonly logger = new Logger(AdminConfigController.name);
   private readonly envPath = path.resolve(process.cwd(), '../../.env');
 
+  constructor(private readonly nombaService: NombaService) {}
+
   private maskValue(val?: string): string | null {
     if (!val || val.trim().length === 0) return null;
     if (val.length <= 8) return '••••' + val.slice(-2);
@@ -119,6 +130,15 @@ export class AdminConfigController {
           managerLogin: parseEnvVal('STERATRADER_MANAGER_LOGIN') || '',
           hasManagerPassword: !!parseEnvVal('STERATRADER_MANAGER_PASSWORD'),
           hasWebhookSecret: !!parseEnvVal('STERATRADER_WEBHOOK_SECRET'),
+        },
+        nomba: {
+          environment: parseEnvVal('NOMBA_ENVIRONMENT') || 'sandbox',
+          baseUrl: parseEnvVal('NOMBA_BASE_URL') || 'https://api.nomba.com',
+          hasClientId: !!parseEnvVal('NOMBA_CLIENT_ID'),
+          clientIdMasked: this.maskValue(parseEnvVal('NOMBA_CLIENT_ID')),
+          hasClientSecret: !!parseEnvVal('NOMBA_CLIENT_SECRET'),
+          accountId: parseEnvVal('NOMBA_ACCOUNT_ID') || '',
+          hasWebhookSecret: !!parseEnvVal('NOMBA_WEBHOOK_SECRET'),
         },
         lenco: {
           environment: parseEnvVal('LENCO_ENVIRONMENT') || 'sandbox',
@@ -201,7 +221,15 @@ export class AdminConfigController {
       updateKey('STERATRADER_MANAGER_PASSWORD', dto.steraTraderManagerPassword);
       updateKey('STERATRADER_WEBHOOK_SECRET', dto.steraTraderWebhookSecret);
 
-      // Lenco Banking
+      // Nomba Banking & Settlement Gateway
+      updateKey('NOMBA_ENVIRONMENT', dto.nombaEnvironment);
+      updateKey('NOMBA_BASE_URL', dto.nombaBaseUrl);
+      updateKey('NOMBA_CLIENT_ID', dto.nombaClientId);
+      updateKey('NOMBA_CLIENT_SECRET', dto.nombaClientSecret);
+      updateKey('NOMBA_ACCOUNT_ID', dto.nombaAccountId);
+      updateKey('NOMBA_WEBHOOK_SECRET', dto.nombaWebhookSecret);
+
+      // Lenco Banking (Legacy)
       updateKey('LENCO_ENVIRONMENT', dto.lencoEnvironment);
       updateKey('LENCO_BASE_URL', dto.lencoBaseUrl);
       updateKey('LENCO_PUBLIC_KEY', dto.lencoPublicKey);
@@ -273,6 +301,12 @@ export class AdminConfigController {
     let details = 'Connection healthy and verified.';
 
     switch (provider) {
+      case 'nomba': {
+        const testRes = await this.nombaService.testConnection();
+        status = testRes.success ? 'CONNECTED' : 'DISCONNECTED';
+        details = testRes.message;
+        break;
+      }
       case 'steratrader':
         details = 'SteraTrader Gateway reachable. Account group FG-Standard mapped.';
         break;
