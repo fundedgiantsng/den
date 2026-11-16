@@ -65,7 +65,7 @@ export class CreateBroadcastDto {
   @IsString()
   targetEmails?: string;
 
-  @ApiPropertyOptional({ example: 'https://fundedgiants.com' })
+  @ApiPropertyOptional({ example: 'https://fundedgiants.ng' })
   @IsOptional()
   @IsString()
   actionUrl?: string;

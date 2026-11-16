@@ -431,18 +431,6 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="space-y-1">
-              <span className="text-[10px] font-heading font-extrabold text-emerald-400 tracking-wider uppercase block">
-                FundedGiants Spotlight
-              </span>
-              <h4 className="text-base sm:text-lg font-heading font-extrabold text-white tracking-tight leading-snug">
-                Get Funded with FundedGiants
-              </h4>
-              <p className="text-sm font-bold text-[#00f59b] tracking-wide">
-                Get Funded, Trade, Earn and Grow
-              </p>
-            </div>
-
             <a
               href="https://fundedgiants.ng/get-funded"
               target="_blank"

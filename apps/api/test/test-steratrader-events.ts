@@ -2,11 +2,11 @@ import { prisma } from '@fundedgiants/database';
 
 async function testSteraTraderFlow() {
   console.log('--- 1. Ensuring Test User & Challenge for SteraTrader Testing ---');
-  let user = await prisma.user.findFirst({ where: { email: 'trader@fundedgiants.com' } });
+  let user = await prisma.user.findFirst({ where: { email: 'trader@fundedgiants.ng' } });
   if (!user) {
     user = await prisma.user.create({
       data: {
-        email: 'trader@fundedgiants.com',
+        email: 'trader@fundedgiants.ng',
         firstName: 'John',
         lastName: 'Doe',
         role: 'CUSTOMER',

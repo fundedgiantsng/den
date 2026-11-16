@@ -151,7 +151,7 @@ export class AdminConfigController {
           port: parseEnvVal('SMTP_PORT') || '587',
           user: parseEnvVal('SMTP_USER') || '',
           hasPassword: !!parseEnvVal('SMTP_PASS'),
-          from: parseEnvVal('SMTP_FROM') || 'noreply@fundedgiants.com',
+          from: parseEnvVal('SMTP_FROM') || 'noreply@fundedgiants.ng',
           fromName: parseEnvVal('SMTP_FROM_NAME') || 'FundedGiants',
           hasBrevoApiKey: !!parseEnvVal('BREVO_API_KEY'),
         },

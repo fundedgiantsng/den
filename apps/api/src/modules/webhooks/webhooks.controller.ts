@@ -11,12 +11,13 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import * as crypto from 'crypto';
-import { prisma } from '@fundedgiants/database';
+import { prisma, PaymentStatus, TransactionType } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 import { RiskEngineService } from '../risk/risk-engine.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -28,12 +29,14 @@ export class WebhooksController {
     private readonly ninjaKycService: NinjaKycService,
     private readonly steraTraderService: SteraTraderService,
     private readonly riskEngineService: RiskEngineService,
-    private readonly woocommerceService: WooCommerceService
+    private readonly woocommerceService: WooCommerceService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
    * WooCommerce Purchase Webhook
-   * Dispatched by WordPress plugin when challenge is purchased
+   * Dispatched by WordPress plugins (fgt-core.php / class-backend-webhook-dispatcher.php / WooCommerce)
+   * Handles: Challenge account provisioning, perpetual affiliate attribution, and overpayment surplus credit to Giants Vault
    */
   @Post('woocommerce')
   @HttpCode(HttpStatus.OK)
@@ -43,7 +46,7 @@ export class WebhooksController {
     @Headers('x-fundedgiants-signature') signature: string,
     @Headers('x-wc-webhook-signature') wcSignature: string
   ) {
-    // 1. Support both AES-256 encrypted payloads from fgt-core.php and direct WooCommerce webhooks
+    // 1. Support both AES-256 encrypted payloads from fgt-core.php and direct JSON webhooks from class-backend-webhook-dispatcher.php
     let orderData = payload;
     if (payload?.payload && typeof payload.payload === 'string') {
       const decrypted = this.woocommerceService.decryptPayload(payload.payload);
@@ -58,11 +61,14 @@ export class WebhooksController {
             phone: decrypted.phone,
           },
           total: decrypted.price,
+          amount_received: decrypted.amount_received || decrypted.price,
+          overage_amount: decrypted.overage_amount || 0,
           account_size: decrypted.size,
           plan_sku: `${decrypted.plan}-${decrypted.size}`,
           payment_method: 'WOOCOMMERCE_CHECKOUT',
           currency: decrypted.currency || 'NGN',
-          affiliate_code: decrypted.affiliate_code,
+          affiliate_code: decrypted.affiliate_code || decrypted.affiliate_id,
+          coupon_codes: decrypted.coupon_codes || [],
         };
       }
     }
@@ -93,7 +99,35 @@ export class WebhooksController {
     const planSku = orderData.plan_sku || 'rhino-rush-5000000';
     const planType = planSku.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
     const totalAmount = Number(orderData.total || 0);
-    const affiliateCode = orderData.affiliate_code || orderData.coupon_lines?.[0]?.code;
+
+    // Overpayment extraction matching fundedgiants-ngn-checkout.php & class-backend-webhook-dispatcher.php
+    const overageAmount = Number(
+      orderData.overage_amount ??
+      orderData.overpayment_amount ??
+      (Array.isArray(orderData.meta_data)
+        ? orderData.meta_data.find((m: any) => m.key === '_fg_overpayment_amount')?.value
+        : 0) ??
+      0
+    );
+    const amountReceived = Number(
+      orderData.amount_received ??
+      (Array.isArray(orderData.meta_data)
+        ? orderData.meta_data.find((m: any) => m.key === '_fg_amount_received')?.value
+        : 0) ??
+      totalAmount
+    );
+
+    // Affiliate tracking matching fgt-core.php (_fg_affiliate_code, fg_aff_code cookie, coupon_codes)
+    const affiliateCode = (
+      orderData.affiliate_code ||
+      orderData.affiliate_id ||
+      orderData.referral_code ||
+      (Array.isArray(orderData.coupon_codes) && orderData.coupon_codes[0]) ||
+      orderData.coupon_lines?.[0]?.code ||
+      (Array.isArray(orderData.meta_data)
+        ? orderData.meta_data.find((m: any) => m.key === '_fg_affiliate_code')?.value
+        : null)
+    )?.trim();
 
     if (!email) {
       throw new BadRequestException('Order missing customer email address');
@@ -126,9 +160,15 @@ export class WebhooksController {
           role: 'CUSTOMER',
         },
       });
+    }
 
-      // Create linked customer wallet
-      await prisma.customerWallet.create({
+    // Find or create linked customer wallet
+    let customerWallet = await prisma.customerWallet.findUnique({
+      where: { userId: user.id },
+    });
+
+    if (!customerWallet) {
+      customerWallet = await prisma.customerWallet.create({
         data: {
           userId: user.id,
           currency: 'NGN',
@@ -176,7 +216,7 @@ export class WebhooksController {
       this.logger.error(`Error posting WooCommerce purchase to ledger: ${ledgerErr.message}`);
     }
 
-    // Credit Affiliate 10% CPA if referred
+    // Perpetual Affiliate Attribution & Commission Crediting (Flat 10% CPA)
     if (affiliateCode) {
       try {
         const cleanAff = affiliateCode.trim();
@@ -185,11 +225,13 @@ export class WebhooksController {
             OR: [
               { referralCode: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } },
               { user: { username: { equals: cleanAff.toLowerCase(), mode: 'insensitive' } } },
+              { coupons: { some: { code: { equals: cleanAff.toUpperCase(), mode: 'insensitive' } } } },
             ],
           },
         });
 
-        if (affiliate && totalAmount > 0) {
+        if (affiliate) {
+          // Perpetual Binding: ensure customer's referring affiliate is bound
           let referral = await prisma.affiliateReferral.findUnique({
             where: { referredUserId: user.id },
           });
@@ -207,26 +249,32 @@ export class WebhooksController {
             });
           }
 
-          const cpaAmount = Math.round(totalAmount * 0.10);
-          await prisma.affiliateCommission.create({
-            data: {
-              affiliateProfileId: affiliate.id,
-              referralId: referral.id,
-              orderNumber,
-              amount: cpaAmount,
-              currency: 'NGN',
-              status: 'SUCCESSFUL',
-            },
-          });
+          if (totalAmount > 0) {
+            const cpaRate = Number(affiliate.cpaCommissionRate || 10.0);
+            const discountShare = Number(affiliate.customDiscountPercent || 0);
+            const effectiveRate = Math.max(0, cpaRate - discountShare) / 100;
+            const cpaAmount = Math.round(totalAmount * (effectiveRate > 0 ? effectiveRate : 0.10));
 
-          await prisma.affiliateProfile.update({
-            where: { id: affiliate.id },
-            data: {
-              totalCommissions: { increment: cpaAmount },
-            },
-          });
+            await prisma.affiliateCommission.create({
+              data: {
+                affiliateProfileId: affiliate.id,
+                referralId: referral.id,
+                orderNumber,
+                amount: cpaAmount,
+                currency: 'NGN',
+                status: 'SUCCESSFUL',
+              },
+            });
 
-          this.logger.log(`10% CPA Commission of ₦${cpaAmount.toLocaleString()} credited to affiliate ${affiliate.referralCode} for order ${orderNumber}`);
+            await prisma.affiliateProfile.update({
+              where: { id: affiliate.id },
+              data: {
+                totalCommissions: { increment: cpaAmount },
+              },
+            });
+
+            this.logger.log(`Affiliate CPA Commission of ₦${cpaAmount.toLocaleString()} credited to affiliate ${affiliate.referralCode} for order ${orderNumber}`);
+          }
         }
       } catch (affErr: any) {
         this.logger.error(`Error calculating affiliate CPA for order ${orderNumber}: ${affErr.message}`);
@@ -275,6 +323,7 @@ export class WebhooksController {
     });
 
     // 6. Provision Trading Account directly on SteraTrader NGN broker subset
+    let provisionedLogin = '';
     try {
       const steraRes = await this.steraTraderService.provisionAccount({
         userEmail: email,
@@ -287,6 +336,7 @@ export class WebhooksController {
       });
 
       if (steraRes.success && steraRes.login) {
+        provisionedLogin = steraRes.login;
         // Daily DD limits (Rhino: 4%, Phoenix: 4%)
         const dailyLimit = accountSizeNgn * 0.04;
         // Max DD limits (Rhino: 10%, Phoenix: 7%)
@@ -318,10 +368,90 @@ export class WebhooksController {
       this.logger.error(`SteraTrader provisioning error for order ${orderNumber}: ${steraErr.message}`);
     }
 
+    // 7. Handle Overpayment Flow: Credit surplus payment to trader's Giants Vault balance
+    let surplusCredited = 0;
+    if (overageAmount > 0) {
+      try {
+        surplusCredited = overageAmount;
+
+        // Record Deposit in wallet history (automatically increments available balance via double-entry wallet calculation)
+        await prisma.deposit.create({
+          data: {
+            walletId: customerWallet.id,
+            amount: overageAmount,
+            currency: 'NGN',
+            status: PaymentStatus.SUCCESSFUL,
+            reference: `SURPLUS-${orderNumber}`,
+            senderName: 'WooCommerce Overpayment Surplus',
+            reconciled: true,
+          },
+        });
+
+        // Post overage surplus to Double-Entry General Ledger (Debit 1000-CASH-LENCO, Credit 2000-WALLET-LIABILITY)
+        try {
+          const cashAccount = await prisma.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
+          const liabilityAccount = await prisma.ledgerAccount.findFirst({
+            where: {
+              OR: [
+                { code: '2000-WALLET-LIABILITY' },
+                { code: '2000-CUSTOMER-VAULT-LIABILITY' },
+              ],
+            },
+          });
+          if (cashAccount && liabilityAccount) {
+            const entry = await prisma.journalEntry.create({
+              data: {
+                entryNumber: `JE-SURPLUS-${Date.now()}`,
+                transactionType: TransactionType.ADJUSTMENT,
+                reference: `SURPLUS-${orderNumber}`,
+                narration: `Overpayment surplus credit from WooCommerce Order #${orderId} (Received ₦${amountReceived.toLocaleString()}, Required ₦${totalAmount.toLocaleString()})`,
+              },
+            });
+            await prisma.journalLine.createMany({
+              data: [
+                { journalEntryId: entry.id, accountId: cashAccount.id, debit: overageAmount, credit: 0 },
+                { journalEntryId: entry.id, accountId: liabilityAccount.id, debit: 0, credit: overageAmount },
+              ],
+            });
+          }
+        } catch (jeErr: any) {
+          this.logger.warn(`Surplus journal entry error: ${jeErr.message}`);
+        }
+
+        // Send in-app notification with chime trigger and email to the trader
+        await this.notificationsService.createNotification({
+          userId: user.id,
+          title: 'Surplus Payment Credited to Giants Vault',
+          message: `We received an overpayment of ₦${overageAmount.toLocaleString()} on Order #${orderNumber} (Received: ₦${amountReceived.toLocaleString()}, Required: ₦${totalAmount.toLocaleString()}). The surplus of ₦${overageAmount.toLocaleString()} has been credited to your Giants Vault balance and is immediately available for withdrawal or purchasing accounts.`,
+          category: 'FINANCE',
+          priority: 'HIGH',
+          actionUrl: '/dashboard/wallet',
+          sendEmail: true,
+        });
+
+        this.logger.log(`Overpayment surplus of ₦${overageAmount.toLocaleString()} credited to Giants Vault for ${email} on order ${orderNumber}`);
+      } catch (surplusErr: any) {
+        this.logger.error(`Error processing overpayment credit for order ${orderNumber}: ${surplusErr.message}`);
+      }
+    }
+
+    // 8. Dispatch Account Ready Notification with SteraTrader details
+    await this.notificationsService.createNotification({
+      userId: user.id,
+      title: `Your ${planType === 'phoenix-rise' ? 'Phoenix Rise' : 'Rhino Rush'} Account is Ready!`,
+      message: `Your ${planType === 'phoenix-rise' ? 'Phoenix Rise' : 'Rhino Rush'} trading account (#${provisionedLogin || challengeNumber}) has been provisioned on SteraTrader with starting balance of ₦${accountSizeNgn.toLocaleString()}.${surplusCredited > 0 ? ` Additionally, your surplus payment of ₦${surplusCredited.toLocaleString()} was credited to your Giants Vault balance.` : ''}`,
+      category: 'TRADING',
+      priority: 'HIGH',
+      actionUrl: '/dashboard/trading-accounts',
+      sendEmail: true,
+    });
+
     return {
       status: 'success',
       orderNumber,
       challengeNumber,
+      steraLogin: provisionedLogin,
+      surplusCredited,
     };
   }
 

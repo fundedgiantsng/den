@@ -443,7 +443,7 @@ export class ChallengesService implements OnModuleInit {
     let steraAccount = null;
     try {
       const steraRes = await this.steraTraderService.provisionAccount({
-        userEmail: user.email || 'trader@fundedgiants.com',
+        userEmail: user.email || 'trader@fundedgiants.ng',
         userFullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Trader',
         userPhone: user.phone || undefined,
         accountSizeNgn: dto.accountSizeNgn,

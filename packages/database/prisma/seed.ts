@@ -123,7 +123,7 @@ async function main() {
   if (!existingCustomer) {
     const demoUser = await prisma.user.create({
       data: {
-        email: 'trader@fundedgiants.com',
+        email: 'trader@fundedgiants.ng',
         phone: '+2348012345678',
         firstName: 'John',
         lastName: 'Doe',

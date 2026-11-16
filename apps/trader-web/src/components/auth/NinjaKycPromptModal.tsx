@@ -137,7 +137,7 @@ export function NinjaKycPromptModal({
                 <div>
                   <span className="text-fgText-secondary block">Email:</span>
                   <span className="text-white font-medium truncate block">
-                    {user.email || 'user@fundedgiants.com'}
+                    {user.email || 'user@fundedgiants.ng'}
                   </span>
                 </div>
               </div>
