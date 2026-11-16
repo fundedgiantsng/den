@@ -437,7 +437,7 @@ export default function LoginPage() {
               rel="noopener noreferrer"
               className="w-full py-3 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <span>Buy Account</span>
+              <span>Get Funded</span>
               <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
             </a>
           </div>
