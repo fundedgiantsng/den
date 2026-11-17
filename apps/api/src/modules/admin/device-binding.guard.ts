@@ -5,10 +5,12 @@ import * as path from 'path';
 export interface AuthorizedDeviceRecord {
   id: string;
   label: string;
+  mode: 'PERMANENT' | 'TEMPORARY';
   authorizedAt: string;
+  expiresAt?: string | null;
   authorizedIp?: string;
   userAgent?: string;
-  status: 'ACTIVE' | 'REVOKED';
+  status: 'ACTIVE' | 'PAUSED' | 'REVOKED';
 }
 
 @Injectable()
@@ -36,13 +38,17 @@ export class DeviceBindingGuard implements CanActivate {
       {
         id: DeviceBindingGuard.PRIMARY_HARDWARE_ID,
         label: 'Primary Workstation (Admin Laptop)',
+        mode: 'PERMANENT',
         authorizedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: null,
         status: 'ACTIVE',
       },
       {
         id: DeviceBindingGuard.PRIMARY_MOBILE_ID,
         label: 'Primary Smartphone (FundedGiants Admin Android App)',
+        mode: 'PERMANENT',
         authorizedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: null,
         status: 'ACTIVE',
       },
     ];
@@ -54,15 +60,18 @@ export class DeviceBindingGuard implements CanActivate {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           for (const item of parsed) {
-            if (item && item.id && !list.some((d) => d.id === item.id)) {
-              list.push(item);
+            if (item && item.id) {
+              const existingIdx = list.findIndex((d) => d.id === item.id);
+              if (existingIdx >= 0) {
+                list[existingIdx] = { ...list[existingIdx], ...item };
+              } else {
+                list.push(item);
+              }
             }
           }
         }
       }
-    } catch (err) {
-      // Ignore file read error, fallback to built-in primary devices
-    }
+    } catch (err) {}
 
     return list;
   }
@@ -86,9 +95,29 @@ export class DeviceBindingGuard implements CanActivate {
     } catch (err) {}
   }
 
+  public static setDeviceStatus(deviceId: string, status: 'ACTIVE' | 'PAUSED'): boolean {
+    if (deviceId === DeviceBindingGuard.PRIMARY_HARDWARE_ID || deviceId === DeviceBindingGuard.PRIMARY_MOBILE_ID) {
+      return false; // Cannot pause primary hardware
+    }
+    const devices = DeviceBindingGuard.getAuthorizedDevices();
+    const target = devices.find((d) => d.id === deviceId);
+    if (target) {
+      target.status = status;
+      const toSave = devices.filter(
+        (d) => d.id !== DeviceBindingGuard.PRIMARY_HARDWARE_ID && d.id !== DeviceBindingGuard.PRIMARY_MOBILE_ID
+      );
+      try {
+        const filePath = DeviceBindingGuard.getStoragePath();
+        fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), 'utf8');
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
   public static revokeDevice(deviceId: string): boolean {
     if (deviceId === DeviceBindingGuard.PRIMARY_HARDWARE_ID || deviceId === DeviceBindingGuard.PRIMARY_MOBILE_ID) {
-      return false;
+      return false; // Cannot revoke core hardware
     }
     const devices = DeviceBindingGuard.getAuthorizedDevices();
     const target = devices.find((d) => d.id === deviceId);
@@ -114,24 +143,45 @@ export class DeviceBindingGuard implements CanActivate {
       request.cookies?.['fg_admin_device_id'];
     const clientIp = request.ip || request.connection?.remoteAddress;
 
-    const activeDevices = DeviceBindingGuard.getAuthorizedDevices().filter((d) => d.status === 'ACTIVE');
-    const isAuthorizedHardware = activeDevices.some((d) => d.id === clientHardwareId);
+    const allDevices = DeviceBindingGuard.getAuthorizedDevices();
+    const matched = allDevices.find((d) => d.id === clientHardwareId);
 
-    if (isAuthorizedHardware) {
+    if (matched) {
+      if (matched.status === 'PAUSED') {
+        throw new ForbiddenException(
+          'DEVICE_ACCESS_PAUSED: This hardware device is currently paused by platform administrator. Resume access in Admin Settings.'
+        );
+      }
+
+      if (matched.status === 'REVOKED') {
+        throw new ForbiddenException(
+          'DEVICE_REVOKED: This hardware device has been revoked and can no longer access the admin control panel.'
+        );
+      }
+
+      if (matched.mode === 'TEMPORARY' && matched.expiresAt) {
+        if (new Date(matched.expiresAt).getTime() < Date.now()) {
+          throw new ForbiddenException(
+            'TEMPORARY_PASS_EXPIRED: The 24-hour emergency recovery session for this terminal has expired.'
+          );
+        }
+      }
+
       return true;
     }
 
+    // Allow loopback in development only if no specific hardware header was sent
     const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost';
-    if (isLoopback) {
+    if (isLoopback && !clientHardwareId) {
       return true;
     }
 
     this.logger.warn(
-      `Hardware Lockdown: Access blocked from untrusted device: IP=${clientIp}, DeviceHeader=${clientHardwareId}`
+      `Hardware Lockdown: Access blocked from unauthorized terminal: IP=${clientIp}, DeviceHeader=${clientHardwareId}`
     );
 
     throw new ForbiddenException(
-      'DEVICE_LOCKDOWN_ACTIVE: Access restricted to authorized hardware (Primary Laptop & Primary Admin App). If your primary device was lost or replaced, use the private Emergency Recovery Portal to authorize a replacement hardware device.'
+      'DEVICE_LOCKDOWN_ACTIVE: Access restricted to authorized hardware. If you have lost access to your primary devices, use the private Emergency Recovery portal.'
     );
   }
 }

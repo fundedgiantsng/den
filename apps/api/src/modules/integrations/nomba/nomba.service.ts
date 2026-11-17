@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 
 export interface NombaVirtualAccountResponse {
@@ -38,6 +38,10 @@ export interface NombaTransferResponse {
 @Injectable()
 export class NombaService {
   private readonly logger = new Logger(NombaService.name);
+
+  // Production Live Base URL
+  public static readonly PRODUCTION_BASE_URL = 'https://api.nomba.com';
+
   private readonly baseUrl: string;
   private readonly clientId: string;
   private readonly clientSecret: string;
@@ -48,9 +52,9 @@ export class NombaService {
   private tokenExpiresAt: number = 0;
 
   constructor() {
-    this.baseUrl = (process.env.NOMBA_BASE_URL || 'https://api.nomba.com').replace(/\/+$/, '');
+    this.baseUrl = (process.env.NOMBA_BASE_URL || NombaService.PRODUCTION_BASE_URL).replace(/\/+$/, '');
     this.clientId = process.env.NOMBA_CLIENT_ID || '';
-    this.clientSecret = process.env.NOMBA_CLIENT_SECRET || '';
+    this.clientSecret = process.env.NOMBA_PRIVATE_KEY || process.env.NOMBA_CLIENT_SECRET || '';
     this.accountId = process.env.NOMBA_ACCOUNT_ID || '';
     this.webhookSecret = process.env.NOMBA_WEBHOOK_SECRET || '';
   }
@@ -64,7 +68,7 @@ export class NombaService {
     }
 
     if (!this.clientId || !this.clientSecret || !this.accountId) {
-      throw new Error('Nomba API credentials (NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, NOMBA_ACCOUNT_ID) are not configured.');
+      throw new Error('Nomba API credentials (NOMBA_CLIENT_ID, NOMBA_PRIVATE_KEY, NOMBA_ACCOUNT_ID) are not configured in environment.');
     }
 
     try {
@@ -117,21 +121,8 @@ export class NombaService {
     const customerFullName = `${cleanFirst} ${cleanLast}`.trim();
     const accountRef = `FG-VA-${params.userId}`;
 
-    // If live credentials are not yet configured in local environment, provide deterministic fallback
     if (!this.clientId || !this.clientSecret || !this.accountId) {
-      this.logger.warn('NOMBA credentials missing; returning structured sandbox virtual account preview.');
-      return {
-        status: true,
-        message: 'Sandbox dedicated virtual account ready',
-        data: {
-          accountRef,
-          accountName: customerFullName,
-          bankAccountNumber: `70${Math.floor(10000000 + Math.random() * 90000000)}`,
-          bankAccountName: `Fundedgiants/${customerFullName}`,
-          bankName: 'Nomba Bank MFB',
-          currency: 'NGN',
-        },
-      };
+      throw new Error('Nomba API credentials are missing. Virtual account creation requires NOMBA_CLIENT_ID, NOMBA_PRIVATE_KEY, and NOMBA_ACCOUNT_ID.');
     }
 
     try {
@@ -192,7 +183,7 @@ export class NombaService {
     if (!this.clientId || !this.clientSecret || !this.accountId) {
       return {
         status: false,
-        message: 'Nomba credentials not configured. Please set NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, and NOMBA_ACCOUNT_ID.',
+        message: 'Nomba credentials not configured. Please set NOMBA_CLIENT_ID, NOMBA_PRIVATE_KEY, and NOMBA_ACCOUNT_ID in Admin Dashboard.',
       };
     }
 
@@ -240,6 +231,7 @@ export class NombaService {
 
   /**
    * Execute disbursement transfer to bound bank account via Nomba Transfer API
+   * NOTE: Strictly manual approval in admin panel before calling this method.
    */
   async createTransfer(params: {
     amountNgn: number;
@@ -305,7 +297,7 @@ export class NombaService {
   }
 
   /**
-   * Verify incoming Nomba Webhook signature
+   * Verify incoming Nomba Webhook signature using HMAC SHA256
    */
   verifyWebhookSignature(rawBody: string, signature: string): boolean {
     if (!this.webhookSecret) return false;
@@ -322,7 +314,7 @@ export class NombaService {
       if (token) {
         return {
           success: true,
-          message: 'Nomba API connection successful. OAuth 2.0 token verified.',
+          message: 'Nomba live API connection successful. OAuth 2.0 access token verified.',
         };
       }
       return {

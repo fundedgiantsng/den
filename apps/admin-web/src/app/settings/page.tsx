@@ -32,10 +32,10 @@ import { fetchAdminApi } from '@/lib/api';
 export default function SettingsAndDevicePage() {
   const [statusData, setStatusData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'nomba' | 'lenco' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto' | 'hardware'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'nomba' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto' | 'hardware'>('all');
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [authorizedDevices, setAuthorizedDevices] = useState<any[]>([]);
-  const [copiedRecovery, setCopiedRecovery] = useState(false);
+  const [deviceActionLoading, setDeviceActionLoading] = useState<string | null>(null);
 
   // Full-scope credentials state
   const [formData, setFormData] = useState<Record<string, string>>({
@@ -50,22 +50,11 @@ export default function SettingsAndDevicePage() {
     steraTraderManagerPassword: '',
     steraTraderWebhookSecret: '',
 
-    // Nomba Banking Gateway
-    nombaEnvironment: 'sandbox',
-    nombaBaseUrl: 'https://api.nomba.com',
+    // Nomba Banking Gateway (Strict Live Production)
     nombaClientId: '',
     nombaClientSecret: '',
     nombaAccountId: '',
     nombaWebhookSecret: '',
-
-    // Lenco (Legacy)
-    lencoEnvironment: 'sandbox',
-    lencoBaseUrl: '',
-    lencoPublicKey: '',
-    lencoSecretKey: '',
-    lencoDisbursementAccountId: '',
-    lencoVirtualAccountWebhookSecret: '',
-    lencoDisbursementWebhookSecret: '',
 
     // WooCommerce
     wooCommerceApiUrl: '',
@@ -73,12 +62,10 @@ export default function SettingsAndDevicePage() {
     wooCommerceConsumerSecret: '',
     wooCommerceWebhookSecret: '',
 
-    // KYC (Strictly NinjaKYC)
-    kycProvider: 'ninjakyc',
-    ninjaKycBaseUrl: '',
-    ninjaKycApiKey: '',
-    ninjaKycClientId: '',
+    // KYC (Strictly Ninja Hosted KYC)
+    ninjaKycPublicKey: '',
     ninjaKycSecretKey: '',
+    ninjaKycFlowId: '',
     ninjaKycWebhookSecret: '',
 
     // SMTP / Email
@@ -91,10 +78,14 @@ export default function SettingsAndDevicePage() {
     smtpFromName: '',
     brevoApiKey: '',
 
-    // Alerts
-    telegramBotToken: '',
-    telegramChatId: '',
-    discordWebhookUrl: '',
+    // Admin Alerts & Robase Gateway
+    adminAlertPhone: '',
+    robaseApiKey: '',
+    robaseSenderId: 'FundedGiants',
+    robaseApiUrl: 'https://api.robase.dev/v1',
+
+    // Master Security Override Rotation
+    adminEmergencyRecoveryKey: '',
 
     // Crypto & Korapay
     korapayPublicKey: '',
@@ -135,15 +126,12 @@ export default function SettingsAndDevicePage() {
           steraTraderAccountGroup: s.steraTrader?.accountGroup || prev.steraTraderAccountGroup,
           steraTraderManagerLogin: s.steraTrader?.managerLogin || prev.steraTraderManagerLogin,
 
-          lencoEnvironment: s.lenco?.environment || prev.lencoEnvironment,
-          lencoBaseUrl: s.lenco?.baseUrl || prev.lencoBaseUrl,
-          lencoDisbursementAccountId: s.lenco?.disbursementAccountId || prev.lencoDisbursementAccountId,
+          nombaClientId: s.nomba?.clientId || prev.nombaClientId,
+          nombaAccountId: s.nomba?.accountId || prev.nombaAccountId,
 
           wooCommerceApiUrl: s.wooCommerce?.apiUrl || prev.wooCommerceApiUrl,
 
-          kycProvider: 'ninjakyc',
-          ninjaKycBaseUrl: s.kyc?.baseUrl || prev.ninjaKycBaseUrl,
-          ninjaKycClientId: s.kyc?.clientId || prev.ninjaKycClientId,
+          ninjaKycFlowId: s.kyc?.flowId || prev.ninjaKycFlowId,
 
           emailProvider: s.smtp?.provider || prev.emailProvider,
           smtpHost: s.smtp?.host || prev.smtpHost,
@@ -152,7 +140,9 @@ export default function SettingsAndDevicePage() {
           smtpFrom: s.smtp?.from || prev.smtpFrom,
           smtpFromName: s.smtp?.fromName || prev.smtpFromName,
 
-          telegramChatId: s.alerts?.telegramChatId || prev.telegramChatId,
+          adminAlertPhone: s.robase?.adminAlertPhone || prev.adminAlertPhone,
+          robaseSenderId: s.robase?.senderId || prev.robaseSenderId,
+          robaseApiUrl: s.robase?.apiUrl || prev.robaseApiUrl,
 
           cryptoWalletUsdtTrc20: s.cryptoGateways?.usdtTrc20Address || prev.cryptoWalletUsdtTrc20,
           cryptoWalletUsdtErc20: s.cryptoGateways?.usdtErc20Address || prev.cryptoWalletUsdtErc20,
@@ -162,6 +152,39 @@ export default function SettingsAndDevicePage() {
       console.error('Failed to load credentials status:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleDevice = async (id: string, currentStatus: string) => {
+    setDeviceActionLoading(id);
+    try {
+      const nextStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      await fetchAdminApi(`/admin/auth/authorized-devices/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      await loadStatus();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update device status');
+    } finally {
+      setDeviceActionLoading(null);
+    }
+  };
+
+  const handleRevokeDevice = async (id: string) => {
+    if (!confirm(`Are you sure you want to permanently revoke device ${id}? It will be barred from access immediately.`)) {
+      return;
+    }
+    setDeviceActionLoading(id);
+    try {
+      await fetchAdminApi(`/admin/auth/authorized-devices/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      await loadStatus();
+    } catch (err: any) {
+      alert(err.message || 'Failed to revoke device');
+    } finally {
+      setDeviceActionLoading(null);
     }
   };
 
@@ -305,14 +328,13 @@ export default function SettingsAndDevicePage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
           {[
             { id: 'all', label: 'All Providers', icon: Server },
-            { id: 'hardware', label: 'Hardware Lockdown & Recovery', icon: ShieldCheck },
+            { id: 'hardware', label: 'Hardware Lockdown & Terminals', icon: ShieldCheck },
             { id: 'steratrader', label: 'SteraTrader Broker', icon: Zap },
-            { id: 'nomba', label: 'Nomba Banking', icon: Building2 },
+            { id: 'nomba', label: 'Nomba Dedicated Accounts', icon: Building2 },
             { id: 'woocommerce', label: 'WooCommerce', icon: ShoppingCart },
-            { id: 'kyc', label: 'NinjaKYC Identity', icon: UserCheck },
+            { id: 'kyc', label: 'Ninja Hosted KYC', icon: UserCheck },
             { id: 'smtp', label: 'Email & SMTP', icon: Mail },
-            { id: 'alerts', label: 'Risk Alerts', icon: Bell },
-            { id: 'lenco', label: 'Lenco (Legacy)', icon: Building2 },
+            { id: 'alerts', label: 'Robase SMS & WhatsApp Alerts', icon: Bell },
             { id: 'crypto', label: 'Crypto & Alternative', icon: Coins },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -370,18 +392,18 @@ export default function SettingsAndDevicePage() {
         )}
 
         <form onSubmit={handleSaveCredentials} className="space-y-6">
-          {/* Hardware Device Lockdown & Emergency Recovery */}
+          {/* Hardware Device Lockdown & Authorized Terminals */}
           {(activeTab === 'all' || activeTab === 'hardware') && (
-            <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
+            <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-6">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Hardware Device Lockdown & Authorized Devices</h3>
+                    <h3 className="text-sm font-bold text-white">Cryptographic Terminal Lockdown & Device Management</h3>
                     <p className="text-[11px] text-slate-400">
-                      Strict hardware isolation: Only verified primary hardware can access control panel and sensitive environment settings.
+                      Zero-trust hardware isolation: Control panel execution is restricted strictly to bound hardware UUIDs.
                     </p>
                   </div>
                 </div>
@@ -391,55 +413,38 @@ export default function SettingsAndDevicePage() {
                 </div>
               </div>
 
-              {/* Private Emergency Recovery Route Banner */}
-              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
-                    <KeyRound className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-xs font-bold text-amber-400">Private Emergency Recovery Route</h4>
-                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                        If you ever lose access to your primary devices (e.g. lost/stolen laptop or phone), visit this private URL from any device and enter your <strong>Master Emergency Recovery Key</strong> to authorize a new replacement terminal immediately.
-                      </p>
-                    </div>
+              {/* Master Recovery Key Rotation */}
+              <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-emerald-400" />
+                    <h4 className="text-xs font-bold text-white">Rotate Master Emergency Recovery Key</h4>
                   </div>
-                  <a
-                    href="/recovery"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-[11px] font-bold flex items-center gap-1.5 transition"
-                  >
-                    <span>Open Recovery</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    Stealth Protocol Active
+                  </span>
                 </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <code className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-white/5 text-amber-300 font-mono text-xs select-all">
-                    {typeof window !== 'undefined' ? `${window.location.origin}/recovery` : 'https://admin.fundedgiants.ng/recovery'}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = typeof window !== 'undefined' ? `${window.location.origin}/recovery` : 'https://admin.fundedgiants.ng/recovery';
-                      navigator.clipboard.writeText(url);
-                      setCopiedRecovery(true);
-                      setTimeout(() => setCopiedRecovery(false), 2000);
-                    }}
-                    className="px-3 py-2 rounded-lg bg-[#070a08] border border-[#1b3322] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedRecovery ? 'Copied!' : 'Copy URL'}</span>
-                  </button>
-                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Recommended Format: <code className="text-emerald-400 font-mono">FG-SEC-RECOVERY-8849-2026-X9B2-MASTER-OVERRIDE</code>. The emergency recovery route is completely unlinked and stealth. If your primary devices are lost, typing the recovery path directly on a new device with this key grants access.
+                </p>
+                {renderInputField(
+                  'New Master Emergency Recovery Key',
+                  'adminEmergencyRecoveryKey',
+                  'FG-SEC-RECOVERY-{RANDOM_HEX}-MASTER-OVERRIDE',
+                  true,
+                  'Leave blank to retain existing cryptographic master key.'
+                )}
               </div>
 
               {/* Authorized Devices List */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider text-[11px]">
-                  Registered Hardware Terminals ({authorizedDevices.length || 2})
-                </h4>
-                <div className="space-y-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider text-[11px]">
+                    Registered Hardware Terminals ({authorizedDevices.length || 2})
+                  </h4>
+                  <span className="text-[10px] text-slate-500">Live Hardware Registry</span>
+                </div>
+                <div className="space-y-2.5">
                   {(authorizedDevices.length > 0
                     ? authorizedDevices
                     : [
@@ -447,46 +452,109 @@ export default function SettingsAndDevicePage() {
                           id: '4C4C4544-0034-4C10-8034-C4C04F584433',
                           label: 'Primary Workstation (Admin Laptop)',
                           status: 'ACTIVE',
+                          mode: 'PERMANENT',
                           authorizedAt: '2026-01-01T00:00:00.000Z',
                         },
                         {
                           id: 'FG-DEV-PRIMARY-MOBILE-01',
                           label: 'Primary Smartphone (FundedGiants Admin Android App)',
                           status: 'ACTIVE',
+                          mode: 'PERMANENT',
                           authorizedAt: '2026-01-01T00:00:00.000Z',
                         },
                       ]
-                  ).map((dev) => (
-                    <div
-                      key={dev.id}
-                      className="p-3 rounded-xl bg-[#070a08] border border-[#1b3322] flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                          {dev.id.includes('MOBILE') ? (
-                            <Smartphone className="w-4 h-4" />
-                          ) : (
-                            <Laptop className="w-4 h-4" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-white flex items-center gap-2">
-                            <span>{dev.label}</span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {dev.status}
-                            </span>
-                          </div>
-                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                            Fingerprint: <span className="text-slate-300">{dev.id}</span>
-                          </div>
-                        </div>
-                      </div>
+                  ).map((dev) => {
+                    const isPrimary = dev.id === statusData?.boundHardwareId || dev.id === '4C4C4544-0034-4C10-8034-C4C04F584433';
+                    const isPaused = dev.status === 'PAUSED';
+                    const isRevoked = dev.status === 'REVOKED';
 
-                      <div className="text-right text-[11px] text-slate-500">
-                        Authorized {new Date(dev.authorizedAt).toLocaleDateString()}
+                    return (
+                      <div
+                        key={dev.id}
+                        className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs transition ${
+                          isPaused
+                            ? 'bg-amber-500/5 border-amber-500/20 opacity-80'
+                            : isRevoked
+                            ? 'bg-rose-500/5 border-rose-500/20 opacity-60'
+                            : 'bg-[#070a08] border-[#1b3322]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2.5 rounded-lg ${
+                            isPaused ? 'bg-amber-500/10 text-amber-400' : isRevoked ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'
+                          }`}>
+                            {dev.id.includes('MOBILE') || dev.label?.toLowerCase().includes('mobile') || dev.label?.toLowerCase().includes('phone') ? (
+                              <Smartphone className="w-4 h-4" />
+                            ) : (
+                              <Laptop className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-white flex items-center gap-2">
+                              <span>{dev.label}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                isPaused
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : isRevoked
+                                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              }`}>
+                                {dev.status || 'ACTIVE'}
+                              </span>
+                              {dev.mode && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 text-slate-400 border border-white/10">
+                                  {dev.mode}
+                                </span>
+                              )}
+                              {isPrimary && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#00f59b]/15 text-[#00f59b] border border-[#00f59b]/30">
+                                  ROOT PRIMARY
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                              <span>Fingerprint: <strong className="text-slate-300">{dev.id}</strong></span>
+                              {dev.expiresAt && (
+                                <span className="text-amber-400/80">
+                                  Expires: {new Date(dev.expiresAt).toLocaleTimeString()} ({new Date(dev.expiresAt).toLocaleDateString()})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-auto">
+                          {!isPrimary && !isRevoked && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={deviceActionLoading === dev.id}
+                                onClick={() => handleToggleDevice(dev.id, dev.status)}
+                                className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition ${
+                                  isPaused
+                                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                                    : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-400'
+                                }`}
+                              >
+                                {isPaused ? 'Resume' : 'Pause'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deviceActionLoading === dev.id}
+                                onClick={() => handleRevokeDevice(dev.id)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-semibold transition"
+                              >
+                                Revoke
+                              </button>
+                            </>
+                          )}
+                          <div className="text-right text-[10px] text-slate-500 ml-2">
+                            {new Date(dev.authorizedAt || Date.now()).toLocaleDateString()}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -543,13 +611,15 @@ export default function SettingsAndDevicePage() {
                     <Building2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Nomba Nigerian Banking & Settlement Gateway</h3>
-                    <p className="text-[11px] text-slate-400">Dedicated virtual accounts (branded Fundedgiants), automatic bank reconciliations, and payout disbursements</p>
+                    <h3 className="text-sm font-bold text-white">Nomba Live Banking & Settlement Gateway</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Live CBN rails: Dedicated virtual accounts (auto-formatted &quot;Fundedgiants/Firstname Lastname&quot;), automated ledger credit, and manual-approved payout transfers.
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                    {statusData?.credentialsSummary?.nomba?.hasClientSecret ? 'ACTIVE RAILS' : 'PENDING CREDENTIALS'}
+                    LIVE PRODUCTION (api.nomba.com)
                   </span>
                   <button
                     type="button"
@@ -558,83 +628,46 @@ export default function SettingsAndDevicePage() {
                     className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
                   >
                     {testingProvider === 'nomba' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                    <span>Test Nomba API</span>
+                    <span>Test Nomba Ping</span>
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Environment
-                  </label>
-                  <select
-                    value={formData.nombaEnvironment}
-                    onChange={(e) => setFormData({ ...formData, nombaEnvironment: e.target.value })}
-                    className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                  >
-                    <option value="sandbox">Sandbox (https://sandbox.nomba.com)</option>
-                    <option value="live">Live Production (https://api.nomba.com)</option>
-                  </select>
-                </div>
-                {renderInputField('Nomba Base URL', 'nombaBaseUrl', 'https://api.nomba.com')}
-                {renderInputField('Client ID', 'nombaClientId', 'client_id_...', false, undefined, statusData?.credentialsSummary?.nomba?.clientIdMasked)}
-                {renderInputField('Client Secret', 'nombaClientSecret', 'Leave blank to retain current secret', true)}
-                {renderInputField('Parent Nomba Account ID', 'nombaAccountId', 'Your primary parent account ID on Nomba')}
-                {renderInputField('Webhook Signature Secret', 'nombaWebhookSecret', 'HMAC SHA256 Signature Key', true)}
-              </div>
-            </div>
-          )}
-
-          {/* 3. Lenco Banking Rails (Legacy) */}
-          {(activeTab === 'all' || activeTab === 'lenco') && (
-            <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
-              <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                    <Building2 className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Lenco Direct Nigerian Banking & Settlement</h3>
-                    <p className="text-[11px] text-slate-400">Automated NGN dedicated virtual accounts, bank reconciliations, and payout transfers</p>
-                  </div>
+              {/* Nomba Webhook URL for Developer Dashboard */}
+              <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                    Nomba Webhook Receiver URL (Paste into Nomba Developer Dashboard)
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">Method: POST</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                    {statusData?.credentialsSummary?.lenco?.hasSecretKey ? 'ACTIVE RAILS' : 'PENDING SECRET'}
-                  </span>
+                  <code className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-xs select-all">
+                    https://api.fundedgiants.ng/api/v1/webhooks/nomba
+                  </code>
                   <button
                     type="button"
-                    onClick={() => handleTestConnection('lenco')}
-                    disabled={testingProvider === 'lenco'}
-                    className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
+                    onClick={() => {
+                      navigator.clipboard.writeText('https://api.fundedgiants.ng/api/v1/webhooks/nomba');
+                      alert('Nomba Webhook URL copied to clipboard!');
+                    }}
+                    className="px-3 py-2 rounded-lg bg-[#0f1712] border border-[#1b3322] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition"
                   >
-                    {testingProvider === 'lenco' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                    <span>Test Lenco API</span>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-500">
+                  Nomba will sign incoming deposit events using your Webhook Signature Secret configured below.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Environment
-                  </label>
-                  <select
-                    value={formData.lencoEnvironment}
-                    onChange={(e) => setFormData({ ...formData, lencoEnvironment: e.target.value })}
-                    className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                  >
-                    <option value="sandbox">Sandbox / Staging</option>
-                    <option value="live">Live Production (CBN Direct)</option>
-                  </select>
-                </div>
-                {renderInputField('Lenco Base URL', 'lencoBaseUrl', 'https://api.lenco.ng')}
-                {renderInputField('Public Key', 'lencoPublicKey', 'pk_live_...', false, undefined, statusData?.credentialsSummary?.lenco?.publicKeyMasked)}
-                {renderInputField('Secret Key', 'lencoSecretKey', 'sk_live_...', true)}
-                {renderInputField('Disbursement Funding Account ID', 'lencoDisbursementAccountId', 'Account UUID for automated payouts')}
-                {renderInputField('Virtual Account Webhook Secret', 'lencoVirtualAccountWebhookSecret', 'HMAC Secret for Inward Deposits', true)}
-                {renderInputField('Disbursement Webhook Secret', 'lencoDisbursementWebhookSecret', 'HMAC Secret for Transfer Callbacks', true)}
+              {/* Strictly 4 Production Keys */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderInputField('Nomba Client ID', 'nombaClientId', 'client_id_...', false, 'Provided in your Nomba merchant portal', statusData?.credentialsSummary?.nomba?.clientId)}
+                {renderInputField('Nomba Private Key / Client Secret', 'nombaClientSecret', 'Leave blank to retain secret', true, 'Your live private key or secret')}
+                {renderInputField('Parent Nomba Account ID', 'nombaAccountId', 'Your primary Nomba root account ID', false, 'Root settlement account ID', statusData?.credentialsSummary?.nomba?.accountId)}
+                {renderInputField('Nomba Webhook Secret', 'nombaWebhookSecret', 'HMAC SHA256 Signature Secret', true, 'Created by you and configured in both dashboards')}
               </div>
             </div>
           )}
@@ -674,7 +707,7 @@ export default function SettingsAndDevicePage() {
             </div>
           )}
 
-          {/* 4. NinjaKYC Dedicated Provider */}
+          {/* 4. Ninja Hosted KYC Provider */}
           {(activeTab === 'all' || activeTab === 'kyc') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
@@ -683,13 +716,15 @@ export default function SettingsAndDevicePage() {
                     <UserCheck className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">NinjaKYC Identity Verification Engine</h3>
-                    <p className="text-[11px] text-slate-400">Strictly dedicated NinjaKYC gateway for automated BVN, NIN, Voter&apos;s Card, International Passport, and Liveness validation</p>
+                    <h3 className="text-sm font-bold text-white">Ninja Hosted KYC Identity Verification</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Strictly dedicated Ninja Hosted KYC flow for automated BVN, NIN, Voter&apos;s Card, International Passport, and Liveness verification.
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                    {statusData?.credentialsSummary?.kyc?.hasApiKey ? 'NINJAKYC ACTIVE' : 'PENDING API KEY'}
+                    HOSTED KYC ACTIVE (api.ninja.ng/v1)
                   </span>
                   <button
                     type="button"
@@ -698,51 +733,66 @@ export default function SettingsAndDevicePage() {
                     className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
                   >
                     {testingProvider === 'kyc' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                    <span>Test NinjaKYC API</span>
+                    <span>Test Ninja API</span>
                   </button>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Dedicated KYC Provider
-                  </label>
-                  <div className="w-full rounded-lg bg-[#070a08] border border-emerald-500/30 px-3 py-2 text-xs text-[#00f59b] font-mono font-bold flex items-center justify-between">
-                    <span>Ninja.ng Hosted KYC</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400">Strict</span>
-                  </div>
-                </div>
-                {renderInputField('Ninja.ng API Base URL', 'ninjaKycBaseUrl', 'https://api.ninja.ng/v1')}
-                {renderInputField('Ninja API Key', 'ninjaKycApiKey', 'Leave blank to retain current key', true, undefined, statusData?.credentialsSummary?.kyc?.apiKeyMasked)}
-                {renderInputField('Ninja Client ID', 'ninjaKycClientId', 'Client / App ID')}
-                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'Leave blank to retain secret', true)}
-                {renderInputField('Ninja Webhook Secret', 'ninjaKycWebhookSecret', 'Webhook HMAC verification secret', true)}
               </div>
 
               {/* Webhook & Redirect URLs for Ninja Developer Portal */}
               <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block">
-                  Ninja.ng Integration URLs (Copy into your Ninja Developer Dashboard)
+                  Ninja Developer Portal URLs (Copy into your Ninja Dashboard)
                 </span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[11px] font-medium mb-1">
                       Hosted KYC Redirect URL (After verification completion):
                     </span>
-                    <code className="px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] block select-all">
-                      https://trader.fundedgiants.ng/dashboard/profile?kyc=callback
-                    </code>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] select-all">
+                        https://trader.fundedgiants.ng/dashboard/profile?kyc=callback
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText('https://trader.fundedgiants.ng/dashboard/profile?kyc=callback');
+                          alert('Redirect URL copied!');
+                        }}
+                        className="px-2 py-1.5 rounded-lg bg-[#0f1712] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white transition"
+                      >
+                        Copy
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[11px] font-medium mb-1">
-                      Ninja KYC Webhook Receiver (Server-to-Server results):
+                      Ninja KYC Webhook Receiver (Server-to-Server callbacks):
                     </span>
-                    <code className="px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] block select-all">
-                      https://api.fundedgiants.ng/api/v1/webhooks/ninja-kyc
-                    </code>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] select-all">
+                        https://api.fundedgiants.ng/api/v1/webhooks/ninja-kyc
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText('https://api.fundedgiants.ng/api/v1/webhooks/ninja-kyc');
+                          alert('Webhook URL copied!');
+                        }}
+                        className="px-2 py-1.5 rounded-lg bg-[#0f1712] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white transition"
+                      >
+                        Copy
+                      </button>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Strictly 4 Keys */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderInputField('Ninja Public Key / Client ID', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard')}
+                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard')}
+                {renderInputField('Hosted KYC Flow ID', 'ninjaKycFlowId', 'flow_...', false, 'Flow ID created for FundedGiants on Ninja', statusData?.credentialsSummary?.kyc?.flowId)}
+                {renderInputField('Ninja Webhook Secret', 'ninjaKycWebhookSecret', 'HMAC verification secret', true, 'Configured in Ninja webhook settings')}
               </div>
             </div>
           )}
@@ -757,7 +807,7 @@ export default function SettingsAndDevicePage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Transactional Email & SMTP Relay</h3>
-                    <p className="text-[11px] text-slate-400">Brevo, Postmark, or SMTP relay for challenge credentials and payout receipts</p>
+                    <p className="text-[11px] text-slate-400">Local SMTP / Nodemailer relay with integrated Brevo API fallback</p>
                   </div>
                 </div>
                 <button
@@ -781,10 +831,8 @@ export default function SettingsAndDevicePage() {
                     onChange={(e) => setFormData({ ...formData, emailProvider: e.target.value })}
                     className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
                   >
-                    <option value="smtp">Standard SMTP Relay</option>
+                    <option value="smtp">Local / Standard SMTP Relay</option>
                     <option value="brevo">Brevo (Sendinblue)</option>
-                    <option value="postmark">Postmark</option>
-                    <option value="sendgrid">SendGrid</option>
                   </select>
                 </div>
                 {renderInputField('SMTP Host', 'smtpHost', 'smtp-relay.brevo.com')}
@@ -798,7 +846,7 @@ export default function SettingsAndDevicePage() {
             </div>
           )}
 
-          {/* 6. Alerts & Telemetry */}
+          {/* 6. Alerts & Telemetry (Robase SMS & WhatsApp Gateway) */}
           {(activeTab === 'all' || activeTab === 'alerts') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
@@ -807,16 +855,29 @@ export default function SettingsAndDevicePage() {
                     <Bell className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Emergency Risk Alerts & Telemetry</h3>
-                    <p className="text-[11px] text-slate-400">Instant alerts for max daily drawdown breaches, equity spikes, and settlement events</p>
+                    <h3 className="text-sm font-bold text-white">Robase Transactional SMS & WhatsApp OTP Gateway</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Direct SMS alerts for withdrawals & rule breaches sent to Admin Alert Phone. WhatsApp OTP & SMS verification codes for traders.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {renderInputField('Telegram Bot Token', 'telegramBotToken', 'bot123456:ABC-DEF...', true)}
-                {renderInputField('Telegram Alert Chat / Group ID', 'telegramChatId', '-1001234567890')}
-                {renderInputField('Discord Webhook URL', 'discordWebhookUrl', 'https://discord.com/api/webhooks/...', true)}
+              {/* Operations Notice */}
+              <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block">
+                  Critical Alert Routing Protocol
+                </span>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Every trader withdrawal request, challenge purchase, and daily drawdown breach triggers an immediate high-priority SMS alert directly to the <strong>Admin Alert Phone</strong> via the Robase Transactional SMS API. Trader login OTPs and verification codes are delivered via the Robase WhatsApp OTP / SMS Gateway.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderInputField('Admin Direct Alert Phone', 'adminAlertPhone', '+2348012345678', false, 'Receives instant SMS for withdrawal requests and breaches', statusData?.credentialsSummary?.robase?.adminAlertPhone)}
+                {renderInputField('Robase API Key', 'robaseApiKey', 'rbs_...', true, 'Secret API key from robase.dev')}
+                {renderInputField('Robase Sender ID', 'robaseSenderId', 'FundedGiants', false, 'Registered alphanumeric sender ID on Robase')}
+                {renderInputField('Robase API Host URL', 'robaseApiUrl', 'https://api.robase.dev/v1', false, 'Production API gateway URL')}
               </div>
             </div>
           )}

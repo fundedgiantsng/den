@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import * as nodemailer from 'nodemailer';
 import {
   prisma,
   NotificationCategory,
@@ -99,9 +100,38 @@ export class NotificationsService {
         this.logger.warn(`Failed to dispatch email via Brevo: ${err.message}`);
         return false;
       }
-    } else {
-      this.logger.log(`[SIMULATED EMAIL DISPATCH] To: ${toEmail} | Subject: ${subject}`);
+    }
+
+    // Standard SMTP / Site Mail via Nodemailer
+    const smtpHost = process.env.SMTP_HOST || 'localhost';
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+        tls: {
+          rejectUnauthorized: false, // Permit self-signed internal relay on local VPS
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: `"${senderName}" <${senderEmail}>`,
+        to: toEmail,
+        subject,
+        text: `${subject}\n\nHello ${toName || 'Valued Trader'},\n\n${bodyText}\n\nView details: ${fullActionUrl}`,
+        html: htmlContent,
+      });
+
+      this.logger.log(`SMTP email dispatched to ${toEmail} [MessageId: ${info.messageId}]`);
       return true;
+    } catch (smtpErr: any) {
+      this.logger.warn(`SMTP relay connection issue for ${toEmail}: ${smtpErr.message}`);
+      return false;
     }
   }
 

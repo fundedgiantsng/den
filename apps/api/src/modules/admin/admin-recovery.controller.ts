@@ -2,6 +2,7 @@
   Controller,
   Post,
   Get,
+  Patch,
   Delete,
   Param,
   Body,
@@ -12,7 +13,7 @@
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
 import { DeviceBindingGuard } from './device-binding.guard';
 import { prisma } from '@fundedgiants/database';
 import * as crypto from 'crypto';
@@ -25,13 +26,18 @@ export class EmergencyRecoveryDto {
   @IsString()
   @IsOptional()
   deviceLabel?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['PERMANENT', 'TEMPORARY'])
+  mode?: 'PERMANENT' | 'TEMPORARY';
 }
 
 @Controller('admin/auth')
 export class AdminRecoveryController {
   private readonly logger = new Logger(AdminRecoveryController.name);
 
-  // Fallback production default recovery key if not explicitly provided in environment
+  // Recommended Master Key Pattern: FG-SEC-RECOVERY-<RANDOM_HEX>-MASTER-OVERRIDE
   private readonly defaultMasterKey = 'FG-SEC-RECOVERY-8849-2026-X9B2-MASTER-OVERRIDE';
 
   @Post('emergency-recovery')
@@ -43,7 +49,6 @@ export class AdminRecoveryController {
     const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    // Constant-time comparison to prevent timing side-channel attacks
     const configuredBuf = Buffer.from(configuredKey);
     const providedBuf = Buffer.from(providedKey);
 
@@ -52,9 +57,7 @@ export class AdminRecoveryController {
       crypto.timingSafeEqual(configuredBuf, providedBuf);
 
     if (!isMatch) {
-      this.logger.error(
-        `Failed emergency recovery attempt from IP=${clientIp}, UserAgent=${userAgent}`
-      );
+      this.logger.error(`Failed emergency recovery attempt from IP=${clientIp}, UserAgent=${userAgent}`);
 
       try {
         await prisma.auditEvent.create({
@@ -76,27 +79,33 @@ export class AdminRecoveryController {
       );
     }
 
-    // Generate authorized device fingerprint for this replacement hardware
+    const mode = body.mode || 'PERMANENT';
     const timestampPart = Date.now().toString(36).toUpperCase();
     const entropyPart = crypto.randomBytes(4).toString('hex').toUpperCase();
-    const newFingerprint = `FG-DEV-RECOVERY-${timestampPart}-${entropyPart}`;
-    const deviceLabel = (body.deviceLabel || '').trim() || `Emergency Replacement Device (${new Date().toLocaleDateString()})`;
+    const newFingerprint = `FG-DEV-${mode === 'TEMPORARY' ? 'TEMP' : 'REC'}-${timestampPart}-${entropyPart}`;
+    const deviceLabel =
+      (body.deviceLabel || '').trim() ||
+      (mode === 'TEMPORARY'
+        ? `Temporary Emergency Session (24h - ${new Date().toLocaleDateString()})`
+        : `Emergency Replacement Device (${new Date().toLocaleDateString()})`);
 
-    // Register into active authorized hardware registry
+    const expiresAt = mode === 'TEMPORARY' ? new Date(Date.now() + 24 * 3600 * 1000).toISOString() : null;
+
     DeviceBindingGuard.addAuthorizedDevice({
       id: newFingerprint,
       label: deviceLabel,
+      mode,
       authorizedAt: new Date().toISOString(),
+      expiresAt,
       authorizedIp: clientIp,
       userAgent: userAgent,
       status: 'ACTIVE',
     });
 
     this.logger.log(
-      `Emergency hardware authorization GRANTED: ${newFingerprint} (${deviceLabel}) from ${clientIp}`
+      `Emergency hardware authorization GRANTED [${mode}]: ${newFingerprint} (${deviceLabel}) from ${clientIp}`
     );
 
-    // Audit trail log
     try {
       await prisma.auditEvent.create({
         data: {
@@ -108,22 +117,26 @@ export class AdminRecoveryController {
           details: {
             deviceFingerprint: newFingerprint,
             deviceLabel: deviceLabel,
+            mode,
+            expiresAt,
             authorizedAt: new Date().toISOString(),
           },
         },
       });
-    } catch (auditErr) {
-      this.logger.error('Failed to write audit event for recovery:', auditErr);
-    }
+    } catch {}
 
-    // Return administrative unlock token & hardware fingerprint
     const adminSessionToken = `fg_adm_${crypto.randomBytes(24).toString('hex')}`;
 
     return {
       success: true,
-      message: 'Master recovery verified. Hardware device successfully authorized for admin control panel.',
+      message:
+        mode === 'TEMPORARY'
+          ? 'Emergency pass active for 24 hours. Hardware not permanently bound.'
+          : 'Master recovery verified. Hardware device permanently authorized.',
       deviceFingerprint: newFingerprint,
       deviceLabel: deviceLabel,
+      mode,
+      expiresAt,
       token: adminSessionToken,
       authorizedAt: new Date().toISOString(),
     };
@@ -135,6 +148,37 @@ export class AdminRecoveryController {
     return {
       success: true,
       devices: DeviceBindingGuard.getAuthorizedDevices(),
+    };
+  }
+
+  @Patch('authorized-devices/:id/status')
+  @UseGuards(DeviceBindingGuard)
+  async toggleDeviceStatus(
+    @Param('id') id: string,
+    @Body() body: { status: 'ACTIVE' | 'PAUSED' },
+    @Req() req: any
+  ) {
+    const success = DeviceBindingGuard.setDeviceStatus(id, body.status);
+    if (!success) {
+      throw new ForbiddenException('Cannot modify status of primary hardware terminal or device not found.');
+    }
+
+    try {
+      await prisma.auditEvent.create({
+        data: {
+          action: `ADMIN_DEVICE_${body.status}`,
+          resource: 'ADMIN_HARDWARE_LOCKDOWN',
+          resourceId: id,
+          ipAddress: req.ip || req.connection?.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          details: { deviceId: id, newStatus: body.status },
+        },
+      });
+    } catch {}
+
+    return {
+      success: true,
+      message: `Device ${id} status updated to ${body.status}.`,
     };
   }
 

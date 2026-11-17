@@ -13,17 +13,21 @@ import {
   EyeOff,
   CheckCircle2,
   Lock,
+  Clock,
 } from 'lucide-react';
 
 export default function AdminEmergencyRecoveryPage() {
   const [recoveryKey, setRecoveryKey] = useState('');
   const [deviceLabel, setDeviceLabel] = useState('');
+  const [mode, setMode] = useState<'PERMANENT' | 'TEMPORARY'>('PERMANENT');
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<{
     deviceFingerprint: string;
     deviceLabel: string;
+    mode: 'PERMANENT' | 'TEMPORARY';
+    expiresAt?: string | null;
     authorizedAt: string;
   } | null>(null);
 
@@ -46,7 +50,8 @@ export default function AdminEmergencyRecoveryPage() {
         },
         body: JSON.stringify({
           recoveryKey: recoveryKey.trim(),
-          deviceLabel: deviceLabel.trim() || 'Emergency Replacement Hardware Station',
+          deviceLabel: deviceLabel.trim() || undefined,
+          mode,
         }),
       });
 
@@ -58,18 +63,21 @@ export default function AdminEmergencyRecoveryPage() {
 
       // Persist granted device fingerprint in local client storage
       localStorage.setItem('fg_admin_device_fingerprint', data.deviceFingerprint);
-      document.cookie = `fg_admin_device_id=${data.deviceFingerprint}; path=/; max-age=31536000; SameSite=Lax`;
+      const cookieAge = mode === 'TEMPORARY' ? 86400 : 31536000;
+      document.cookie = `fg_admin_device_id=${data.deviceFingerprint}; path=/; max-age=${cookieAge}; SameSite=Lax`;
 
       setSuccessData({
         deviceFingerprint: data.deviceFingerprint,
         deviceLabel: data.deviceLabel,
+        mode: data.mode,
+        expiresAt: data.expiresAt,
         authorizedAt: data.authorizedAt,
       });
 
       // Redirect after 3 seconds
       setTimeout(() => {
         window.location.href = '/';
-      }, 3000);
+      }, 2500);
     } catch (err: any) {
       setError(err.message || 'Emergency recovery verification failed.');
     } finally {
@@ -98,7 +106,7 @@ export default function AdminEmergencyRecoveryPage() {
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="text-xs text-slate-300 leading-relaxed">
             <span className="font-bold text-amber-400 block mb-1">Restricted Administrative Route</span>
-            FundedGiants administrative access is strictly bound to authorized physical hardware. If your primary workstation or primary phone was lost, stolen, or damaged, enter your offline Master Recovery Key below to permanently authorize this replacement hardware.
+            FundedGiants administrative access is strictly bound to authorized physical hardware. If your primary workstation or primary phone was lost, stolen, or damaged, enter your offline Master Recovery Key below to authorize access.
           </div>
         </div>
 
@@ -110,13 +118,21 @@ export default function AdminEmergencyRecoveryPage() {
                 <CheckCircle2 className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white mb-1">Replacement Device Authorized</h3>
+                <h3 className="text-lg font-bold text-white mb-1">
+                  {successData.mode === 'TEMPORARY' ? 'Temporary Emergency Session Active' : 'Replacement Device Permanently Bound'}
+                </h3>
                 <p className="text-xs text-slate-400">
-                  Hardware lockdown successfully overridden for this terminal.
+                  {successData.mode === 'TEMPORARY'
+                    ? '24-hour temporary access pass granted. Hardware not permanently whitelisted.'
+                    : 'Hardware lockdown successfully overridden. Device permanently whitelisted.'}
                 </p>
               </div>
 
               <div className="p-4 rounded-xl bg-black/50 border border-white/5 text-left space-y-2">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-400">Access Mode:</span>
+                  <span className="font-semibold text-emerald-400">{successData.mode === 'TEMPORARY' ? 'Temporary (24h Pass)' : 'Permanent Hardware Binding'}</span>
+                </div>
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-400">Device Label:</span>
                   <span className="font-semibold text-white">{successData.deviceLabel}</span>
@@ -125,6 +141,12 @@ export default function AdminEmergencyRecoveryPage() {
                   <span className="text-slate-400">Device Fingerprint:</span>
                   <span className="font-mono text-emerald-400 font-bold">{successData.deviceFingerprint}</span>
                 </div>
+                {successData.expiresAt && (
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-400">Expires At:</span>
+                    <span className="text-amber-400 font-semibold">{new Date(successData.expiresAt).toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-400">Authorized At:</span>
                   <span className="text-slate-300">{new Date(successData.authorizedAt).toLocaleString()}</span>
@@ -152,6 +174,50 @@ export default function AdminEmergencyRecoveryPage() {
                 </div>
               )}
 
+              {/* Authorization Purpose / Mode Toggle */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Authorization Purpose
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMode('PERMANENT')}
+                    className={`p-3 rounded-xl border text-left transition ${
+                      mode === 'PERMANENT'
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                        : 'bg-[#070a08] border-[#1b3322] text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 text-xs font-bold mb-1">
+                      <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Bind New Device</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 leading-tight">
+                      Permanently whitelists this laptop or phone as a replacement admin device.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMode('TEMPORARY')}
+                    className={`p-3 rounded-xl border text-left transition ${
+                      mode === 'TEMPORARY'
+                        ? 'bg-amber-500/15 border-amber-500/50 text-white'
+                        : 'bg-[#070a08] border-[#1b3322] text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 text-xs font-bold mb-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Temporary (24h)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 leading-tight">
+                      Temporary 24h session. Does not permanently bind or save this hardware.
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-300">
                   Master Emergency Recovery Key
@@ -161,7 +227,7 @@ export default function AdminEmergencyRecoveryPage() {
                     type={showKey ? 'text' : 'password'}
                     value={recoveryKey}
                     onChange={(e) => setRecoveryKey(e.target.value)}
-                    placeholder="FG-SEC-RECOVERY-..."
+                    placeholder="Enter offline master recovery key..."
                     required
                     className="w-full rounded-xl bg-[#070a08] border border-[#1b3322] px-3.5 py-2.5 pr-10 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
                   />
@@ -174,24 +240,21 @@ export default function AdminEmergencyRecoveryPage() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  This 32+ character offline recovery token was generated during initial platform provisioning.
+                  Recommended pattern: <code className="font-mono text-slate-400">FG-SEC-RECOVERY-&#123;128BIT_HEX&#125;-MASTER-OVERRIDE</code>
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-300">
-                  Replacement Device Nickname / Label
+                  Device Nickname / Label (Optional)
                 </label>
                 <input
                   type="text"
                   value={deviceLabel}
                   onChange={(e) => setDeviceLabel(e.target.value)}
-                  placeholder="e.g. Replacement MacBook Pro 16 / Backup Laptop"
+                  placeholder={mode === 'TEMPORARY' ? 'e.g. Hotel Workstation / Borrowed Laptop' : 'e.g. Replacement MacBook Pro 16 / Personal iPhone'}
                   className="w-full rounded-xl bg-[#070a08] border border-[#1b3322] px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                 />
-                <p className="text-[11px] text-slate-500">
-                  Helps identify this authorized terminal in the security audit logs and settings panel.
-                </p>
               </div>
 
               <div className="pt-2">
@@ -201,11 +264,11 @@ export default function AdminEmergencyRecoveryPage() {
                   className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-600 via-emerald-600 to-emerald-500 hover:from-amber-500 hover:to-emerald-400 text-black text-xs font-black font-heading tracking-wide uppercase shadow-lg shadow-emerald-500/10 active:scale-98 transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {loading ? (
-                    <span>Verifying Master Token & Binding Hardware...</span>
+                    <span>Verifying Master Token & Authorizing Access...</span>
                   ) : (
                     <>
                       <KeyRound className="w-4 h-4" />
-                      <span>Authorize This Hardware Station</span>
+                      <span>{mode === 'TEMPORARY' ? 'Grant 24-Hour Emergency Access' : 'Permanently Authorize This Terminal'}</span>
                     </>
                   )}
                 </button>
@@ -214,7 +277,7 @@ export default function AdminEmergencyRecoveryPage() {
               <div className="pt-2 border-t border-[#1b3322] flex items-center justify-between text-[11px] text-slate-500">
                 <span className="flex items-center gap-1">
                   <Lock className="w-3 h-3 text-slate-400" />
-                  SHA-256 Constant-Time Hardware Lock
+                  SHA-256 Constant-Time Lock
                 </span>
                 <span>FundedGiants Core Security</span>
               </div>
