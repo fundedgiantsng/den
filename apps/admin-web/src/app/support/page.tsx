@@ -154,16 +154,31 @@ export default function AdminSupportPage() {
 
   const loadUserChatMessages = async (userId: string) => {
     try {
-      // Fetch messages for user
-      const res = await fetch(`http://localhost:4000/api/v1/support/chat`, {
-        headers: { 'x-user-id': userId },
-      });
-      // Or admin endpoint
-      const allRes = await fetch(`http://localhost:4000/api/v1/support/chat`);
+      const res = await fetch(`http://localhost:4000/api/v1/support/admin/chats/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data) {
+          setChatMessages(data.data);
+        }
+      }
     } catch (e) {
       console.error(e);
     }
   };
+
+  // Poll for active chat updates when on CHATS tab
+  useEffect(() => {
+    if (activeTab !== 'CHATS') return;
+
+    const interval = setInterval(() => {
+      loadChatThreads();
+      if (selectedChatUser?.id) {
+        loadUserChatMessages(selectedChatUser.id);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, selectedChatUser?.id]);
 
   const handleUpdateStatus = async (status: string) => {
     if (!selectedTicket) return;

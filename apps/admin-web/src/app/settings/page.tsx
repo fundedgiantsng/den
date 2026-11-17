@@ -574,15 +574,40 @@ export default function SettingsAndDevicePage() {
                     Dedicated KYC Provider
                   </label>
                   <div className="w-full rounded-lg bg-[#070a08] border border-emerald-500/30 px-3 py-2 text-xs text-[#00f59b] font-mono font-bold flex items-center justify-between">
-                    <span>NinjaKYC (Nigeria Direct)</span>
+                    <span>Ninja.ng Hosted KYC</span>
                     <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400">Strict</span>
                   </div>
                 </div>
-                {renderInputField('NinjaKYC Base URL', 'ninjaKycBaseUrl', 'https://api.ninjakyc.com')}
-                {renderInputField('NinjaKYC API Key', 'ninjaKycApiKey', 'Leave blank to retain current key', true, undefined, statusData?.credentialsSummary?.kyc?.apiKeyMasked)}
-                {renderInputField('NinjaKYC Client ID', 'ninjaKycClientId', 'Client / App ID')}
-                {renderInputField('NinjaKYC Secret Key', 'ninjaKycSecretKey', 'Leave blank to retain secret', true)}
-                {renderInputField('NinjaKYC Webhook Secret', 'ninjaKycWebhookSecret', 'Webhook HMAC verification secret', true)}
+                {renderInputField('Ninja.ng API Base URL', 'ninjaKycBaseUrl', 'https://api.ninja.ng/v1')}
+                {renderInputField('Ninja API Key', 'ninjaKycApiKey', 'Leave blank to retain current key', true, undefined, statusData?.credentialsSummary?.kyc?.apiKeyMasked)}
+                {renderInputField('Ninja Client ID', 'ninjaKycClientId', 'Client / App ID')}
+                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'Leave blank to retain secret', true)}
+                {renderInputField('Ninja Webhook Secret', 'ninjaKycWebhookSecret', 'Webhook HMAC verification secret', true)}
+              </div>
+
+              {/* Webhook & Redirect URLs for Ninja Developer Portal */}
+              <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block">
+                  Ninja.ng Integration URLs (Copy into your Ninja Developer Dashboard)
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium mb-1">
+                      Hosted KYC Redirect URL (After verification completion):
+                    </span>
+                    <code className="px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] block select-all">
+                      https://trader.fundedgiants.ng/dashboard/profile?kyc=callback
+                    </code>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium mb-1">
+                      Ninja KYC Webhook Receiver (Server-to-Server results):
+                    </span>
+                    <code className="px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono text-[11px] block select-all">
+                      https://api.fundedgiants.ng/api/v1/webhooks/ninja-kyc
+                    </code>
+                  </div>
+                </div>
               </div>
             </div>
           )}

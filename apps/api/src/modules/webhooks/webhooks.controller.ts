@@ -707,11 +707,29 @@ export class WebhooksController {
 
   /**
    * Ninja KYC Webhook
+   * Dispatched by Ninja.ng upon completion of Hosted KYC verification
+   * Stores verified BVN, updates KYC status to APPROVED, and auto-provisions dedicated Nomba virtual account
    */
   @Post('ninja-kyc')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Receive Ninja KYC verification results' })
-  async handleNinjaWebhook(@Body() payload: any) {
+  async handleNinjaWebhook(
+    @Body() payload: any,
+    @Headers('x-ninja-signature') signature?: string,
+    @Headers('x-signature') altSignature?: string,
+  ) {
+    const rawSignature = signature || altSignature;
+    if (rawSignature && process.env.NINJA_KYC_WEBHOOK_SECRET) {
+      const isValid = this.ninjaKycService.verifyWebhookSignature(
+        JSON.stringify(payload),
+        rawSignature
+      );
+      if (!isValid) {
+        this.logger.warn('Rejected Ninja KYC webhook with invalid signature');
+        throw new UnauthorizedException('Invalid Ninja KYC signature');
+      }
+    }
+
     const reference = payload.data?.reference || payload.reference;
     const userId = reference?.replace('FG-KYC-', '');
 
@@ -719,7 +737,16 @@ export class WebhooksController {
       throw new BadRequestException('Invalid reference in KYC webhook');
     }
 
-    const isApproved = payload.event === 'verification.approved' || payload.data?.status === 'approved';
+    const isApproved =
+      payload.event === 'verification.approved' ||
+      payload.event === 'kyc.completed' ||
+      payload.data?.status === 'approved' ||
+      payload.status === 'approved' ||
+      payload.status === 'success';
+
+    const bvn = payload.data?.bvn || payload.bvn || payload.data?.id_number || null;
+    const verifiedFirstName = payload.data?.first_name || payload.first_name;
+    const verifiedLastName = payload.data?.last_name || payload.last_name;
 
     if (isApproved) {
       const user = await prisma.user.findUnique({
@@ -728,41 +755,77 @@ export class WebhooksController {
       });
 
       if (user) {
+        const finalFirstName = verifiedFirstName || user.firstName || 'Trader';
+        const finalLastName = verifiedLastName || user.lastName || 'Account';
+
         await prisma.user.update({
           where: { id: user.id },
           data: {
             kycStatus: 'APPROVED',
-            firstName: payload.data?.first_name || user.firstName,
-            lastName: payload.data?.last_name || user.lastName,
+            firstName: finalFirstName,
+            lastName: finalLastName,
           },
         });
 
-        if (!user.wallet?.lencoAccountNumber) {
-          const lencoRes = await this.lencoService.createVirtualAccount({
+        // Store / update KycRecord with encrypted/stored BVN and verified payload
+        await prisma.kycRecord.create({
+          data: {
             userId: user.id,
-            firstName: user.firstName || payload.data?.first_name || 'Trader',
-            lastName: user.lastName || payload.data?.last_name || user.id.slice(0, 5),
-            bvn: payload.data?.bvn,
+            provider: 'NinjaKYC',
+            externalReference: reference,
+            status: 'APPROVED',
+            verifiedAt: new Date(),
+            providerPayload: {
+              bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+              rawBvn: bvn || undefined,
+              firstName: finalFirstName,
+              lastName: finalLastName,
+              rawPayload: payload,
+              verifiedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        // Auto-provision dedicated Nomba Virtual Account
+        if (!user.wallet?.nombaAccountNumber) {
+          const nombaRes = await this.nombaService.createVirtualAccount({
+            userId: user.id,
+            firstName: finalFirstName,
+            lastName: finalLastName,
+            bvn: bvn || undefined,
           });
 
-          if (lencoRes.status && lencoRes.data) {
+          if (nombaRes.status && nombaRes.data) {
             await prisma.customerWallet.upsert({
               where: { userId: user.id },
               update: {
-                lencoVirtualBankName: lencoRes.data.bankName,
-                lencoAccountName: lencoRes.data.accountName,
-                lencoAccountNumber: lencoRes.data.accountNumber,
-                lencoAccountReference: lencoRes.data.reference,
+                nombaVirtualBankName: nombaRes.data.bankName,
+                nombaAccountName: nombaRes.data.bankAccountName,
+                nombaAccountNumber: nombaRes.data.bankAccountNumber,
+                nombaAccountReference: nombaRes.data.accountRef,
               },
               create: {
                 userId: user.id,
-                lencoVirtualBankName: lencoRes.data.bankName,
-                lencoAccountName: lencoRes.data.accountName,
-                lencoAccountNumber: lencoRes.data.accountNumber,
-                lencoAccountReference: lencoRes.data.reference,
+                nombaVirtualBankName: nombaRes.data.bankName,
+                nombaAccountName: nombaRes.data.bankAccountName,
+                nombaAccountNumber: nombaRes.data.bankAccountNumber,
+                nombaAccountReference: nombaRes.data.accountRef,
               },
             });
           }
+        }
+
+        // Notify user of verification and active deposit vault
+        try {
+          await this.notificationsService.createNotification({
+            userId: user.id,
+            title: 'NinjaKYC Verified & Deposit Account Active!',
+            message: `Your identity has been verified successfully. Your dedicated FundedGiants deposit account is now active.`,
+            category: 'SECURITY' as any,
+            priority: 'HIGH' as any,
+          });
+        } catch (e) {
+          this.logger.warn(`Failed to dispatch KYC notification: ${(e as any).message}`);
         }
       }
     }

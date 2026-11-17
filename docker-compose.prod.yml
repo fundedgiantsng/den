@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fg_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fg_secure_prod_password}
+      POSTGRES_DB: ${POSTGRES_DB:-fundedgiants_prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fg_admin} -d ${POSTGRES_DB:-fundedgiants_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fg-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: fg-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-fg_redis_secret}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-fg_redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fg-network
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: fg-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fg_admin}:${POSTGRES_PASSWORD:-fg_secure_prod_password}@postgres:5432/${POSTGRES_DB:-fundedgiants_prod}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-fg_redis_secret}
+    networks:
+      - fg-network
+
+  trader-web:
+    build:
+      context: .
+      dockerfile: apps/trader-web/Dockerfile
+    container_name: fg-trader-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: https://api.fundedgiants.ng
+    networks:
+      - fg-network
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: fg-admin-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      NEXT_PUBLIC_API_URL: https://api.fundedgiants.ng
+    networks:
+      - fg-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: fg-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      - api
+      - trader-web
+      - admin-web
+    networks:
+      - fg-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: fg-certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - fg-network
+
+networks:
+  fg-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  certbot_certs:
+  certbot_www:

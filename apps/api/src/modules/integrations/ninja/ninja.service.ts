@@ -25,7 +25,8 @@ export class NinjaKycService {
   }
 
   /**
-   * Initiate live Ninja KYC session for customer
+   * Initiate live Ninja Hosted KYC session for customer.
+   * Returns secure hosted verification URL where the customer completes BVN, liveness, and ID upload.
    */
   async createVerificationSession(params: {
     userId: string;
@@ -37,6 +38,10 @@ export class NinjaKycService {
     if (!this.apiKey) {
       throw new Error('NINJA_KYC_API_KEY is not configured in live environment.');
     }
+
+    const redirectUrl =
+      process.env.NINJA_KYC_REDIRECT_URL ||
+      `${process.env.APP_URL || 'https://trader.fundedgiants.ng'}/dashboard/profile?kyc=callback`;
 
     try {
       const response = await fetch(`${this.baseUrl}/verification/sessions`, {
@@ -53,7 +58,12 @@ export class NinjaKycService {
             first_name: params.firstName,
             last_name: params.lastName,
           },
-          callback_url: `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/verification/callback`,
+          callback_url: redirectUrl,
+          redirect_url: redirectUrl,
+          metadata: {
+            userId: params.userId,
+            platform: 'FundedGiants',
+          },
         }),
       });
 
@@ -66,7 +76,17 @@ export class NinjaKycService {
         };
       }
 
-      return data;
+      // Hosted verification URL is in data.url or data.data.url
+      const hostedUrl = data.data?.url || data.url || data.data?.link;
+      return {
+        status: true,
+        message: 'Hosted KYC session created successfully',
+        data: {
+          id: data.data?.id || data.id || `ses_${params.userId}`,
+          url: hostedUrl,
+          reference: `FG-KYC-${params.userId}`,
+        },
+      };
     } catch (err: any) {
       this.logger.error(`Network error reaching Ninja KYC API: ${err.message}`);
       return {

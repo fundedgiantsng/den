@@ -10,15 +10,18 @@ import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { RequestOtpDto, LoginIdentifierType, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, UpdateProfileDto } from './dto/auth.dto';
 import { RobaseService } from '../integrations/robase/robase.service';
+import { NinjaKycService } from '../integrations/ninja/ninja.service';
 
 @Injectable()
 export class AuthService {
   private readonly robaseService: RobaseService;
+  private readonly ninjaKycService: NinjaKycService;
   private readonly otpExpirySeconds = 300; // 5 minutes
   private readonly cooldownSeconds = 45; // 45s between resends
 
   constructor() {
     this.robaseService = new RobaseService();
+    this.ninjaKycService = new NinjaKycService();
   }
 
   private generateSecureCode(): string {
@@ -648,6 +651,39 @@ export class AuthService {
         email: updatedUser.email,
         kycStatus: updatedUser.kycStatus,
       },
+    };
+  }
+
+  /**
+   * Initiate Ninja.ng Hosted KYC Verification Session
+   * Generates a secure hosted verification URL where the user verifies BVN, liveness, and documents.
+   */
+  async initiateHostedKyc(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User profile not found');
+    }
+
+    const sessionRes = await this.ninjaKycService.createVerificationSession({
+      userId: user.id,
+      email: user.email || `${user.username || user.id}@fundedgiants.ng`,
+      phone: user.phone || undefined,
+      firstName: user.firstName || 'Valued',
+      lastName: user.lastName || 'Trader',
+    });
+
+    if (!sessionRes.status || !sessionRes.data?.url) {
+      throw new BadRequestException(
+        sessionRes.message || 'Failed to create Ninja Hosted KYC session. Verify Ninja API credentials in Admin Settings.'
+      );
+    }
+
+    return {
+      success: true,
+      data: sessionRes.data,
     };
   }
 

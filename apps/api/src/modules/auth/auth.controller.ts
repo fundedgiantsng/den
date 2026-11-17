@@ -139,4 +139,18 @@ export class AuthController {
     }
     return this.authService.verifyNinjaBvn({ userId, bvn: dto.bvn });
   }
+
+  @Post('ninja-hosted-kyc')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Initiate Ninja.ng Hosted KYC verification session' })
+  @ApiResponse({ status: 200, description: 'Returns hosted verification URL' })
+  async initiateNinjaHostedKyc(@Req() req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    const user = token ? await this.authService.getSessionUser(token) : null;
+    const userId = user?.id || req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required to start Ninja KYC');
+    }
+    return this.authService.initiateHostedKyc(userId);
+  }
 }

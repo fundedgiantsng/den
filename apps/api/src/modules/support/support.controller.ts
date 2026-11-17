@@ -220,6 +220,17 @@ export class SupportController {
     };
   }
 
+  @Get('admin/chats/:userId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Admin: Get user live chat messages' })
+  async getAdminUserChatMessages(@Param('userId') userId: string) {
+    const messages = await this.supportService.getLiveChatMessages(userId);
+    return {
+      success: true,
+      data: messages,
+    };
+  }
+
   @Post('admin/chats/:userId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin: Send live chat reply to user' })
