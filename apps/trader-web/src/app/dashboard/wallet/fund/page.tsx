@@ -77,7 +77,7 @@ export default function FundWalletPage() {
         </Link>
         <h1 className="text-2xl font-heading font-extrabold text-white">Deposit Funds (NGN)</h1>
         <p className="text-xs text-fgText-secondary">
-          Transfer directly from your Nigerian bank account to your dedicated Nomba virtual account.
+          Transfer directly from your Nigerian bank account to your dedicated FundedGiants deposit vault.
         </p>
       </div>
 
@@ -156,7 +156,7 @@ export default function FundWalletPage() {
           <span>Automatic Webhook Crediting</span>
         </div>
         <p className="leading-relaxed">
-          This account is permanently assigned to you via our Nomba banking integration. Any funds sent from any Nigerian bank app will be verified via real-time webhooks and automatically credited to your Central NGN Wallet within seconds.
+          This account is permanently assigned to you via our dedicated interbank settlement vault. Any funds sent from any Nigerian bank app will be verified via real-time webhooks and automatically credited to your Central NGN Wallet within seconds.
         </p>
         <p className="text-[11px] text-fgText-muted flex items-center gap-1 pt-1">
           <Clock className="w-3.5 h-3.5" />

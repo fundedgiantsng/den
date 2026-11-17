@@ -1,10 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import {
   prisma,
   NotificationCategory,
   NotificationPriority,
+  NotificationChannel,
+  TransactionType,
+  AccountType,
 } from '@fundedgiants/database';
 import { CreateNotificationDto, CreateBroadcastDto } from './dto/notifications.dto';
+
+// Channel Fee Schedule (FundedGiants Platform Policy)
+export const NOTIFICATION_FEES = {
+  IN_APP: 0,
+  EMAIL: 10,
+  SMS: 10,
+  WHATSAPP: 25,
+};
 
 @Injectable()
 export class NotificationsService {
@@ -94,6 +106,233 @@ export class NotificationsService {
   }
 
   /**
+   * Log a billable notification dispatch (Aggregated & Billed at End of Month)
+   * Initial signup and login OTPs are always platform-sponsored (₦0).
+   */
+  async logNotificationDispatch(params: {
+    userId: string;
+    channel: NotificationChannel;
+    action: string;
+    isFreeOtp?: boolean;
+  }) {
+    const { userId, channel, action, isFreeOtp = false } = params;
+    const feeNgn = isFreeOtp ? 0 : (NOTIFICATION_FEES[channel] ?? 0);
+    const billingMonth = new Date().toISOString().slice(0, 7); // e.g. "2026-11"
+
+    return prisma.notificationBillingLog.create({
+      data: {
+        userId,
+        channel,
+        feeNgn,
+        action,
+        isFreeOtp,
+        billingMonth,
+      },
+    });
+  }
+
+  /**
+   * Get or initialize trader notification preferences
+   */
+  async getNotificationPreferences(userId: string) {
+    let prefs = await prisma.notificationPreferences.findUnique({
+      where: { userId },
+    });
+
+    if (!prefs) {
+      prefs = await prisma.notificationPreferences.create({
+        data: {
+          userId,
+          inApp: true,
+          email: true,
+          sms: false,
+          whatsapp: false,
+        },
+      });
+    }
+
+    return prefs;
+  }
+
+  /**
+   * Update trader notification preferences
+   */
+  async updateNotificationPreferences(userId: string, data: Partial<{
+    inApp: boolean;
+    email: boolean;
+    sms: boolean;
+    whatsapp: boolean;
+    tradingAlerts: boolean;
+    financeAlerts: boolean;
+    securityAlerts: boolean;
+    marketingAlerts: boolean;
+  }>) {
+    return prisma.notificationPreferences.upsert({
+      where: { userId },
+      update: data,
+      create: {
+        userId,
+        ...data,
+      },
+    });
+  }
+
+  /**
+   * Accrued notification fees for the current month
+   */
+  async getAccruedMonthlyFees(userId: string) {
+    const billingMonth = new Date().toISOString().slice(0, 7);
+    const logs = await prisma.notificationBillingLog.findMany({
+      where: {
+        userId,
+        billingMonth,
+        isBilled: false,
+      },
+    });
+
+    const totalNgn = logs.reduce((sum, item) => sum + Number(item.feeNgn), 0);
+    return {
+      billingMonth,
+      totalNgn,
+      unbilledDispatchesCount: logs.length,
+      breakdown: {
+        emailCount: logs.filter((l) => l.channel === NotificationChannel.EMAIL).length,
+        smsCount: logs.filter((l) => l.channel === NotificationChannel.SMS).length,
+        whatsappCount: logs.filter((l) => l.channel === NotificationChannel.WHATSAPP).length,
+        inAppCount: logs.filter((l) => l.channel === NotificationChannel.IN_APP).length,
+      },
+    };
+  }
+
+  /**
+   * End-of-Month Notification Fee Settlement Cron
+   * Runs on the 1st of every month at 00:00 UTC
+   * Charges aggregated notification fees to the user's Central Wallet and logs double-entry transaction
+   */
+  @Cron('0 0 1 * *')
+  async handleMonthlyNotificationBillingCron() {
+    this.logger.log('Starting End-of-Month Notification Fee settlement run...');
+    return this.settleMonthlyNotificationFees();
+  }
+
+  async settleMonthlyNotificationFees(targetMonth?: string) {
+    const lastMonth = targetMonth || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 7);
+
+    // Group unbilled logs by user
+    const unbilledLogs = await prisma.notificationBillingLog.findMany({
+      where: {
+        billingMonth: lastMonth,
+        isBilled: false,
+      },
+      include: { user: { include: { wallet: true } } },
+    });
+
+    const userMap = new Map<string, { user: any; logs: any[]; totalFee: number }>();
+    for (const log of unbilledLogs) {
+      if (!userMap.has(log.userId)) {
+        userMap.set(log.userId, { user: log.user, logs: [], totalFee: 0 });
+      }
+      const entry = userMap.get(log.userId)!;
+      entry.logs.push(log);
+      entry.totalFee += Number(log.feeNgn);
+    }
+
+    const settledResults = [];
+
+    for (const [userId, { user, logs, totalFee }] of userMap.entries()) {
+      if (totalFee <= 0) {
+        // Mark free OTPs as billed
+        await prisma.notificationBillingLog.updateMany({
+          where: { id: { in: logs.map((l) => l.id) } },
+          data: { isBilled: true, billedAt: new Date() },
+        });
+        continue;
+      }
+
+      try {
+        if (user.wallet) {
+          // 1. Mark logs as billed
+          await prisma.notificationBillingLog.updateMany({
+            where: { id: { in: logs.map((l) => l.id) } },
+            data: { isBilled: true, billedAt: new Date() },
+          });
+
+          // 2. Post to General Ledger (Double-Entry: Debit Liability, Credit Revenue)
+          try {
+            const liabilityAccount = await prisma.ledgerAccount.findFirst({
+              where: { code: '2000-WALLET-LIABILITY' },
+            });
+            const revenueAccount = await prisma.ledgerAccount.findFirst({
+              where: { code: '4200-NOTIFICATION-REVENUE' },
+            });
+
+            if (liabilityAccount && revenueAccount) {
+              const entry = await prisma.journalEntry.create({
+                data: {
+                  entryNumber: `JE-NOTIF-${Date.now()}`,
+                  transactionType: TransactionType.NOTIFICATION_MONTHLY_FEE,
+                  reference: `NOTIF-${userId.slice(0, 6)}-${lastMonth}`,
+                  narration: `Monthly Notification Settlement (${lastMonth}): ${logs.length} dispatches billed`,
+                },
+              });
+
+              await prisma.journalLine.createMany({
+                data: [
+                  { journalEntryId: entry.id, accountId: liabilityAccount.id, debit: totalFee, credit: 0 },
+                  { journalEntryId: entry.id, accountId: revenueAccount.id, debit: 0, credit: totalFee },
+                ],
+              });
+            }
+          } catch (ledgerErr: any) {
+            this.logger.error(`Error posting notification fee to general ledger: ${ledgerErr.message}`);
+          }
+
+          // 3. Record Audit Event
+          try {
+            await prisma.auditEvent.create({
+              data: {
+                userId,
+                action: 'NOTIFICATION_FEE_SETTLED',
+                resource: 'CustomerWallet',
+                resourceId: user.wallet.id,
+                details: {
+                  billingMonth: lastMonth,
+                  totalFee,
+                  dispatchesCount: logs.length,
+                },
+              },
+            });
+          } catch (auditErr: any) {
+            this.logger.warn(`Failed to log audit event for notification fee: ${auditErr.message}`);
+          }
+
+          // 4. Send notification receipt to user
+          await this.createNotification({
+            userId,
+            title: `Monthly Notification Settlement (${lastMonth})`,
+            message: `A monthly charge of ₦${totalFee.toLocaleString()} has been settled from your Giants Vault for ${logs.length} operational notification dispatches.`,
+            category: NotificationCategory.FINANCE,
+            priority: NotificationPriority.NORMAL,
+            sendEmail: false, // in-app only to avoid billing recursion
+          });
+
+          settledResults.push({ userId, totalFee, dispatches: logs.length, status: 'SETTLED' });
+        }
+      } catch (err: any) {
+        this.logger.error(`Error settling notification fee for user ${userId}: ${err.message}`);
+      }
+    }
+
+    this.logger.log(`Monthly notification settlement finished: ${settledResults.length} users processed.`);
+    return {
+      status: 'SUCCESS',
+      billingMonth: lastMonth,
+      usersProcessed: settledResults.length,
+      details: settledResults,
+    };
+  }
+
+  /**
    * Create an in-app notification and optionally dispatch email
    */
   async createNotification(params: {
@@ -105,6 +344,7 @@ export class NotificationsService {
     actionUrl?: string;
     metadata?: any;
     sendEmail?: boolean;
+    actionType?: string;
   }) {
     const {
       userId,
@@ -115,6 +355,7 @@ export class NotificationsService {
       actionUrl,
       metadata,
       sendEmail = true,
+      actionType = 'SYSTEM_ALERT',
     } = params;
 
     const user = await prisma.user.findUnique({
@@ -126,6 +367,14 @@ export class NotificationsService {
       return null;
     }
 
+    // Always log free in-app notification
+    await this.logNotificationDispatch({
+      userId,
+      channel: NotificationChannel.IN_APP,
+      action: actionType,
+      isFreeOtp: true,
+    });
+
     let emailSent = false;
     if (sendEmail && user.email) {
       emailSent = await this.sendEmail(
@@ -135,6 +384,16 @@ export class NotificationsService {
         message,
         actionUrl
       );
+
+      if (emailSent) {
+        // Log billable email dispatch (to be settled at end of month)
+        await this.logNotificationDispatch({
+          userId,
+          channel: NotificationChannel.EMAIL,
+          action: actionType,
+          isFreeOtp: false,
+        });
+      }
     }
 
     const notification = await prisma.notification.create({

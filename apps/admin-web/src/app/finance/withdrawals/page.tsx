@@ -345,7 +345,7 @@ export default function WithdrawalsLogPage() {
                     Nomba Bank Disbursement Rail
                   </span>
                   <div className="p-3 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-1 text-slate-300 font-mono text-[11px]">
-                    <div>Nomba Ref: <span className="text-white">{selectedWithdrawal.nombaDisbursementRef || selectedWithdrawal.lencoDisbursementRef || 'Pending Manual Approval'}</span></div>
+                    <div>Disbursement Ref: <span className="text-white">{selectedWithdrawal.nombaDisbursementRef || selectedWithdrawal.lencoDisbursementRef || 'Pending Manual Approval'}</span></div>
                     <div>Status: <span className="text-emerald-400 font-bold">{selectedWithdrawal.status}</span></div>
                     <div>Ledger Reference: <span className="text-slate-400">{selectedWithdrawal.reference}</span></div>
                     {selectedWithdrawal.rejectionReason && (

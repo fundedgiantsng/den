@@ -81,7 +81,8 @@ export type TransactionType =
   | 'CARD_ISSUANCE_FEE'
   | 'CARD_CUSTOMIZATION_FEE'
   | 'CARD_MAINTENANCE_FEE'
-  | 'CARD_SPEND';
+  | 'CARD_SPEND'
+  | 'NOTIFICATION_MONTHLY_FEE';
 
 export type TransactionStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 

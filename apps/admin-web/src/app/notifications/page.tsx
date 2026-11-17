@@ -141,7 +141,7 @@ export default function AdminBroadcastNotificationsPage() {
               <span>Compose Broadcast Alert</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Dual-dispatch to in-app bell + Brevo transactional email
+              Dual-dispatch to in-app bell + branded transactional email
             </p>
           </div>
 

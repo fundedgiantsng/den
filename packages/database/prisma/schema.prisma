@@ -79,6 +79,8 @@ model User {
   ticketMessages    TicketMessage[]
   liveChatMessages  LiveChatMessage[]
   notifications     Notification[]
+  notificationPreferences NotificationPreferences?
+  notificationBillingLogs NotificationBillingLog[]
 
   @@index([email])
   @@index([phone])
@@ -165,6 +167,7 @@ enum TransactionType {
   CARD_SPEND_AUTH
   CARD_SPEND_SETTLEMENT
   OTP_DELIVERY_FEE
+  NOTIFICATION_MONTHLY_FEE
   SERVICE_FEE
   ADJUSTMENT
 }
@@ -955,5 +958,48 @@ model BroadcastNotification {
   dispatchedAt    DateTime              @default(now())
   createdAt       DateTime              @default(now())
 }
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+model NotificationPreferences {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  inApp           Boolean  @default(true) // Free
+  email           Boolean  @default(true) // 10 NGN
+  sms             Boolean  @default(false) // 10 NGN
+  whatsapp        Boolean  @default(false) // 25 NGN
+  tradingAlerts   Boolean  @default(true)
+  financeAlerts   Boolean  @default(true)
+  securityAlerts  Boolean  @default(true)
+  marketingAlerts Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationBillingLog {
+  id           String              @id @default(uuid())
+  userId       String
+  channel      NotificationChannel
+  feeNgn       Decimal             @default(0) @db.Decimal(18, 2)
+  action       String              // e.g. "DRAWDOWN_WARNING", "PAYOUT_APPROVED", "LOGIN_OTP"
+  isFreeOtp    Boolean             @default(false)
+  isBilled     Boolean             @default(false)
+  billedAt     DateTime?
+  billingMonth String              // e.g. "2026-11"
+  createdAt    DateTime            @default(now())
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isBilled])
+  @@index([billingMonth])
+}
+
 
 

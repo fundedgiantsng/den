@@ -125,8 +125,8 @@ export default function AdminDashboardPage() {
             {[
               { name: 'PostgreSQL Database', status: data?.systemHealth?.database || 'ONLINE', desc: 'Prisma Client Primary' },
               { name: 'SteraTrader Broker', status: data?.systemHealth?.steraTrader || 'CONNECTED', desc: 'Sub-second event receiver' },
-              { name: 'Nomba Banking API', status: data?.systemHealth?.nombaBanking || data?.systemHealth?.lencoBanking || 'CONNECTED', desc: 'Dedicated NUBAN & Payouts' },
-              { name: 'Ninja KYC Provider', status: data?.systemHealth?.ninjaKyc || 'READY', desc: 'Identity verification bridge' },
+              { name: 'Interbank Settlement Vault', status: data?.systemHealth?.nombaBanking || data?.systemHealth?.lencoBanking || 'CONNECTED', desc: 'Dedicated NUBAN & Payouts' },
+              { name: 'FundedGiants Identity Gateway', status: data?.systemHealth?.ninjaKyc || 'READY', desc: 'Identity verification bridge' },
               { name: 'WooCommerce Bridge', status: data?.systemHealth?.wooCommerceBridge || 'CONNECTED', desc: 'AES-256 HMAC orders sync' },
             ].map((integ) => (
               <div

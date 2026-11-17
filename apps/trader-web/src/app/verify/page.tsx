@@ -224,7 +224,7 @@ function VerifyOtpContent() {
             )}
           </p>
 
-          {/* Robase WhatsApp Retry Option for Phone users */}
+          {/* WhatsApp Retry Option for Phone users */}
           {channel !== 'EMAIL' && (
             <button
               type="button"

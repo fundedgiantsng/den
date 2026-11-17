@@ -23,8 +23,9 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
-import { NinjaKycPromptModal } from '@/components/auth/NinjaKycPromptModal';
+import { FundedGiantsKycModal } from '@/components/auth/FundedGiantsKycModal';
 import { ChooseUsernameModal } from '@/components/auth/ChooseUsernameModal';
+import { CompleteProfileModal } from '@/components/auth/CompleteProfileModal';
 
 interface AccountItem {
   id: string;
@@ -150,10 +151,13 @@ export default function DashboardOverviewPage() {
     username?: string;
     firstName?: string;
     lastName?: string;
+    phone?: string;
+    address?: string;
     email?: string;
     kycStatus?: string;
   } | null>(null);
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
 
   useEffect(() => {
@@ -172,10 +176,17 @@ export default function DashboardOverviewPage() {
       .then((data) => {
         if (data?.user) {
           setCurrentUser(data.user);
-          // If customer has no username (e.g. bought account via WordPress), prompt them to create their username first!
+          // Sequential first-login gating:
+          // 1. Username selection (WordPress buyers or direct signups without username)
           if (!data.user.username) {
             setIsUsernameModalOpen(true);
-          } else if (data.user.kycStatus !== 'APPROVED') {
+          }
+          // 2. Profile completion (WordPress buyers who only have email/name but lack phone/address)
+          else if (!data.user.phone || !data.user.address) {
+            setIsProfileModalOpen(true);
+          }
+          // 3. Non-dismissible FundedGiants KYC Prompt
+          else if (data.user.kycStatus !== 'APPROVED') {
             setIsKycModalOpen(true);
           }
         }
@@ -193,22 +204,47 @@ export default function DashboardOverviewPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-16">
-      {/* Choose Username Modal on First Login (e.g. from WordPress purchase) */}
+      {/* 1. Choose Username Modal on First Login (e.g. from WordPress purchase) */}
       <ChooseUsernameModal
         isOpen={isUsernameModalOpen}
         onSuccess={(claimed) => {
-          setCurrentUser((prev) => (prev ? { ...prev, username: claimed } : null));
+          const updated = currentUser ? { ...currentUser, username: claimed } : null;
+          setCurrentUser(updated);
           setIsUsernameModalOpen(false);
-          if (currentUser?.kycStatus !== 'APPROVED') {
+          // Check if profile details are missing next
+          if (!updated?.phone || !updated?.address) {
+            setIsProfileModalOpen(true);
+          } else if (updated?.kycStatus !== 'APPROVED') {
             setIsKycModalOpen(true);
           }
         }}
       />
 
-      {/* NinjaKYC First Login Modal */}
-      <NinjaKycPromptModal
+      {/* 2. Complete Profile Modal for WordPress purchasers */}
+      <CompleteProfileModal
+        isOpen={isProfileModalOpen}
+        user={{
+          id: currentUser?.id,
+          firstName: currentUser?.firstName,
+          lastName: currentUser?.lastName,
+          phone: (currentUser as any)?.phone,
+          address: (currentUser as any)?.address,
+          email: currentUser?.email,
+        }}
+        onSuccess={(updatedDetails) => {
+          const updated = currentUser ? { ...currentUser, ...updatedDetails } : null;
+          setCurrentUser(updated);
+          setIsProfileModalOpen(false);
+          // Proceed to KYC verification
+          if (updated?.kycStatus !== 'APPROVED') {
+            setIsKycModalOpen(true);
+          }
+        }}
+      />
+
+      {/* 3. Non-dismissible FundedGiants KYC Modal */}
+      <FundedGiantsKycModal
         isOpen={isKycModalOpen}
-        onClose={() => setIsKycModalOpen(false)}
         user={{
           firstName: currentUser?.firstName,
           lastName: currentUser?.lastName,
@@ -227,7 +263,7 @@ export default function DashboardOverviewPage() {
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
             <div>
-              <span className="font-bold text-white">Identity Verification Required:</span> Complete your NinjaKYC BVN verification to activate your dedicated bank deposit account and unlock trading payouts.
+              <span className="font-bold text-white">Identity Verification Required:</span> Complete your FundedGiants KYC verification to activate your dedicated bank deposit vault and unlock trading account payouts.
             </div>
           </div>
           <button
@@ -236,7 +272,7 @@ export default function DashboardOverviewPage() {
             className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 self-start sm:self-auto"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Verify with NinjaKYC</span>
+            <span>Complete KYC</span>
           </button>
         </div>
       )}

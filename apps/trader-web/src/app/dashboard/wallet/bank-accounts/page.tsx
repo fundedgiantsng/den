@@ -336,7 +336,7 @@ export default function BankAccountsPage() {
               <div className="p-3 rounded-xl bg-black/50 border border-white/[0.06] text-[11px] text-fgText-muted flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  The account holder name on this NUBAN will be resolved via Nomba Banking and checked against your verified KYC name.
+                  The account holder name on this NUBAN will be resolved via the Interbank NIBSS Network and validated against your verified KYC name.
                 </span>
               </div>
 

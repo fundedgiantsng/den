@@ -674,7 +674,7 @@ export default function SupportPage() {
               type="text"
               value={searchFaq}
               onChange={(e) => setSearchFaq(e.target.value)}
-              placeholder="Search trading rules, drawdown limits, NinjaKYC, payouts..."
+              placeholder="Search trading rules, drawdown limits, KYC verification, payouts..."
               className="w-full pl-10 pr-4 py-3 bg-bg-surface rounded-xl border border-fgBorder-subtle text-xs text-white placeholder-fgText-muted focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>

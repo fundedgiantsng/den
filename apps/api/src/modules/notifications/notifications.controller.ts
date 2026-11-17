@@ -65,6 +65,42 @@ export class NotificationsController {
     return this.notificationsService.getUnreadCount(user.id);
   }
 
+  @Get('preferences')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get current user notification channel preferences' })
+  async getPreferences(@Req() req: any) {
+    const user = await this.getSessionUserOrThrow(req);
+    const prefs = await this.notificationsService.getNotificationPreferences(user.id);
+    return {
+      success: true,
+      data: prefs,
+    };
+  }
+
+  @Patch('preferences')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update notification channel preferences' })
+  async updatePreferences(@Req() req: any, @Body() body: any) {
+    const user = await this.getSessionUserOrThrow(req);
+    const updated = await this.notificationsService.updateNotificationPreferences(user.id, body);
+    return {
+      success: true,
+      data: updated,
+    };
+  }
+
+  @Get('accrued-fees')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get accrued notification fees for the current month' })
+  async getAccruedFees(@Req() req: any) {
+    const user = await this.getSessionUserOrThrow(req);
+    const accrued = await this.notificationsService.getAccruedMonthlyFees(user.id);
+    return {
+      success: true,
+      data: accrued,
+    };
+  }
+
   @Patch(':id/read')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a notification as read' })
@@ -99,6 +135,17 @@ export class NotificationsController {
     return {
       success: true,
       data: broadcasts,
+    };
+  }
+
+  @Post('admin/settle-monthly-fees')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Admin: Manually trigger monthly notification fee settlement' })
+  async triggerMonthlyFeeSettlement(@Body('targetMonth') targetMonth?: string) {
+    const results = await this.notificationsService.settleMonthlyNotificationFees(targetMonth);
+    return {
+      success: true,
+      data: results,
     };
   }
 }

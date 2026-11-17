@@ -97,7 +97,7 @@ export default function CustomerDetailPage() {
     setModalConfig({
       isOpen: true,
       title: 'Manually Approve KYC Verification',
-      description: 'Overrides Ninja KYC result and marks trader as compliance-verified.',
+      description: 'Overrides KYC verification result and marks trader as compliance-verified.',
       variant: 'primary',
       action: async (reason: string) => {
         await fetchAdminApi(`/admin/customers/${customerId}/status`, {

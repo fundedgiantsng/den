@@ -267,7 +267,7 @@ export default function WithdrawFundsPage() {
           <div className="p-4 rounded-xl bg-bg-surface border border-fgBorder-subtle flex items-start gap-3 text-xs text-fgText-secondary">
             <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              In accordance with security requirements and Nomba banking regulations, withdrawals are permitted only to bank accounts with verified name matching against your Ninja KYC record. All payouts are reviewed by compliance before disbursement.
+              In accordance with security requirements and banking regulations, withdrawals are permitted only to bank accounts with verified name matching against your FundedGiants KYC record. All payouts are reviewed by compliance before interbank disbursement.
             </p>
           </div>
 

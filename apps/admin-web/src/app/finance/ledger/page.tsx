@@ -53,7 +53,7 @@ export default function GeneralLedgerPage() {
               <option value="">All Transactions</option>
               <option value="CHALLENGE_PURCHASE">Challenge Purchase</option>
               <option value="DEPOSIT_NOMBA_VIRTUAL">Nomba Virtual Deposit</option>
-              <option value="DEPOSIT_LENCO_VIRTUAL">Legacy Virtual Deposit</option>
+              <option value="DEPOSIT_LENCO_VIRTUAL">Deposit (Interbank Vault)</option>
               <option value="TRADER_EARNINGS_PAYOUT">Trader Earnings Payout</option>
               <option value="AFFILIATE_COMMISSION_PAYOUT">Affiliate Commission</option>
               <option value="ADJUSTMENT">Ledger Adjustment</option>

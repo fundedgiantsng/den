@@ -17,7 +17,7 @@ import {
   Calendar,
   Sparkles,
 } from 'lucide-react';
-import { NinjaKycPromptModal } from '@/components/auth/NinjaKycPromptModal';
+import { FundedGiantsKycModal } from '@/components/auth/FundedGiantsKycModal';
 
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -121,8 +121,8 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-8 max-w-4xl pb-16">
-      {/* Modal for NinjaKYC */}
-      <NinjaKycPromptModal
+      {/* Modal for FundedGiants KYC */}
+      <FundedGiantsKycModal
         isOpen={isKycModalOpen}
         onClose={() => setIsKycModalOpen(false)}
         user={{
@@ -144,7 +144,7 @@ export default function ProfilePage() {
           <span>Profile & Account Details</span>
         </h1>
         <p className="text-xs sm:text-sm text-fgText-secondary mt-1">
-          Manage your personal details, WhatsApp contact number, address, and NinjaKYC identity verification.
+          Manage your personal details, contact number, address, and FundedGiants KYC identity verification.
         </p>
       </div>
 
@@ -199,7 +199,7 @@ export default function ProfilePage() {
             className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 self-start sm:self-auto"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Complete NinjaKYC</span>
+            <span>Complete KYC</span>
           </button>
         )}
       </div>
@@ -355,16 +355,16 @@ export default function ProfilePage() {
         </form>
       </div>
 
-      {/* NinjaKYC & Identity Verification Section */}
+      {/* FundedGiants KYC & Identity Verification Section */}
       <div className="p-6 sm:p-8 rounded-2xl bg-bg-surface border border-fgBorder-subtle space-y-6">
         <div className="border-b border-fgBorder-subtle pb-4 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
-              <span>NinjaKYC Identity Status</span>
+              <span>FundedGiants KYC Identity Status</span>
             </h3>
             <p className="text-xs text-fgText-secondary mt-0.5">
-              Authoritative KYC verification powering your dedicated deposit account and profit withdrawals.
+              Authoritative KYC verification powering your dedicated deposit vault and profit disbursements.
             </p>
           </div>
           <span
@@ -381,11 +381,11 @@ export default function ProfilePage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 rounded-xl bg-bg-card border border-fgBorder-subtle space-y-1">
             <span className="text-[11px] font-semibold text-fgText-secondary block">
-              KYC Provider
+              Identity System
             </span>
             <span className="text-xs font-bold text-white flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              NinjaKYC Engine
+              FundedGiants Security Gateway
             </span>
           </div>
 
@@ -403,7 +403,7 @@ export default function ProfilePage() {
               Dedicated Vault Account
             </span>
             <span className="text-xs font-bold text-emerald-400">
-              {profile.wallet?.nombaAccountNumber || profile.wallet?.lencoAccountNumber ? 'Active (Nomba Banking)' : 'Pending Verification'}
+              {profile.wallet?.nombaAccountNumber || profile.wallet?.lencoAccountNumber ? 'Active (Interbank Vault)' : 'Pending Verification'}
             </span>
           </div>
         </div>

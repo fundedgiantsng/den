@@ -38,6 +38,12 @@ async function main() {
       currency: 'NGN',
     },
     {
+      code: '4200-NOTIFICATION-REVENUE',
+      name: 'Notification Service Revenue (SMS, WhatsApp, Email)',
+      type: AccountType.REVENUE,
+      currency: 'NGN',
+    },
+    {
       code: '5000-PAYOUT-EXPENSE',
       name: 'Trader Payout Expenses',
       type: AccountType.EXPENSE,

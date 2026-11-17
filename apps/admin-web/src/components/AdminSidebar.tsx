@@ -41,7 +41,7 @@ export function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 min-h-screen bg-[#070a08] border-r border-[#1b3322] flex flex-col justify-between shrink-0">
+    <aside className="hidden md:flex w-64 min-h-screen bg-[#070a08] border-r border-[#1b3322] flex-col justify-between shrink-0">
       <div>
         {/* Brand Header */}
         <div className="h-16 px-6 flex items-center gap-3 border-b border-[#1b3322]">
