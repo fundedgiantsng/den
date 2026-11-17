@@ -1,14 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import NotificationSettingsPage from './notifications/page';
 
-export default function SettingsRedirect() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace('/dashboard/profile');
-  }, [router]);
-
-  return null;
+export default function SettingsPage() {
+  return <NotificationSettingsPage />;
 }

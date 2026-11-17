@@ -6,9 +6,15 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android",
+    "cap:build": "next build && cap sync"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
     "@fundedgiants/shared-types": "workspace:*",
     "@fundedgiants/ui": "workspace:*",
     "clsx": "^2.1.1",

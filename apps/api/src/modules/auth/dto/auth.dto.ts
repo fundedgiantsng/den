@@ -86,6 +86,11 @@ export class SignupDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @ApiPropertyOptional({ example: 'giantstrader', description: 'Affiliate username or referral code' })
+  @IsOptional()
+  @IsString()
+  referredBy?: string;
 }
 
 export class SetUsernameDto {
@@ -134,5 +139,10 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @ApiPropertyOptional({ example: 'giantstrader', description: 'Affiliate username or referral code' })
+  @IsOptional()
+  @IsString()
+  referredBy?: string;
 }
 

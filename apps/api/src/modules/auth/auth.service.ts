@@ -5,6 +5,7 @@ import {
   NotFoundException,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
@@ -18,6 +19,7 @@ export class AuthService {
   private readonly ninjaKycService: NinjaKycService;
   private readonly otpExpirySeconds = 300; // 5 minutes
   private readonly cooldownSeconds = 45; // 45s between resends
+  private readonly logger = new Logger(AuthService.name);
 
   constructor() {
     this.robaseService = new RobaseService();
@@ -366,6 +368,36 @@ export class AuthService {
       });
 
       targetUserId = createdUser.id;
+    }
+
+    // 1b. Bind referring affiliate if referredBy is provided (Direct Signup Attribution)
+    const referralInput = dto.referredBy?.trim();
+    if (referralInput) {
+      try {
+        const aff = await prisma.affiliateProfile.findFirst({
+          where: {
+            OR: [
+              { referralCode: { equals: referralInput, mode: 'insensitive' } },
+              { user: { username: { equals: referralInput.toLowerCase() } } },
+            ],
+          },
+        });
+        if (aff && aff.userId !== targetUserId) {
+          const existingRef = await prisma.affiliateReferral.findUnique({
+            where: { referredUserId: targetUserId },
+          });
+          if (!existingRef) {
+            await prisma.affiliateReferral.create({
+              data: {
+                affiliateProfileId: aff.id,
+                referredUserId: targetUserId,
+              },
+            });
+          }
+        }
+      } catch (affErr: any) {
+        this.logger.warn(`Failed to bind affiliate referral for user ${targetUserId}: ${affErr.message}`);
+      }
     }
 
     // Invalidate any older pending OTPs

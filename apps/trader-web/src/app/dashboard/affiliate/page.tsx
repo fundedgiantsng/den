@@ -43,8 +43,8 @@ export default function AffiliateProgramPage() {
 
   // Affiliate profile data
   const [affiliateData, setAffiliateData] = useState({
-    username: 'johndoe',
-    referralLink: 'https://fundedgiants.ng/ref/johndoe',
+    username: 'giantstrader',
+    referralLink: 'https://fundedgiants.ng/?ref=giantstrader',
     cpaRatePercent: 10,
     payoutRatePercent: 3,
     totalReferrals: 18,
@@ -97,9 +97,10 @@ export default function AffiliateProgramPage() {
         if (res.ok) {
           const data = await res.json();
           if (data?.profile) {
+            const userHandle = data.profile.username || data.profile.referralCode || 'giantstrader';
             setAffiliateData({
-              username: data.profile.username || 'johndoe',
-              referralLink: data.profile.referralLink || `https://fundedgiants.ng/ref/${data.profile.username}`,
+              username: userHandle,
+              referralLink: `https://fundedgiants.ng/?ref=${userHandle}`,
               cpaRatePercent: data.profile.cpaRatePercent || 10,
               payoutRatePercent: data.profile.payoutRatePercent || 3,
               totalReferrals: data.profile.totalReferrals || 0,
@@ -126,7 +127,7 @@ export default function AffiliateProgramPage() {
   };
 
   const handleCopyCodeLink = (code: string, id: string) => {
-    const linkWithCode = `https://fundedgiants.ng/ref/${affiliateData.username}?code=${code}`;
+    const linkWithCode = `https://fundedgiants.ng/?ref=${affiliateData.username}&coupon=${code}`;
     navigator.clipboard.writeText(linkWithCode);
     setCopiedCodeId(id);
     setTimeout(() => setCopiedCodeId(null), 2000);

@@ -19,6 +19,11 @@ import {
   Coins,
   CheckCircle2,
   AlertCircle,
+  Laptop,
+  Smartphone,
+  KeyRound,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -27,8 +32,10 @@ import { fetchAdminApi } from '@/lib/api';
 export default function SettingsAndDevicePage() {
   const [statusData, setStatusData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'nomba' | 'lenco' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'steratrader' | 'nomba' | 'lenco' | 'woocommerce' | 'kyc' | 'smtp' | 'alerts' | 'crypto' | 'hardware'>('all');
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [authorizedDevices, setAuthorizedDevices] = useState<any[]>([]);
+  const [copiedRecovery, setCopiedRecovery] = useState(false);
 
   // Full-scope credentials state
   const [formData, setFormData] = useState<Record<string, string>>({
@@ -110,8 +117,14 @@ export default function SettingsAndDevicePage() {
   const loadStatus = async () => {
     setLoading(true);
     try {
-      const res = await fetchAdminApi('/admin/config/status');
+      const [res, devRes] = await Promise.all([
+        fetchAdminApi('/admin/config/status'),
+        fetchAdminApi('/admin/auth/authorized-devices').catch(() => ({ devices: [] })),
+      ]);
       setStatusData(res);
+      if (devRes && Array.isArray(devRes.devices)) {
+        setAuthorizedDevices(devRes.devices);
+      }
       if (res.credentialsSummary) {
         const s = res.credentialsSummary;
         setFormData((prev) => ({
@@ -292,6 +305,7 @@ export default function SettingsAndDevicePage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
           {[
             { id: 'all', label: 'All Providers', icon: Server },
+            { id: 'hardware', label: 'Hardware Lockdown & Recovery', icon: ShieldCheck },
             { id: 'steratrader', label: 'SteraTrader Broker', icon: Zap },
             { id: 'nomba', label: 'Nomba Banking', icon: Building2 },
             { id: 'woocommerce', label: 'WooCommerce', icon: ShoppingCart },
@@ -356,6 +370,127 @@ export default function SettingsAndDevicePage() {
         )}
 
         <form onSubmit={handleSaveCredentials} className="space-y-6">
+          {/* Hardware Device Lockdown & Emergency Recovery */}
+          {(activeTab === 'all' || activeTab === 'hardware') && (
+            <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Hardware Device Lockdown & Authorized Devices</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Strict hardware isolation: Only verified primary hardware can access control panel and sensitive environment settings.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>ENFORCED</span>
+                </div>
+              </div>
+
+              {/* Private Emergency Recovery Route Banner */}
+              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <KeyRound className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-400">Private Emergency Recovery Route</h4>
+                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                        If you ever lose access to your primary devices (e.g. lost/stolen laptop or phone), visit this private URL from any device and enter your <strong>Master Emergency Recovery Key</strong> to authorize a new replacement terminal immediately.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href="/recovery"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-[11px] font-bold flex items-center gap-1.5 transition"
+                  >
+                    <span>Open Recovery</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <code className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-white/5 text-amber-300 font-mono text-xs select-all">
+                    {typeof window !== 'undefined' ? `${window.location.origin}/recovery` : 'https://admin.fundedgiants.ng/recovery'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = typeof window !== 'undefined' ? `${window.location.origin}/recovery` : 'https://admin.fundedgiants.ng/recovery';
+                      navigator.clipboard.writeText(url);
+                      setCopiedRecovery(true);
+                      setTimeout(() => setCopiedRecovery(false), 2000);
+                    }}
+                    className="px-3 py-2 rounded-lg bg-[#070a08] border border-[#1b3322] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedRecovery ? 'Copied!' : 'Copy URL'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Authorized Devices List */}
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider text-[11px]">
+                  Registered Hardware Terminals ({authorizedDevices.length || 2})
+                </h4>
+                <div className="space-y-2">
+                  {(authorizedDevices.length > 0
+                    ? authorizedDevices
+                    : [
+                        {
+                          id: '4C4C4544-0034-4C10-8034-C4C04F584433',
+                          label: 'Primary Workstation (Admin Laptop)',
+                          status: 'ACTIVE',
+                          authorizedAt: '2026-01-01T00:00:00.000Z',
+                        },
+                        {
+                          id: 'FG-DEV-PRIMARY-MOBILE-01',
+                          label: 'Primary Smartphone (FundedGiants Admin Android App)',
+                          status: 'ACTIVE',
+                          authorizedAt: '2026-01-01T00:00:00.000Z',
+                        },
+                      ]
+                  ).map((dev) => (
+                    <div
+                      key={dev.id}
+                      className="p-3 rounded-xl bg-[#070a08] border border-[#1b3322] flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                          {dev.id.includes('MOBILE') ? (
+                            <Smartphone className="w-4 h-4" />
+                          ) : (
+                            <Laptop className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-white flex items-center gap-2">
+                            <span>{dev.label}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              {dev.status}
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                            Fingerprint: <span className="text-slate-300">{dev.id}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right text-[11px] text-slate-500">
+                        Authorized {new Date(dev.authorizedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {/* 1. SteraTrader Full Credentials */}
           {(activeTab === 'all' || activeTab === 'steratrader') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">

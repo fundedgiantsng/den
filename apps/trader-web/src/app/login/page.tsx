@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -18,8 +18,9 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Mode: LOGIN vs SIGNUP
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
@@ -35,6 +36,7 @@ export default function LoginPage() {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPhone, setSignupPhone] = useState('');
   const [signupAddress, setSignupAddress] = useState('');
+  const [affiliateCode, setAffiliateCode] = useState<string>('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +67,22 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // 60-Day Affiliate Referral Tracking (via ?ref=, ?aff=, ?affiliate=)
+  useEffect(() => {
+    const ref = searchParams?.get('ref') || searchParams?.get('aff') || searchParams?.get('affiliate');
+    if (ref) {
+      const cleanRef = ref.trim().toLowerCase();
+      setAffiliateCode(cleanRef);
+      // Set persistent 60-day cookie (60 * 24 * 60 * 60 = 5,184,000s)
+      document.cookie = `fg_aff_code=${encodeURIComponent(cleanRef)}; path=/; max-age=5184000; SameSite=Lax`;
+    } else if (typeof document !== 'undefined') {
+      const match = document.cookie.match(/(?:^|;\s*)fg_aff_code=([^;]+)/);
+      if (match) {
+        setAffiliateCode(decodeURIComponent(match[1]));
+      }
+    }
+  }, [searchParams]);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -89,9 +107,9 @@ export default function LoginPage() {
         throw new Error(data.message || 'Failed to request verification code');
       }
 
-      router.push(`/verify?identifier=${encodeURIComponent(identifier.trim())}&channel=${data.channel}`);
+      router.push(`/verify?identifier=${encodeURIComponent(identifier.trim())}&channel=${authType}`);
     } catch (err: any) {
-      setError(err.message || 'Something went wrong. Please check your connection.');
+      setError(err.message || 'Error occurred while requesting OTP');
     } finally {
       setLoading(false);
     }
@@ -136,6 +154,7 @@ export default function LoginPage() {
           email: signupEmail.trim(),
           phone: signupPhone.trim(),
           address: signupAddress.trim() || undefined,
+          referredBy: affiliateCode || undefined,
         }),
       });
 
@@ -183,7 +202,7 @@ export default function LoginPage() {
               }}
               className={`flex-1 py-2.5 rounded-lg text-xs font-heading font-extrabold transition-all uppercase tracking-wider ${
                 authMode === 'LOGIN'
-                  ? 'bg-emerald-500 text-black shadow-md'
+                  ? 'bg-emerald-500 text-black shadow-emeraldGlow'
                   : 'text-fgText-secondary hover:text-white'
               }`}
             >
@@ -195,163 +214,154 @@ export default function LoginPage() {
                 setAuthMode('SIGNUP');
                 setError(null);
               }}
-              className={`flex-1 py-2.5 rounded-lg text-xs font-heading font-extrabold transition-all uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2.5 rounded-lg text-xs font-heading font-extrabold transition-all uppercase tracking-wider ${
                 authMode === 'SIGNUP'
-                  ? 'bg-emerald-500 text-black shadow-md'
+                  ? 'bg-emerald-500 text-black shadow-emeraldGlow'
                   : 'text-fgText-secondary hover:text-white'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Create Account</span>
+              Create Account
             </button>
           </div>
 
           <div className="mb-6">
-            <h1 className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight text-white mb-2">
-              {authMode === 'LOGIN' ? (
-                <>Welcome <span className="text-emerald-400">Back</span></>
-              ) : (
-                <>Join <span className="text-emerald-400">FundedGiants</span></>
-              )}
+            <h1 className="text-3xl font-heading font-extrabold tracking-tight text-white mb-2">
+              {authMode === 'LOGIN' ? 'Welcome Back' : 'Join FundedGiants'}
             </h1>
-            <p className="text-xs text-fgText-secondary leading-relaxed">
+            <p className="text-xs text-fgText-secondary">
               {authMode === 'LOGIN'
-                ? 'Enter your email or phone to receive a secure login code.'
-                : 'Register directly to join our affiliate program, manage your wallet, and purchase challenge accounts.'}
+                ? 'Sign in to access your trading accounts, wallet vault, and on-demand payouts.'
+                : 'Create your trader profile to begin your prop trading journey.'}
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
+            <div className="mb-5 p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-xs">
               {error}
             </div>
           )}
 
-          {/* 1. SIGN IN FORM */}
-          {authMode === 'LOGIN' && (
-            <div className="space-y-4">
-              {/* Identifier Type Switcher */}
-              <div className="flex rounded-xl bg-bg-card p-1 border border-fgBorder-subtle text-xs">
+          {/* SIGN IN FORM */}
+          {authMode === 'LOGIN' ? (
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              {/* Auth Type Switcher */}
+              <div className="flex rounded-xl bg-bg-surface p-1 border border-fgBorder-subtle">
                 <button
                   type="button"
                   onClick={() => {
                     setAuthType('EMAIL');
                     setIdentifier('');
-                    setError(null);
                   }}
-                  className={`flex-1 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
                     authType === 'EMAIL'
-                      ? 'bg-white/[0.08] text-emerald-400 border border-emerald-500/30 font-bold'
+                      ? 'bg-bg-card text-emerald-400 border border-fgBorder-emerald shadow-sm'
                       : 'text-fgText-secondary hover:text-white'
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5" />
-                  <span>Email Address</span>
+                  <span>Email Code</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setAuthType('PHONE');
                     setIdentifier('');
-                    setError(null);
                   }}
-                  className={`flex-1 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
                     authType === 'PHONE'
-                      ? 'bg-white/[0.08] text-emerald-400 border border-emerald-500/30 font-bold'
+                      ? 'bg-bg-card text-emerald-400 border border-fgBorder-emerald shadow-sm'
                       : 'text-fgText-secondary hover:text-white'
                   }`}
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>Phone (SMS / WhatsApp)</span>
+                  <span>Phone Number</span>
                 </button>
               </div>
 
-              <form onSubmit={handleLoginSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-fgText-secondary mb-1.5">
-                    {authType === 'EMAIL' ? 'Email Address' : 'Phone Number'}
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-fgText-muted">
-                      {authType === 'EMAIL' ? <Mail className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
-                    </div>
-                    <input
-                      type={authType === 'EMAIL' ? 'email' : 'tel'}
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder={authType === 'EMAIL' ? 'trader@example.com' : '+234 800 000 0000'}
-                      className="w-full pl-10 pr-4 py-3 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-sm placeholder-fgText-muted focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
-                      disabled={loading}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-extrabold rounded-xl flex items-center justify-center gap-2 transition-all shadow-emeraldGlow disabled:opacity-50 text-xs uppercase tracking-wider"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Sending secure OTP...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Get Login Code</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* 2. DIRECT SIGN UP FORM */}
-          {authMode === 'SIGNUP' && (
-            <form onSubmit={handleSignupSubmit} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-fgText-secondary font-medium mb-1">
-                  Choose Username / Trader Handle
+                <label className="block text-fgText-secondary font-medium mb-1 text-xs">
+                  {authType === 'EMAIL' ? 'Email Address' : 'Phone Number'}
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-emerald-400 font-mono font-bold text-xs pointer-events-none">@</span>
+                  {authType === 'EMAIL' ? (
+                    <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
+                  ) : (
+                    <Phone className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
+                  )}
+                  <input
+                    type={authType === 'EMAIL' ? 'email' : 'tel'}
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder={
+                      authType === 'EMAIL'
+                        ? 'trader@fundedgiants.ng'
+                        : '+234 803 123 4567'
+                    }
+                    required
+                    className="w-full pl-9 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-extrabold rounded-xl flex items-center justify-center gap-2 transition-all shadow-emeraldGlow disabled:opacity-50 text-xs uppercase tracking-wider mt-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Sending code...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          ) : (
+            /* CREATE ACCOUNT FORM */
+            <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-fgText-secondary font-medium mb-1 text-xs">
+                  Choose Username (Your Permanent Trader Handle)
+                </label>
+                <div className="relative">
+                  <User className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
                   <input
                     type="text"
                     value={signupUsername}
                     onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    placeholder="favourtrade"
+                    placeholder="e.g. giantstrader"
                     required
                     maxLength={20}
-                    className="w-full pl-8 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500 font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
-                <span className="text-[10px] text-fgText-muted mt-0.5 block">Alphanumeric (3-20 chars). Used for your public handle & affiliate referral tag</span>
+                <p className="mt-1 text-[10px] text-fgText-muted">3-20 characters. Also powers your personal affiliate referral link.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-fgText-secondary font-medium mb-1">First Name</label>
-                  <div className="relative">
-                    <User className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
-                    <input
-                      type="text"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Olugbenga"
-                      required
-                      className="w-full pl-9 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
+                  <label className="block text-fgText-secondary font-medium mb-1 text-xs">First Name</label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Chukwuebuka"
+                    required
+                    className="w-full px-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
-
                 <div>
-                  <label className="block text-fgText-secondary font-medium mb-1">Last Name</label>
+                  <label className="block text-fgText-secondary font-medium mb-1 text-xs">Last Name</label>
                   <input
                     type="text"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Olamide"
+                    placeholder="Okafor"
                     required
                     className="w-full px-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500"
                   />
@@ -359,14 +369,14 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="block text-fgText-secondary font-medium mb-1">Email Address</label>
+                <label className="block text-fgText-secondary font-medium mb-1 text-xs">Email Address</label>
                 <div className="relative">
                   <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
                   <input
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    placeholder="olugbenga@example.com"
+                    placeholder="trader@fundedgiants.ng"
                     required
                     className="w-full pl-9 pr-3 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-white text-xs placeholder-fgText-muted focus:outline-none focus:border-emerald-500 font-mono"
                   />
@@ -374,9 +384,7 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="block text-fgText-secondary font-medium mb-1">
-                  Phone Number (WhatsApp Preferred)
-                </label>
+                <label className="block text-fgText-secondary font-medium mb-1 text-xs">Phone Number</label>
                 <div className="relative">
                   <Phone className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
                   <input
@@ -391,9 +399,7 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="block text-fgText-secondary font-medium mb-1">
-                  Residential Address
-                </label>
+                <label className="block text-fgText-secondary font-medium mb-1 text-xs">Residential Address</label>
                 <div className="relative">
                   <MapPin className="w-3.5 h-3.5 absolute left-3 top-3 text-fgText-muted pointer-events-none" />
                   <input
@@ -426,34 +432,42 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* Feature Badges Row */}
+          {/* Feature Badges Row (Directly Linked in Same Tab to WordPress Sections) */}
           <div className="grid grid-cols-2 gap-3 mt-8 pt-6 border-t border-fgBorder-subtle">
-            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50">
-              <Award className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <a
+              href="https://fundedgiants.ng/#pricing"
+              target="_self"
+              className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all cursor-pointer group"
+            >
+              <Award className="w-4 h-4 text-emerald-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
               <div className="text-[11px] leading-tight">
-                <span className="font-semibold text-white block">Trading Accounts</span>
-                <span className="text-fgText-muted text-[10px]">Rhino 1-Step & Phoenix Instant</span>
+                <span className="font-semibold text-white block group-hover:text-emerald-400 transition-colors">Trading Accounts</span>
+                <span className="text-fgText-muted text-[10px]">Choose Your Path</span>
               </div>
-            </div>
+            </a>
 
-            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50">
-              <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <a
+              href="https://fundedgiants.ng/earn-as-affiliate/"
+              target="_self"
+              className="flex items-center gap-2.5 p-2.5 rounded-xl bg-bg-card/50 border border-fgBorder-subtle/50 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all cursor-pointer group"
+            >
+              <Zap className="w-4 h-4 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
               <div className="text-[11px] leading-tight">
-                <span className="font-semibold text-white block">Affiliate & Partner</span>
-                <span className="text-fgText-muted text-[10px]">Earn up to 10% CPA + 3% Payouts</span>
+                <span className="font-semibold text-white block group-hover:text-amber-400 transition-colors">Affiliate & Partner</span>
+                <span className="text-fgText-muted text-[10px]">Earn up to 10% CPA</span>
               </div>
-            </div>
+            </a>
           </div>
         </div>
 
-        {/* Right Column: Replicated Spotlight Marketing Ad Banner */}
+        {/* Right Column: Spotlight Marketing Ad Banner */}
         <div className="lg:col-span-6 hidden lg:flex items-center justify-center relative">
           <div className="w-full max-w-md rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 sm:p-6 shadow-2xl relative overflow-hidden space-y-4">
             {/* Ambient Glows */}
             <div className="absolute -top-20 -left-20 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Visual Marketing Banner (Full Portrait Height Respected, Clean Scaling) */}
+            {/* Visual Marketing Banner */}
             <div className="relative w-full rounded-xl overflow-hidden bg-black/40 border border-emerald-500/20 flex items-center justify-center group shadow-xl">
               <img
                 src={marketingBanners[bannerIndex].src}
@@ -464,9 +478,8 @@ export default function LoginPage() {
 
             <a
               href="https://fundedgiants.ng/get-funded"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full py-3 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5"
+              target="_self"
+              className="w-full py-3 px-4 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span>Get Funded</span>
               <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
@@ -485,5 +498,19 @@ export default function LoginPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-bg-base flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

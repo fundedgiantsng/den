@@ -16,6 +16,9 @@ import {
   Calendar,
   DollarSign,
   Info,
+  Check,
+  X,
+  Zap,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -166,7 +169,7 @@ export default function NotificationSettingsPage() {
           <span>Notification & Alert Settings</span>
         </h1>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-          Customize your delivery channels and alert triggers. Operational notifications accrue monthly and are charged to your Giants Vault.
+          Customize delivery channels and configure alert triggers. Operational notifications accrue monthly and are charged to your Giants Vault.
         </p>
       </div>
 
@@ -245,189 +248,275 @@ export default function NotificationSettingsPage() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Delivery Channels */}
-        <div className="p-6 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-4 shadow-xl">
+        {/* Table 1: Delivery Channels & Fee Schedule */}
+        <div className="p-6 rounded-2xl bg-[#09120e] border border-white/[0.08] shadow-xl overflow-hidden space-y-4">
+          <div className="border-b border-white/[0.08] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-white">Delivery Channels & Fee Schedule</h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Toggle channels to activate operational dispatches. Fees are billed at the end of each calendar month.
+              </p>
+            </div>
+            <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 self-start sm:self-auto font-semibold">
+              Month-End Billing
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-white/[0.08] text-neutral-400 uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-3">Channel</th>
+                  <th className="py-3 px-3">Unit Cost</th>
+                  <th className="py-3 px-3">Billing Schedule</th>
+                  <th className="py-3 px-3">Speed</th>
+                  <th className="py-3 px-3 text-right">Status / Toggle</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.05]">
+                {/* In-App */}
+                <tr className="hover:bg-white/[0.02] transition">
+                  <td className="py-3.5 px-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-white block">In-App Alerts</span>
+                        <span className="text-[10px] text-neutral-400">Trader dashboard bell & drawer</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-3">
+                    <span className="font-mono font-bold text-emerald-400">₦0.00</span>
+                  </td>
+                  <td className="py-3.5 px-3 text-neutral-300">Always Free</td>
+                  <td className="py-3.5 px-3 text-neutral-400">Instant</td>
+                  <td className="py-3.5 px-3 text-right">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+                      <Check className="w-3 h-3" />
+                      Always Active
+                    </span>
+                  </td>
+                </tr>
+
+                {/* Email */}
+                <tr className="hover:bg-white/[0.02] transition">
+                  <td className="py-3.5 px-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-white block">Branded Email</span>
+                        <span className="text-[10px] text-neutral-400">Pass certificates, receipts & reports</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-3">
+                    <span className="font-mono font-bold text-white">₦10.00</span>
+                    <span className="text-[10px] text-neutral-500 block">per dispatch</span>
+                  </td>
+                  <td className="py-3.5 px-3 text-neutral-300">Billed 1st of month to Vault</td>
+                  <td className="py-3.5 px-3 text-neutral-400">High Priority</td>
+                  <td className="py-3.5 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setPrefs({ ...prefs, email: !prefs.email })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        prefs.email ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                          prefs.email ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                        }`}
+                      />
+                    </button>
+                  </td>
+                </tr>
+
+                {/* SMS */}
+                <tr className="hover:bg-white/[0.02] transition">
+                  <td className="py-3.5 px-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
+                        <Smartphone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-white block">Direct SMS</span>
+                        <span className="text-[10px] text-neutral-400">Urgent drawdown warnings & alerts</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-3">
+                    <span className="font-mono font-bold text-white">₦10.00</span>
+                    <span className="text-[10px] text-neutral-500 block">per dispatch</span>
+                  </td>
+                  <td className="py-3.5 px-3 text-neutral-300">Billed 1st of month to Vault</td>
+                  <td className="py-3.5 px-3 text-neutral-400">Immediate Telco</td>
+                  <td className="py-3.5 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setPrefs({ ...prefs, sms: !prefs.sms })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        prefs.sms ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                          prefs.sms ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                        }`}
+                      />
+                    </button>
+                  </td>
+                </tr>
+
+                {/* WhatsApp */}
+                <tr className="hover:bg-white/[0.02] transition">
+                  <td className="py-3.5 px-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-white block">WhatsApp Direct</span>
+                        <span className="text-[10px] text-neutral-400">Interactive bot & instant alerts</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-3">
+                    <span className="font-mono font-bold text-white">₦25.00</span>
+                    <span className="text-[10px] text-neutral-500 block">per dispatch</span>
+                  </td>
+                  <td className="py-3.5 px-3 text-neutral-300">Billed 1st of month to Vault</td>
+                  <td className="py-3.5 px-3 text-neutral-400">Instant WhatsApp</td>
+                  <td className="py-3.5 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setPrefs({ ...prefs, whatsapp: !prefs.whatsapp })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        prefs.whatsapp ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                          prefs.whatsapp ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                        }`}
+                      />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Table 2: Notification Event Triggers */}
+        <div className="p-6 rounded-2xl bg-[#09120e] border border-white/[0.08] shadow-xl space-y-4">
           <div className="border-b border-white/[0.08] pb-3">
-            <h3 className="text-base font-bold text-white">Delivery Channels</h3>
+            <h3 className="text-base font-bold text-white">Operational Event Triggers</h3>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Select where you want to receive operational alerts and account notifications.
+              Specify which system events dispatch notifications to your enabled channels.
             </p>
           </div>
 
           <div className="space-y-3">
-            {/* In-App */}
+            {/* Trigger 1: Trading & Risk */}
             <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">In-App Notifications</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                      Free (Default)
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Real-time alerts in your trader dashboard and mobile drawer.
-                  </p>
-                </div>
+              <div className="max-w-xl">
+                <span className="text-xs font-bold text-white block">Trading & Risk Engine Alerts</span>
+                <span className="text-[11px] text-neutral-400 leading-relaxed block mt-0.5">
+                  Critical 3% equity drawdown warning, 4% equity daily breach, max static trailing breach, and SteraTrader account lockouts.
+                </span>
               </div>
-              <input
-                type="checkbox"
-                checked={prefs.inApp}
-                disabled
-                className="w-4 h-4 accent-emerald-500 rounded cursor-not-allowed opacity-80"
-              />
+              <button
+                type="button"
+                onClick={() => setPrefs({ ...prefs, tradingAlerts: !prefs.tradingAlerts })}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  prefs.tradingAlerts ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                    prefs.tradingAlerts ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
             </div>
 
-            {/* Email */}
-            <label className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.15] cursor-pointer transition">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400">
-                  <Mail className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">Branded Email</span>
-                    <span className="text-[11px] text-neutral-400">₦10 / dispatch</span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Official challenge passes, credentials, breach warnings, and receipts.
-                  </p>
-                </div>
+            {/* Trigger 2: Finance & Wallet */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <div className="max-w-xl">
+                <span className="text-xs font-bold text-white block">Finance & Vault Transactions</span>
+                <span className="text-[11px] text-neutral-400 leading-relaxed block mt-0.5">
+                  Inward virtual account deposits, surplus overpayment adjustments, profit payout approvals, and bank transfer credits.
+                </span>
               </div>
-              <input
-                type="checkbox"
-                checked={prefs.email}
-                onChange={(e) => setPrefs({ ...prefs, email: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
+              <button
+                type="button"
+                onClick={() => setPrefs({ ...prefs, financeAlerts: !prefs.financeAlerts })}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  prefs.financeAlerts ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                    prefs.financeAlerts ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
+            </div>
 
-            {/* SMS */}
-            <label className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.15] cursor-pointer transition">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400">
-                  <Smartphone className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">Direct SMS</span>
-                    <span className="text-[11px] text-neutral-400">₦10 / dispatch</span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Critical phone alerts for daily drawdown limits and urgent payouts.
-                  </p>
-                </div>
+            {/* Trigger 3: Security & Identity */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <div className="max-w-xl">
+                <span className="text-xs font-bold text-white block">Security & Identity Verifications</span>
+                <span className="text-[11px] text-neutral-400 leading-relaxed block mt-0.5">
+                  FundedGiants KYC approvals, new device authorizations, and session security updates.
+                </span>
               </div>
-              <input
-                type="checkbox"
-                checked={prefs.sms}
-                onChange={(e) => setPrefs({ ...prefs, sms: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
+              <button
+                type="button"
+                onClick={() => setPrefs({ ...prefs, securityAlerts: !prefs.securityAlerts })}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  prefs.securityAlerts ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                    prefs.securityAlerts ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
+            </div>
 
-            {/* WhatsApp */}
-            <label className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.15] cursor-pointer transition">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-                  <MessageSquare className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">WhatsApp Direct</span>
-                    <span className="text-[11px] text-neutral-400">₦25 / dispatch</span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Instant interactive alerts directly to your registered WhatsApp number.
-                  </p>
-                </div>
+            {/* Trigger 4: Platform Announcements */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <div className="max-w-xl">
+                <span className="text-xs font-bold text-white block">Platform Updates & Announcements</span>
+                <span className="text-[11px] text-neutral-400 leading-relaxed block mt-0.5">
+                  Official system maintenance schedules, new challenge tiers, and holiday trading hours.
+                </span>
               </div>
-              <input
-                type="checkbox"
-                checked={prefs.whatsapp}
-                onChange={(e) => setPrefs({ ...prefs, whatsapp: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
+              <button
+                type="button"
+                onClick={() => setPrefs({ ...prefs, marketingAlerts: !prefs.marketingAlerts })}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  prefs.marketingAlerts ? 'bg-emerald-500' : 'bg-neutral-800 border border-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                    prefs.marketingAlerts ? 'translate-x-6' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Alert Categories */}
-        <div className="p-6 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-4 shadow-xl">
-          <div className="border-b border-white/[0.08] pb-3">
-            <h3 className="text-base font-bold text-white">Notification Categories</h3>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Control the specific events that trigger notifications.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <label className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] cursor-pointer">
-              <div>
-                <span className="text-xs font-semibold text-white block">Trading & Risk Alerts</span>
-                <span className="text-[11px] text-neutral-400">
-                  3% drawdown warnings, 4% equity breaches, Phase pass certifications, account locking.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={prefs.tradingAlerts}
-                onChange={(e) => setPrefs({ ...prefs, tradingAlerts: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] cursor-pointer">
-              <div>
-                <span className="text-xs font-semibold text-white block">Financial & Wallet Alerts</span>
-                <span className="text-[11px] text-neutral-400">
-                  Inward deposits, overage credits, profit payout approvals, and bank disbursements.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={prefs.financeAlerts}
-                onChange={(e) => setPrefs({ ...prefs, financeAlerts: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] cursor-pointer">
-              <div>
-                <span className="text-xs font-semibold text-white block">Security & Authentication</span>
-                <span className="text-[11px] text-neutral-400">
-                  Password changes, new device logins, and session notifications.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={prefs.securityAlerts}
-                onChange={(e) => setPrefs({ ...prefs, securityAlerts: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] cursor-pointer">
-              <div>
-                <span className="text-xs font-semibold text-white block">Platform News & Competitions</span>
-                <span className="text-[11px] text-neutral-400">
-                  Prop trading challenges, trading leaderboards, and promotion announcements.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={prefs.marketingAlerts}
-                onChange={(e) => setPrefs({ ...prefs, marketingAlerts: e.target.checked })}
-                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Submit Button */}
+        {/* Submit CTA */}
         <div className="flex justify-end pt-2">
           <button
             type="submit"

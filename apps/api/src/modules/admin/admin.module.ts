@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AdminConfigController } from './admin-config.controller';
+import { AdminRecoveryController } from './admin-recovery.controller';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
@@ -9,7 +10,7 @@ import { WooCommerceService } from '../integrations/woocommerce/woocommerce.serv
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Module({
-  controllers: [AdminController, AdminConfigController],
+  controllers: [AdminController, AdminConfigController, AdminRecoveryController],
   providers: [AdminService, SteraTraderService, NombaService, LencoService, WooCommerceService, NotificationsService],
   exports: [AdminService],
 })

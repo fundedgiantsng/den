@@ -129,7 +129,6 @@ export default function DashboardOverviewPage() {
 
   // Affiliate link copy
   const [copiedLink, setCopiedLink] = useState(false);
-  const affiliateLink = 'https://fundedgiants.ng/?ref=giantstrader';
 
   // Marketing banners rotated every hour
   const marketingBanners = [
@@ -156,6 +155,8 @@ export default function DashboardOverviewPage() {
     email?: string;
     kycStatus?: string;
   } | null>(null);
+
+  const affiliateLink = `https://fundedgiants.ng/?ref=${currentUser?.username || 'giantstrader'}`;
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
@@ -539,28 +540,15 @@ export default function DashboardOverviewPage() {
         {/* RIGHT / SIDEBAR COLUMN (lg:col-span-4)                  */}
         {/* ======================================================== */}
         <div className="lg:col-span-4 space-y-5">
-          {/* 1. Top Ad Placement: Explore Trading Accounts */}
-          <div className="rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
-            {/* Dynamic Marketing Banner (Rotates Hourly) */}
-            {/* Visual Marketing Banner (Full Portrait Height Respected, Clean Scaling) */}
+          {/* 1. Desktop Only Ad Placement (Hidden on Mobile/PWA to avoid UI clutter) */}
+          <div className="hidden lg:block rounded-2xl bg-gradient-to-br from-[#0e1f17] via-[#091510] to-[#040806] border border-emerald-500/25 p-5 shadow-2xl relative overflow-hidden space-y-4">
+            {/* Visual Marketing Banner */}
             <div className="relative w-full rounded-xl overflow-hidden bg-black/40 border border-emerald-500/20 flex items-center justify-center group shadow-xl">
               <img
                 src={marketingBanners[bannerIndex].src}
                 alt={marketingBanners[bannerIndex].alt}
                 className="w-full h-auto object-contain rounded-xl transition-transform duration-500 group-hover:scale-[1.01]"
               />
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] font-heading font-extrabold text-emerald-400 tracking-wider uppercase block">
-                FundedGiants Spotlight
-              </span>
-              <h4 className="text-base sm:text-lg font-heading font-extrabold text-white tracking-tight leading-snug">
-                Get Funded with FundedGiants
-              </h4>
-              <p className="text-sm font-bold text-[#00f59b] tracking-wide">
-                Get Funded, Trade, Earn and Grow
-              </p>
             </div>
 
             <Link
