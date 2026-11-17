@@ -568,13 +568,15 @@ export default function SettingsAndDevicePage() {
                     <Zap className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">SteraTrader Bridge & Broker API</h3>
-                    <p className="text-[11px] text-slate-400">Live trading account provisioning, order monitoring, and kill-switch execution</p>
+                    <h3 className="text-sm font-bold text-white">SteraTrader CRM v1 Partner API (Velton Markets)</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Live partner account provisioning, NGN kobo minor units, group promotions, position monitoring & kill-switch execution
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                    {statusData?.credentialsSummary?.steraTrader?.hasApiKey ? 'CREDENTIALS CONFIGURED' : 'PENDING CREDENTIALS'}
+                    {statusData?.credentialsSummary?.steraTrader?.hasApiKey ? 'BEARER TOKEN CONFIGURED' : 'PENDING API KEY'}
                   </span>
                   <button
                     type="button"
@@ -583,21 +585,50 @@ export default function SettingsAndDevicePage() {
                     className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
                   >
                     {testingProvider === 'steratrader' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                    <span>Test Ping</span>
+                    <span>Test Connection</span>
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {renderInputField('REST API Host / Base URL', 'steraTraderApiUrl', 'https://api.steratrader.com')}
-                {renderInputField('API Access Key / Bearer Token', 'steraTraderApiKey', 'Leave blank to retain current key', true, undefined, statusData?.credentialsSummary?.steraTrader?.apiKeyMasked)}
-                {renderInputField('Client ID (OAuth)', 'steraTraderClientId', 'Client ID')}
-                {renderInputField('Client Secret', 'steraTraderClientSecret', 'Leave blank to retain current secret', true)}
-                {renderInputField('Server Name', 'steraTraderServerName', 'FundedGiants-Live')}
-                {renderInputField('Default Account Group', 'steraTraderAccountGroup', 'FG-Standard')}
-                {renderInputField('Manager Login ID', 'steraTraderManagerLogin', 'Manager ID for balance inject')}
-                {renderInputField('Manager Password', 'steraTraderManagerPassword', 'Manager password', true)}
-                {renderInputField('Webhook Signature Secret', 'steraTraderWebhookSecret', 'HMAC SHA256 Secret', true)}
+              {/* Partner Book Configuration Banner */}
+              <div className="p-4 rounded-xl bg-[#070a08] border border-[#1b3322] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                    Active Partner Account Groups (Velton Markets Demo Book)
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">Denomination: NGN (Kobo)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-emerald-400 font-bold">fg-rr-eval</span>
+                      <span className="text-[10px] text-slate-500 font-mono">ID: 32</span>
+                    </div>
+                    <div className="text-white font-medium">Rhino Rush Evaluation</div>
+                    <div className="text-[11px] text-slate-400">1:100 Leverage • 1-Step Challenge</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[#00f59b] font-bold">fg-rr-funded</span>
+                      <span className="text-[10px] text-slate-500 font-mono">ID: 33</span>
+                    </div>
+                    <div className="text-white font-medium">Rhino Rush Funded</div>
+                    <div className="text-[11px] text-slate-400">1:100 Leverage • Funded Phase</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-amber-400 font-bold">fg-pr-funded</span>
+                      <span className="text-[10px] text-slate-500 font-mono">ID: 34</span>
+                    </div>
+                    <div className="text-white font-medium">Phoenix Rise Funded</div>
+                    <div className="text-[11px] text-slate-400">1:30 Leverage • Instant Funding</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderInputField('CRM v1 Base URL', 'steraTraderApiUrl', 'https://api.steratrader.com/crm/v1', false, 'Official partner endpoint for Velton Markets')}
+                {renderInputField('API Key (Bearer Token)', 'steraTraderApiKey', 'Leave blank to retain current key', true, 'Sent as Authorization: Bearer <token>', statusData?.credentialsSummary?.steraTrader?.hasApiKey ? 'Configured' : null)}
               </div>
             </div>
           )}

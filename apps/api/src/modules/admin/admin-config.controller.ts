@@ -10,6 +10,7 @@
 } from '@nestjs/common';
 import { DeviceBindingGuard } from './device-binding.guard';
 import { NombaService } from '../integrations/nomba/nomba.service';
+import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -79,7 +80,10 @@ export class AdminConfigController {
   private readonly logger = new Logger(AdminConfigController.name);
   private readonly envPath = path.resolve(process.cwd(), '../../.env');
 
-  constructor(private readonly nombaService: NombaService) {}
+  constructor(
+    private readonly nombaService: NombaService,
+    private readonly steraTraderService: SteraTraderService,
+  ) {}
 
   private maskValue(val?: string): string | null {
     if (!val || val.trim().length === 0) return null;
@@ -106,15 +110,11 @@ export class AdminConfigController {
       envExists: fs.existsSync(this.envPath),
       credentialsSummary: {
         steraTrader: {
-          apiUrl: parseEnvVal('STERATRADER_API_URL') || 'https://api.steratrader.com',
+          apiUrl: parseEnvVal('STERATRADER_API_URL') || 'https://api.steratrader.com/crm/v1',
           hasApiKey: !!parseEnvVal('STERATRADER_API_KEY'),
-          clientId: parseEnvVal('STERATRADER_CLIENT_ID') || '',
-          hasClientSecret: !!parseEnvVal('STERATRADER_CLIENT_SECRET'),
-          serverName: parseEnvVal('STERATRADER_SERVER_NAME') || 'SteraTrader-Live',
-          accountGroup: parseEnvVal('STERATRADER_ACCOUNT_GROUP') || 'FG-Standard',
-          managerLogin: parseEnvVal('STERATRADER_MANAGER_LOGIN') || '',
-          hasManagerPassword: !!parseEnvVal('STERATRADER_MANAGER_PASSWORD'),
-          hasWebhookSecret: !!parseEnvVal('STERATRADER_WEBHOOK_SECRET'),
+          serverName: parseEnvVal('STERATRADER_SERVER_NAME') || 'Velton-Demo',
+          partnerGroups: 'fg-rr-eval (32), fg-rr-funded (33), fg-pr-funded (34)',
+          currency: 'NGN (Kobo minor units)',
         },
         nomba: {
           baseUrl: 'https://api.nomba.com',
@@ -271,9 +271,13 @@ export class AdminConfigController {
         details = testRes.message;
         break;
       }
-      case 'steratrader':
-        details = 'SteraTrader Gateway reachable. Account group FG-Standard mapped.';
+      case 'steratrader': {
+        const testRes = await this.steraTraderService.testConnection();
+        status = testRes.success ? 'CONNECTED' : 'DISCONNECTED';
+        details = testRes.message;
+        latencyMs = testRes.latencyMs;
         break;
+      }
       case 'woocommerce':
         details = 'WooCommerce REST API handshake successful.';
         break;

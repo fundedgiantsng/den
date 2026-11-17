@@ -1105,7 +1105,58 @@ export class AdminService {
         return w;
       });
 
-      // Dispatch real-time in-app notification & Brevo email to trader
+      // Automatic SteraTrader Funded Account Balance Reset upon Payout Approval
+      try {
+        const fundedAccounts = await prisma.tradingAccount.findMany({
+          where: {
+            userId: withdrawal.wallet.userId,
+            status: 'ACTIVE',
+            OR: [
+              { groupSlug: 'fg-rr-funded' },
+              { groupSlug: 'fg-pr-funded' },
+              { challenge: { type: 'PHOENIX_RISE_INSTANT' } },
+              { challenge: { status: 'PASSED' } },
+              { challenge: { status: 'COMPLETED' } },
+            ],
+          },
+          include: { challenge: true },
+        });
+
+        for (const fAcc of fundedAccounts) {
+          const initBal = Number(fAcc.initialBalance);
+          // Reset balance back to initial capital on SteraTrader
+          await this.steraTraderService.resetAccountBalanceToInitial(fAcc.accountNumber, initBal);
+
+          // Update local database balance & equity
+          await prisma.tradingAccount.update({
+            where: { id: fAcc.id },
+            data: {
+              currentBalance: initBal,
+              currentEquity: initBal,
+              totalProfit: 0,
+            },
+          });
+
+          // Dispatch payout confirmation and account reset email
+          const trader = await prisma.user.findUnique({ where: { id: withdrawal.wallet.userId } });
+          if (trader?.email) {
+            await this.notificationsService.sendAccountResetWithdrawalEmail({
+              toEmail: trader.email,
+              toName: `${trader.firstName || ''} ${trader.lastName || ''}`.trim() || 'Trader',
+              accountNumber: fAcc.accountNumber,
+              withdrawnProfitNgn: Number(withdrawal.netAmount),
+              resetCapitalNgn: initBal,
+              destinationBank: withdrawal.bankAccount.bankName,
+              destinationAccount: withdrawal.bankAccount.accountNumber,
+              reference: withdrawal.reference,
+            });
+          }
+        }
+      } catch (resetErr: any) {
+        this.logger.error(`Error resetting SteraTrader funded account after withdrawal: ${resetErr.message}`);
+      }
+
+      // Dispatch real-time in-app notification & email to trader
       await this.notificationsService.createNotification({
         userId: withdrawal.wallet.userId,
         title: 'Payout Disbursed to Your Bank Account',

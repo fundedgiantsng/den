@@ -4,6 +4,7 @@ import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { CertificatesService } from '../certificates/certificates.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface SteraTraderAccountMetrics {
   accountNumber: string;
@@ -65,7 +66,8 @@ export class RiskEngineService {
   constructor(
     private readonly steraTraderService: SteraTraderService,
     private readonly certificatesService: CertificatesService,
-    private readonly woocommerceService: WooCommerceService
+    private readonly woocommerceService: WooCommerceService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -532,6 +534,19 @@ export class RiskEngineService {
       this.logger.warn(
         `[DUAL NOTIFICATION] Alert sent to Admin (${adminEmail}): CRITICAL Rule Breach on ${account.accountNumber} (${traderName}). Liquidated & closed on SteraTrader.`
       );
+
+      // 3. Dispatch formal breach email to trader
+      if (traderEmail) {
+        await this.notificationsService.sendBreachTerminationEmail({
+          toEmail: traderEmail,
+          toName: traderName,
+          accountNumber: account.accountNumber,
+          reason,
+          eventType,
+          snapshotBalance,
+          snapshotEquity,
+        });
+      }
     } catch (err: any) {
       this.logger.error(`Failed to dispatch breach notifications: ${err.message}`);
     }
@@ -539,7 +554,7 @@ export class RiskEngineService {
 
   /**
    * Action upon reaching passing profit target:
-   * Promotes account to Funded stage on SteraTrader and database.
+   * Promotes account to Funded stage on SteraTrader (group fg-rr-funded) and database.
    */
   private async handlePromotion(account: any, profit: number, equity: number) {
     this.logger.log(`TARGET REACHED on account ${account.accountNumber}: Net Profit ₦${profit.toLocaleString()}`);
@@ -563,12 +578,18 @@ export class RiskEngineService {
           passedAt: new Date(),
         },
       }),
+      prisma.tradingAccount.update({
+        where: { id: account.id },
+        data: {
+          groupSlug: 'fg-rr-funded',
+        },
+      }),
     ]);
 
-    // Promote on SteraTrader broker subset
-    await this.steraTraderService.promoteAccount(account.accountNumber);
+    // Move trader to funded group fg-rr-funded on SteraTrader
+    await this.steraTraderService.moveAccountGroup(account.accountNumber, 'fg-rr-funded');
 
-    // Stamped Completion Certificate Generation
+    // Stamped Completion Certificate Generation & Trader Notification
     try {
       const challengeWithUser = await prisma.customerChallenge.findUnique({
         where: { id: account.challengeId },
@@ -577,13 +598,25 @@ export class RiskEngineService {
       const traderName = challengeWithUser?.user
         ? `${challengeWithUser.user.firstName || 'John'} ${challengeWithUser.user.lastName || 'Doe'}`.trim()
         : 'John Doe';
+      const traderEmail = challengeWithUser?.user?.email;
 
       await this.certificatesService.generateCompletionCertificate({
         recipientName: traderName,
         accountNumber: account.accountNumber,
       });
+
+      if (traderEmail) {
+        await this.notificationsService.sendAccountUpgradePassedEmail({
+          toEmail: traderEmail,
+          toName: traderName,
+          accountNumber: account.accountNumber,
+          planTitle: 'Rhino Rush 1-Step Challenge',
+          capitalNgn: Number(account.initialBalance),
+          newGroup: 'fg-rr-funded',
+        });
+      }
     } catch (err: any) {
-      this.logger.error(`Error auto-generating completion certificate: ${err.message}`);
+      this.logger.error(`Error auto-generating completion certificate or promotion email: ${err.message}`);
     }
   }
 

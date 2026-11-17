@@ -532,6 +532,10 @@ model TradingAccount {
   userId                 String
   challengeId            String               @unique
   platform               String               @default("SteraTrader")
+  server                 String?              @default("Velton-Demo")
+  groupSlug              String?              // fg-rr-eval | fg-rr-funded | fg-pr-funded
+  masterPassword         String?              // SteraTrader master trading password
+  investorPassword       String?              // SteraTrader read-only investor password
   status                 TradingAccountStatus @default(PROVISIONING)
   initialBalance         Decimal              @db.Decimal(18, 2)
   currentBalance         Decimal              @db.Decimal(18, 2)

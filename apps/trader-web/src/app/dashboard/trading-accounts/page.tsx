@@ -18,6 +18,11 @@ import {
   Wallet,
   Coins,
   Check,
+  Key,
+  Copy,
+  Eye,
+  EyeOff,
+  Terminal,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -58,21 +63,29 @@ export default function TradingAccountsPage() {
   ];
 
   const [bannerIndex, setBannerIndex] = useState(0);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    const updateBanner = () => {
-      const currentHour = new Date().getHours();
-      setBannerIndex(currentHour % marketingBanners.length);
-    };
-    updateBanner();
-    const interval = setInterval(updateBanner, 60000);
-    return () => clearInterval(interval);
-  }, [marketingBanners.length]);
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(id);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
-  const accounts: AccountItem[] = [
+  const togglePassword = (id: string) => {
+    setShowPasswordMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const defaultAccounts: any[] = [
     {
-      id: 'FG-48291',
+      id: '1092841',
       loginNumber: '1092841',
+      server: 'Velton-Demo',
+      groupSlug: 'fg-rr-funded',
+      masterPassword: '••••••••',
+      investorPassword: '••••••••',
       planName: 'Rhino Rush',
       stage: 'Funded',
       status: 'Active',
@@ -89,8 +102,12 @@ export default function TradingAccountsPage() {
       leverage: '1:100',
     },
     {
-      id: 'FG-51732',
+      id: '1094519',
       loginNumber: '1094519',
+      server: 'Velton-Demo',
+      groupSlug: 'fg-rr-eval',
+      masterPassword: '••••••••',
+      investorPassword: '••••••••',
       planName: 'Rhino Rush',
       stage: 'Challenge',
       status: 'Active',
@@ -107,8 +124,12 @@ export default function TradingAccountsPage() {
       leverage: '1:100',
     },
     {
-      id: 'FG-60194',
+      id: '1098204',
       loginNumber: '1098204',
+      server: 'Velton-Demo',
+      groupSlug: 'fg-pr-funded',
+      masterPassword: '••••••••',
+      investorPassword: '••••••••',
       planName: 'Phoenix Rise',
       stage: 'Funded',
       status: 'Active',
@@ -125,6 +146,53 @@ export default function TradingAccountsPage() {
       leverage: '1:30',
     },
   ];
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch('http://localhost:4000/api/v1/challenges/my-accounts', {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setAccounts(
+              data.map((item: any) => ({
+                id: item.loginNumber || item.id,
+                loginNumber: item.loginNumber || item.id,
+                server: item.server || 'Velton-Demo',
+                groupSlug: item.groupSlug || 'fg-rr-eval',
+                masterPassword: item.masterPassword || null,
+                investorPassword: item.investorPassword || null,
+                planName: item.planName || 'Rhino Rush',
+                stage: item.currentPhase || 'Challenge',
+                status: item.status === 'Breached' ? 'Failed' : 'Active',
+                sizeNgn: item.sizeNgn || 10000000,
+                balanceNgn: item.currentBalanceNgn || item.sizeNgn,
+                equityNgn: item.currentEquityNgn || item.sizeNgn,
+                profitNgn: item.profitNgn || 0,
+                profitPercent: item.profitPercent || '+0.00%',
+                dailyLossNgn: item.dailyDrawdownNgn || 0,
+                dailyLossLimitNgn: item.dailyDrawdownLimitNgn || (item.sizeNgn * 0.04),
+                maxLossNgn: 0,
+                maxLossLimitNgn: item.maxDrawdownLimitNgn || (item.sizeNgn * 0.10),
+                platform: 'SteraTrader',
+                leverage: item.leverage || '1:100',
+              }))
+            );
+            return;
+          }
+        }
+        setAccounts(defaultAccounts);
+      } catch {
+        setAccounts(defaultAccounts);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAccounts();
+  }, []);
 
   const filtered = accounts.filter((a) => {
     if (filter === 'ACTIVE') return a.status === 'Active';
@@ -277,6 +345,63 @@ export default function TradingAccountsPage() {
                     <span className="text-[10px] text-fgText-secondary uppercase tracking-wider">
                       Total Profit
                     </span>
+                  </div>
+                </div>
+
+                {/* SteraTrader Live Credentials Box */}
+                <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+                  <div>
+                    <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
+                    <span className="text-emerald-400 font-bold text-[11px] truncate block">{acc.server || 'Velton-Demo'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-fgText-muted uppercase block">Group</span>
+                    <span className="text-slate-300 font-semibold text-[11px]">{acc.groupSlug || 'fg-rr-eval'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-fgText-muted uppercase block">Login ID</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-white font-bold text-[11px]">{acc.loginNumber}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(acc.loginNumber, `login-${acc.id}`)}
+                        className="text-slate-500 hover:text-white"
+                        title="Copy Login"
+                      >
+                        {copiedKey === `login-${acc.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-fgText-muted uppercase block">Master Pass</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-white font-bold text-[11px]">
+                        {acc.masterPassword
+                          ? showPasswordMap[acc.id]
+                            ? acc.masterPassword
+                            : '••••••••'
+                          : '••••••••'}
+                      </span>
+                      {acc.masterPassword && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => togglePassword(acc.id)}
+                            className="text-slate-500 hover:text-white"
+                          >
+                            {showPasswordMap[acc.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(acc.masterPassword, `pwd-${acc.id}`)}
+                            className="text-slate-500 hover:text-white"
+                            title="Copy Password"
+                          >
+                            {copiedKey === `pwd-${acc.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 

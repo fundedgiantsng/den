@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PurchaseFromWalletDto, ValidateCouponsDto } from './dto/purchase.dto';
 
 // Official Pricing Table in NGN synced with WordPress FG_Admin_Settings
@@ -33,7 +34,10 @@ export const PLAN_PRICING_TABLE: Record<string, Record<number, number>> = {
 export class ChallengesService implements OnModuleInit {
   private readonly logger = new Logger(ChallengesService.name);
 
-  constructor(private readonly steraTraderService: SteraTraderService) {}
+  constructor(
+    private readonly steraTraderService: SteraTraderService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async onModuleInit() {
     // Seed default administrative discount coupons if none exist
@@ -455,6 +459,8 @@ export class ChallengesService implements OnModuleInit {
       if (steraRes.success && steraRes.login) {
         const dailyLimit = dto.accountSizeNgn * 0.04;
         const maxLimit = dto.planType === 'phoenix-rise' ? dto.accountSizeNgn * 0.07 : dto.accountSizeNgn * 0.10;
+        const groupSlug = steraRes.group || (dto.planType === 'phoenix-rise' ? 'fg-pr-funded' : 'fg-rr-eval');
+        const server = steraRes.server || 'Velton-Demo';
 
         steraAccount = await prisma.tradingAccount.create({
           data: {
@@ -462,6 +468,10 @@ export class ChallengesService implements OnModuleInit {
             userId: user.id,
             challengeId: result.challenge.id,
             platform: 'SteraTrader',
+            server,
+            groupSlug,
+            masterPassword: steraRes.password || null,
+            investorPassword: steraRes.investorPassword || null,
             status: 'ACTIVE',
             initialBalance: dto.accountSizeNgn,
             currentBalance: dto.accountSizeNgn,
@@ -477,6 +487,26 @@ export class ChallengesService implements OnModuleInit {
         });
 
         this.logger.log(`SteraTrader Account ${steraRes.login} provisioned via wallet debit for ${user.id}`);
+
+        // Trigger Instant Credentials Delivery Email
+        if (user.email) {
+          try {
+            await this.notificationsService.sendTradingAccountCredentialsEmail({
+              toEmail: user.email,
+              toName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Trader',
+              accountNumber: steraRes.login,
+              masterPassword: steraRes.password,
+              investorPassword: steraRes.investorPassword,
+              server,
+              groupSlug,
+              planTitle: dto.planType === 'phoenix-rise' ? 'Phoenix Rise Instant Funding' : 'Rhino Rush 1-Step Challenge',
+              initialBalanceNgn: dto.accountSizeNgn,
+              leverage,
+            });
+          } catch (mailErr: any) {
+            this.logger.warn(`Could not dispatch credentials email: ${mailErr.message}`);
+          }
+        }
       }
     } catch (err: any) {
       this.logger.error(`SteraTrader provisioning error: ${err.message}`);
@@ -538,6 +568,7 @@ export class ChallengesService implements OnModuleInit {
 
       return {
         id: tradingAcc?.accountNumber || ch.challengeNumber,
+        loginNumber: tradingAcc?.accountNumber || ch.challengeNumber,
         challengeNumber: ch.challengeNumber,
         planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
         planType: isPhoenix ? 'PHOENIX_RISE' : 'RHINO_RUSH',
@@ -552,6 +583,11 @@ export class ChallengesService implements OnModuleInit {
         maxDrawdownLimitNgn,
         status: ch.status === 'FAILED' ? 'Breached' : 'Active',
         platform: 'SteraTrader',
+        server: tradingAcc?.server || 'Velton-Demo',
+        groupSlug: tradingAcc?.groupSlug || (isPhoenix ? 'fg-pr-funded' : (ch.status === 'PASSED' ? 'fg-rr-funded' : 'fg-rr-eval')),
+        masterPassword: tradingAcc?.masterPassword || null,
+        investorPassword: tradingAcc?.investorPassword || null,
+        leverage: isPhoenix ? '1:30' : '1:100',
         createdAt: ch.createdAt,
       };
     });
@@ -645,8 +681,11 @@ export class ChallengesService implements OnModuleInit {
       return {
         id: acc.accountNumber,
         loginNumber: acc.accountNumber,
-        server: 'SteraTrader Live',
+        server: acc.server || 'Velton-Demo',
         platform: 'SteraTrader',
+        groupSlug: acc.groupSlug || (isPhoenix ? 'fg-pr-funded' : isFundedPhase ? 'fg-rr-funded' : 'fg-rr-eval'),
+        masterPassword: acc.masterPassword || null,
+        investorPassword: acc.investorPassword || null,
         planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
         planType: isPhoenix ? 'PHOENIX_RISE' : 'RHINO_RUSH',
         currentPhase: isPhoenix ? 'Instant Funding' : isFundedPhase ? 'Funded' : 'Challenge',

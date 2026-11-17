@@ -22,6 +22,11 @@ import {
   RefreshCw,
   ChevronRight,
   Sparkles,
+  Key,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/format';
 
@@ -46,11 +51,23 @@ export default function AccountAnalyticsTerminalPage() {
   const [loading, setLoading] = useState(false);
   const [requestingPayout, setRequestingPayout] = useState(false);
   const [payoutSuccessMessage, setPayoutSuccessMessage] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [showMasterPass, setShowMasterPass] = useState(false);
+  const [showInvestorPass, setShowInvestorPass] = useState(false);
+
+  const handleCopy = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   const [account, setAccount] = useState({
     id: accountId,
     loginNumber: '1092841',
-    server: 'FundedGiants Live',
+    server: 'Velton-Demo',
+    groupSlug: 'fg-rr-funded',
+    masterPassword: null as string | null,
+    investorPassword: null as string | null,
     platform: 'SteraTrader',
     planName: 'Rhino Rush',
     planType: 'RHINO_RUSH',
@@ -298,6 +315,98 @@ export default function AccountAnalyticsTerminalPage() {
           <span>{payoutSuccessMessage}</span>
         </div>
       )}
+
+      {/* SteraTrader Live Terminal & Credentials Card */}
+      <div className="rounded-2xl bg-[#09120e] border border-white/[0.08] p-5 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between border-b border-white/[0.04] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+              <Key className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">SteraTrader Terminal Credentials</h3>
+              <p className="text-[11px] text-fgText-secondary">
+                Use these credentials to log in on SteraTrader Desktop, Web Terminal, or Mobile Apps
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+            DEMO SERVER • NGN
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+          {/* Server */}
+          <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
+            <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
+            <div className="flex items-center justify-between">
+              <span className="text-emerald-400 font-bold truncate">{account.server || 'Velton-Demo'}</span>
+              <button
+                type="button"
+                onClick={() => handleCopy(account.server || 'Velton-Demo', 'srv')}
+                className="text-slate-500 hover:text-white"
+              >
+                {copiedField === 'srv' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Group */}
+          <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
+            <span className="text-[10px] text-fgText-muted uppercase block">Partner Group</span>
+            <span className="text-white font-bold block truncate">{account.groupSlug || 'fg-rr-eval'}</span>
+          </div>
+
+          {/* Login Number */}
+          <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
+            <span className="text-[10px] text-fgText-muted uppercase block">Account Login</span>
+            <div className="flex items-center justify-between">
+              <span className="text-white font-bold">{account.loginNumber}</span>
+              <button
+                type="button"
+                onClick={() => handleCopy(account.loginNumber, 'lgn')}
+                className="text-slate-500 hover:text-white"
+              >
+                {copiedField === 'lgn' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Master Password */}
+          <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
+            <span className="text-[10px] text-fgText-muted uppercase block">Master Password</span>
+            <div className="flex items-center justify-between">
+              <span className="text-white font-bold">
+                {account.masterPassword
+                  ? showMasterPass
+                    ? account.masterPassword
+                    : '••••••••'
+                  : '••••••••'}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {account.masterPassword && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowMasterPass(!showMasterPass)}
+                      className="text-slate-500 hover:text-white"
+                    >
+                      {showMasterPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(account.masterPassword || '', 'pwd')}
+                      className="text-slate-500 hover:text-white"
+                    >
+                      {copiedField === 'pwd' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* 2. Top 4 Account Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

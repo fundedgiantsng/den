@@ -344,12 +344,19 @@ export class WebhooksController {
         // Max DD limits (Rhino: 10%, Phoenix: 7%)
         const maxLimit = planType === 'phoenix-rise' ? accountSizeNgn * 0.07 : accountSizeNgn * 0.10;
 
+        const groupSlug = steraRes.group || (planType === 'phoenix-rise' ? 'fg-pr-funded' : 'fg-rr-eval');
+        const server = steraRes.server || 'Velton-Demo';
+
         await prisma.tradingAccount.create({
           data: {
             accountNumber: steraRes.login,
             userId: user.id,
             challengeId: challenge.id,
             platform: 'SteraTrader',
+            server,
+            groupSlug,
+            masterPassword: steraRes.password || null,
+            investorPassword: steraRes.investorPassword || null,
             status: 'ACTIVE',
             initialBalance: accountSizeNgn,
             currentBalance: accountSizeNgn,
@@ -365,6 +372,26 @@ export class WebhooksController {
         });
 
         this.logger.log(`SteraTrader Account ${steraRes.login} successfully provisioned for ${email}`);
+
+        // Trigger Instant Credentials Delivery Email
+        if (email) {
+          try {
+            await this.notificationsService.sendTradingAccountCredentialsEmail({
+              toEmail: email,
+              toName: `${firstName || ''} ${lastName || ''}`.trim() || 'Trader',
+              accountNumber: steraRes.login,
+              masterPassword: steraRes.password,
+              investorPassword: steraRes.investorPassword,
+              server,
+              groupSlug,
+              planTitle: planType === 'phoenix-rise' ? 'Phoenix Rise Instant Funding' : 'Rhino Rush 1-Step Challenge',
+              initialBalanceNgn: accountSizeNgn,
+              leverage,
+            });
+          } catch (mailErr: any) {
+            this.logger.warn(`Could not dispatch credentials email: ${mailErr.message}`);
+          }
+        }
       }
     } catch (steraErr: any) {
       this.logger.error(`SteraTrader provisioning error for order ${orderNumber}: ${steraErr.message}`);

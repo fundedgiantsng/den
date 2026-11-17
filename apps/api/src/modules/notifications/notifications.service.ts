@@ -136,6 +136,223 @@ export class NotificationsService {
   }
 
   /**
+   * 1. Send SteraTrader Account Credentials Email
+   */
+  async sendTradingAccountCredentialsEmail(params: {
+    toEmail: string;
+    toName: string;
+    accountNumber: string;
+    masterPassword?: string;
+    investorPassword?: string;
+    server?: string;
+    groupSlug?: string;
+    planTitle: string;
+    initialBalanceNgn: number;
+    leverage?: string;
+  }) {
+    const {
+      toEmail,
+      toName,
+      accountNumber,
+      masterPassword,
+      investorPassword,
+      server = 'Velton-Demo',
+      groupSlug = 'fg-rr-eval',
+      planTitle,
+      initialBalanceNgn,
+      leverage = '1:100',
+    } = params;
+
+    const subject = `Your FundedGiants SteraTrader Account #${accountNumber} is Ready`;
+
+    const bodyText = `
+Congratulations! Your trading account for ${planTitle} (₦${initialBalanceNgn.toLocaleString()} Capital) has been provisioned on SteraTrader.
+
+Account Details:
+• Account Login: ${accountNumber}
+• Master Password: ${masterPassword || '[Set in Dashboard]'}
+• Investor Password: ${investorPassword || 'N/A'}
+• Server: ${server}
+• Leverage: ${leverage}
+• Currency: Nigerian Naira (NGN)
+• Account Group: ${groupSlug}
+
+IMPORTANT SECURITY NOTICE:
+Your master password is displayed once upon creation and cannot be recovered by support. Please store it securely or save it in your private password manager.
+
+You can also view your live account metrics and download the platform via your Trader Dashboard.
+`;
+
+    return this.sendEmail(
+      toEmail,
+      toName,
+      subject,
+      bodyText,
+      '/dashboard/trading-accounts'
+    );
+  }
+
+  /**
+   * 2. Send Challenge Passed & Account Upgrade Email
+   */
+  async sendAccountUpgradePassedEmail(params: {
+    toEmail: string;
+    toName: string;
+    accountNumber: string;
+    planTitle: string;
+    capitalNgn: number;
+    newGroup?: string;
+  }) {
+    const { toEmail, toName, accountNumber, planTitle, capitalNgn, newGroup = 'fg-rr-funded' } = params;
+    const subject = `Congratulations! You Passed the ${planTitle} Target — Promoted to Funded Account`;
+
+    const bodyText = `
+Outstanding trading performance!
+
+You have successfully reached the profit target for ${planTitle} (₦${capitalNgn.toLocaleString()} Capital) on account #${accountNumber}.
+
+Your account has been officially promoted to the FUNDED stage (Group: ${newGroup}).
+
+What happens next:
+1. Your account status is now FUNDED with up to 80% profit split.
+2. Daily payouts are available on any gains (minimum 2% profit).
+3. 4% daily equity drawdown and 10% maximum drawdown limits apply.
+4. Your official stamped Certificate of Completion has been generated and is available in your dashboard.
+
+Keep trading with institutional discipline!
+`;
+
+    return this.sendEmail(
+      toEmail,
+      toName,
+      subject,
+      bodyText,
+      '/dashboard/certificates'
+    );
+  }
+
+  /**
+   * 3. Send Payout Approved & Account Reset Email
+   */
+  async sendAccountResetWithdrawalEmail(params: {
+    toEmail: string;
+    toName: string;
+    accountNumber: string;
+    withdrawnProfitNgn: number;
+    resetCapitalNgn: number;
+    destinationBank: string;
+    destinationAccount: string;
+    reference: string;
+  }) {
+    const {
+      toEmail,
+      toName,
+      accountNumber,
+      withdrawnProfitNgn,
+      resetCapitalNgn,
+      destinationBank,
+      destinationAccount,
+      reference,
+    } = params;
+
+    const subject = `Payout Approved & Disbursed: ₦${withdrawnProfitNgn.toLocaleString()} (Ref: ${reference})`;
+
+    const bodyText = `
+Great news! Your payout request has been approved by compliance and successfully disbursed via direct bank transfer.
+
+Disbursement Summary:
+• Net Payout Amount: ₦${withdrawnProfitNgn.toLocaleString()}
+• Destination Bank: ${destinationBank}
+• Account Number: •••• ${destinationAccount.slice(-4)}
+• Reference: ${reference}
+
+Trading Account Balance Reset:
+Following standard institutional prop firm rules, your SteraTrader account #${accountNumber} has had its profit debited and has been reset back to its starting capital of ₦${resetCapitalNgn.toLocaleString()}.
+
+Your high-water mark and daily equity levels are reset for your next trading cycle.
+`;
+
+    return this.sendEmail(
+      toEmail,
+      toName,
+      subject,
+      bodyText,
+      '/dashboard/wallet'
+    );
+  }
+
+  /**
+   * 4. Send Rule Breach & Termination Email
+   */
+  async sendBreachTerminationEmail(params: {
+    toEmail: string;
+    toName: string;
+    accountNumber: string;
+    reason: string;
+    eventType: string;
+    snapshotBalance: number;
+    snapshotEquity: number;
+  }) {
+    const { toEmail, toName, accountNumber, reason, snapshotBalance, snapshotEquity } = params;
+    const subject = `Critical Notice: Account #${accountNumber} Closed Due to Rule Breach`;
+
+    const bodyText = `
+We regret to inform you that your trading account #${accountNumber} has incurred a rule breach and has been closed.
+
+Breach Details:
+• Reason: ${reason}
+• Account Balance at Closure: ₦${snapshotBalance.toLocaleString()}
+• Account Equity at Closure: ₦${snapshotEquity.toLocaleString()}
+• Timestamp: ${new Date().toUTCString()}
+
+All open positions on SteraTrader were automatically liquidated to protect platform liquidity.
+
+You can review your trading history in your dashboard or choose to start a fresh challenge at any time with a discounted retry.
+`;
+
+    return this.sendEmail(
+      toEmail,
+      toName,
+      subject,
+      bodyText,
+      '/dashboard/trading-accounts'
+    );
+  }
+
+  /**
+   * 5. Send Password Reset Email
+   */
+  async sendPasswordResetEmail(params: {
+    toEmail: string;
+    toName: string;
+    accountNumber: string;
+    newPassword: string;
+    server?: string;
+  }) {
+    const { toEmail, toName, accountNumber, newPassword, server = 'Velton-Demo' } = params;
+    const subject = `Your New SteraTrader Credentials for Account #${accountNumber}`;
+
+    const bodyText = `
+Your master trading password for SteraTrader account #${accountNumber} has been successfully reset.
+
+New Credentials:
+• Account Login: ${accountNumber}
+• New Master Password: ${newPassword}
+• Server: ${server}
+
+Please log in immediately on your SteraTrader terminal or via the Trader Dashboard.
+`;
+
+    return this.sendEmail(
+      toEmail,
+      toName,
+      subject,
+      bodyText,
+      '/dashboard/trading-accounts'
+    );
+  }
+
+  /**
    * Log a billable notification dispatch (Aggregated & Billed at End of Month)
    * Initial signup and login OTPs are always platform-sponsored (₦0).
    */
