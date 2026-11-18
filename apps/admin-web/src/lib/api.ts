@@ -17,6 +17,7 @@ export function getAdminDeviceFingerprint(): string {
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname === 'trader.fundedgiants.ng' ||
+      window.location.hostname === 'giant.fundedgiants.ng' ||
       window.location.hostname === 'admin.fundedgiants.ng'
     ) {
       // Primary Station hardware binding

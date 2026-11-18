@@ -100,6 +100,7 @@ export default function RiskMonitorPage() {
                 <option value="">All Violations</option>
                 <option value="DAILY_DD_BREACH">4% Daily DD Breach</option>
                 <option value="MAX_DD_BREACH">Max Total DD Breach</option>
+                <option value="INACTIVITY_BREACH">30-Day Inactivity Breach</option>
                 <option value="ADMIN_MANUAL_LIQUIDATION">Manual Kill-Switch</option>
                 <option value="DAILY_RESET_SNAPSHOT">Daily Session Snapshot</option>
               </select>

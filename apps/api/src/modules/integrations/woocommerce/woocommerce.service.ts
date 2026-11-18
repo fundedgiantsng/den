@@ -328,6 +328,67 @@ export class WooCommerceService {
   }
 
   /**
+   * Fetch order details from WooCommerce REST API
+   */
+  async getOrder(orderId: string | number): Promise<any | null> {
+    const consumerKey = process.env.WOOCOMMERCE_CONSUMER_KEY;
+    const consumerSecret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
+    if (!consumerKey || !consumerSecret) return null;
+
+    try {
+      const authHeader = 'Basic ' + Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+      const res = await fetch(`${this.wpBaseUrl}/wp-json/wc/v3/orders/${orderId}`, {
+        headers: { Authorization: authHeader },
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err: any) {
+      this.logger.error(`Failed to fetch WooCommerce order ${orderId}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Update order status and add a note in WooCommerce
+   */
+  async updateOrderStatus(orderId: string | number, status: string, note?: string): Promise<boolean> {
+    const consumerKey = process.env.WOOCOMMERCE_CONSUMER_KEY;
+    const consumerSecret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
+    if (!consumerKey || !consumerSecret) return false;
+
+    try {
+      const authHeader = 'Basic ' + Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+      const res = await fetch(`${this.wpBaseUrl}/wp-json/wc/v3/orders/${orderId}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status,
+        }),
+      });
+
+      if (res.ok && note) {
+        // Also add an internal order note
+        await fetch(`${this.wpBaseUrl}/wp-json/wc/v3/orders/${orderId}/notes`, {
+          method: 'POST',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ note }),
+        }).catch(() => {});
+      }
+
+      return res.ok;
+    } catch (err: any) {
+      this.logger.error(`Failed to update WooCommerce order ${orderId} status: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
    * Delete coupon from WooCommerce
    */
   async deleteCoupon(code: string): Promise<{ success: boolean; message: string }> {

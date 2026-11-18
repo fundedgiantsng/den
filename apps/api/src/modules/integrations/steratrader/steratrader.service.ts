@@ -38,15 +38,15 @@ export interface SteraTraderAccountMetrics {
 @Injectable()
 export class SteraTraderService {
   private readonly logger = new Logger(SteraTraderService.name);
-  private readonly apiUrl: string;
-  private readonly apiKey: string;
+  private get apiUrl(): string {
+    return process.env.STERATRADER_API_URL || 'https://api.steratrader.com/crm/v1';
+  }
+  private get apiKey(): string {
+    return process.env.STERATRADER_API_KEY || '';
+  }
   private readonly defaultServer: string = 'Velton-Demo';
 
-  constructor() {
-    // Official SteraTrader Partner Base URL under Velton Markets
-    this.apiUrl = process.env.STERATRADER_API_URL || 'https://api.steratrader.com/crm/v1';
-    this.apiKey = process.env.STERATRADER_API_KEY || '';
-  }
+  constructor() {}
 
   /**
    * Helper to resolve group slug and leverage based on plan and stage
@@ -75,25 +75,21 @@ export class SteraTraderService {
     }
 
     const groupSlug = options.group || this.resolveGroupSlug(options.planType, options.stage || 'evaluation');
-    const leverageNum = groupSlug === 'fg-pr-funded' ? 30 : 100;
     const balanceKobo = Math.round(options.accountSizeNgn * 100);
 
-    const payload = {
-      external_id: options.reference,
-      group: groupSlug,
-      currency: 'NGN',
-      balance: balanceKobo,
-      initial_deposit: balanceKobo,
-      leverage: leverageNum,
-      name: options.userFullName,
+    const nameParts = (options.userFullName || 'Trader').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Trader';
+    const lastName = nameParts.slice(1).join(' ') || undefined;
+
+    const payload: any = {
+      first_name: firstName,
+      last_name: lastName,
       email: options.userEmail,
       phone: options.userPhone || undefined,
-      server: this.defaultServer,
-      client: {
-        name: options.userFullName,
-        email: options.userEmail,
-        phone: options.userPhone || undefined,
-      },
+      group: groupSlug,
+      currency: 'NGN',
+      initial_balance: balanceKobo,
+      external_id: options.reference,
     };
 
     this.logger.log(`Provisioning SteraTrader account for ${options.userEmail} [group=${groupSlug}, external_id=${options.reference}]`);
@@ -114,15 +110,16 @@ export class SteraTraderService {
         this.logger.error(`SteraTrader provisioning failed (HTTP ${response.status}): ${JSON.stringify(data)}`);
         return {
           success: false,
-          error: data.message || data.error || `SteraTrader API error: HTTP ${response.status}`,
+          error: data.detail ? JSON.stringify(data.detail) : data.message || `SteraTrader API error: HTTP ${response.status}`,
         };
       }
 
-      // SteraTrader returns login and password immediately (auto-approve)
-      const login = String(data.login || data.account_number || data.accountNumber || data.id || '');
-      const masterPassword = data.password || data.master_password || data.masterPassword || '';
-      const investorPassword = data.investor_password || data.investorPassword || '';
-      const server = data.server || this.defaultServer;
+      // SteraTrader returns { success: true, message: '...', data: { login, password, investor_password, server, ... } }
+      const resData = data.data || data;
+      const login = String(resData.login || resData.account_number || resData.id || '');
+      const masterPassword = resData.password || resData.master_password || '';
+      const investorPassword = resData.investor_password || '';
+      const server = resData.server || 'Velton Markets Demo';
 
       this.logger.log(`SteraTrader account created: login=${login}, server=${server}, group=${groupSlug}`);
 
@@ -132,8 +129,8 @@ export class SteraTraderService {
         password: masterPassword,
         investorPassword,
         server,
-        group: data.group || groupSlug,
-        currency: data.currency || 'NGN',
+        group: resData.group || groupSlug,
+        currency: resData.currency || 'NGN',
         balanceNgn: options.accountSizeNgn,
       };
     } catch (err: any) {
@@ -155,7 +152,7 @@ export class SteraTraderService {
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/metrics`, {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -164,25 +161,12 @@ export class SteraTraderService {
       });
 
       if (!response.ok) {
-        // Fallback to GET /accounts/{login} if /metrics sub-path differs
-        const fallbackRes = await fetch(`${this.apiUrl}/accounts/${accountNumber}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-        });
-
-        if (!fallbackRes.ok) {
-          this.logger.warn(`Failed to fetch metrics for SteraTrader account ${accountNumber}: HTTP ${response.status}`);
-          return null;
-        }
-
-        const fbData = await fallbackRes.json();
-        return this.parseMetricsPayload(accountNumber, fbData);
+        this.logger.warn(`Failed to fetch metrics for SteraTrader account ${accountNumber}: HTTP ${response.status}`);
+        return null;
       }
 
-      const data = await response.json();
+      const resJson = await response.json();
+      const data = resJson.data || resJson;
       return this.parseMetricsPayload(accountNumber, data);
     } catch (err: any) {
       this.logger.error(`Error querying SteraTrader metrics for ${accountNumber}: ${err.message}`);
@@ -192,18 +176,18 @@ export class SteraTraderService {
 
   private parseMetricsPayload(accountNumber: string, data: any): SteraTraderAccountMetrics {
     // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
-    const rawBalance = Number(data.balance || data.current_balance || 0);
-    const rawEquity = Number(data.equity || data.current_equity || data.balance || 0);
-    const rawStartingDayEquity = Number(data.starting_day_equity || data.startingDayEquity || data.balance || 0);
-    const rawTradesProfit = Number(data.open_trades_profit || data.openTradesProfit || 0);
+    const rawBalance = Number(data.balance ?? data.current_balance ?? 0);
+    const rawEquity = Number(data.equity ?? data.current_equity ?? rawBalance);
+    const rawStartingDayEquity = Number(data.starting_day_equity ?? rawBalance);
+    const rawTradesProfit = Number(data.floating ?? data.open_trades_profit ?? 0);
 
     return {
       accountNumber,
-      balance: rawBalance > 10000000 ? rawBalance / 100 : rawBalance, // safeguard against already-denominated amounts
-      equity: rawEquity > 10000000 ? rawEquity / 100 : rawEquity,
-      startingDayEquity: rawStartingDayEquity > 10000000 ? rawStartingDayEquity / 100 : rawStartingDayEquity,
-      openTradesCount: Number(data.open_trades_count || data.openTradesCount || data.positions_count || 0),
-      openTradesProfit: rawTradesProfit > 10000000 ? rawTradesProfit / 100 : rawTradesProfit,
+      balance: rawBalance / 100,
+      equity: rawEquity / 100,
+      startingDayEquity: rawStartingDayEquity / 100,
+      openTradesCount: Number(data.open_positions ?? data.open_trades_count ?? 0),
+      openTradesProfit: rawTradesProfit / 100,
     };
   }
 
@@ -217,28 +201,24 @@ export class SteraTraderService {
 
     try {
       const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/group`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({ group: targetGroup }),
+        body: JSON.stringify({
+          group: targetGroup,
+          reason: 'Challenge Target Reached - Promoted to Funded Stage',
+        }),
       });
 
       if (!response.ok) {
-        // Fallback to PATCH /accounts/{login}
-        const patchRes = await fetch(`${this.apiUrl}/accounts/${accountNumber}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({ group: targetGroup }),
-        });
-        return patchRes.ok;
+        const err = await response.json().catch(() => ({}));
+        this.logger.error(`Failed to move SteraTrader group (HTTP ${response.status}): ${JSON.stringify(err)}`);
+        return false;
       }
 
-      return response.ok;
+      return true;
     } catch (err: any) {
       this.logger.error(`Failed to move SteraTrader account ${accountNumber} to ${targetGroup}: ${err.message}`);
       return false;
@@ -254,46 +234,37 @@ export class SteraTraderService {
 
   /**
    * Credit / Deposit balance after creation (for resets, scaling, or withdrawal balance reset)
-   * Sends amount in integer minor units (kobo).
+   * Sends amount in integer minor units (kobo) via SteraTrader /transactions API.
    */
   async creditAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Balance adjustment'): Promise<boolean> {
     if (!this.apiKey) return false;
 
-    const amountKobo = Math.round(amountNgn * 100);
-    this.logger.log(`Adjusting SteraTrader balance for ${accountNumber}: ₦${amountNgn.toLocaleString()} (${amountKobo} kobo) [${comment}]`);
+    const amountKobo = Math.abs(Math.round(amountNgn * 100));
+    const kind = amountNgn >= 0 ? 'deposit' : 'withdrawal';
+    this.logger.log(`Executing SteraTrader transaction for ${accountNumber}: ${kind} ₦${Math.abs(amountNgn).toLocaleString()} (${amountKobo} kobo) [${comment}]`);
 
     try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/balance`, {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
+          kind,
           amount: amountKobo,
-          currency: 'NGN',
-          comment,
+          external_transaction_id: `TX-${accountNumber}-${Date.now()}`,
+          reason: comment,
         }),
       });
 
       if (!response.ok) {
-        // Fallback to /deposit
-        const depRes = await fetch(`${this.apiUrl}/accounts/${accountNumber}/deposit`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({
-            amount: amountKobo,
-            currency: 'NGN',
-            comment,
-          }),
-        });
-        return depRes.ok;
+        const err = await response.json().catch(() => ({}));
+        this.logger.error(`Failed SteraTrader transaction (HTTP ${response.status}): ${JSON.stringify(err)}`);
+        return false;
       }
 
-      return response.ok;
+      return true;
     } catch (err: any) {
       this.logger.error(`Failed to credit SteraTrader balance for ${accountNumber}: ${err.message}`);
       return false;
@@ -334,7 +305,7 @@ export class SteraTraderService {
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/reset-password`, {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -344,12 +315,13 @@ export class SteraTraderService {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        return { success: false, error: data.message || `HTTP ${response.status}` };
+        return { success: false, error: data.detail || data.message || `HTTP ${response.status}` };
       }
 
+      const resData = data.data || data;
       return {
         success: true,
-        newPassword: data.password || data.master_password || data.masterPassword,
+        newPassword: resData.password || resData.master_password || resData.masterPassword,
       };
     } catch (err: any) {
       return { success: false, error: err.message };

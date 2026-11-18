@@ -51,6 +51,7 @@ export default function AccountAnalyticsTerminalPage() {
   const [loading, setLoading] = useState(false);
   const [requestingPayout, setRequestingPayout] = useState(false);
   const [payoutSuccessMessage, setPayoutSuccessMessage] = useState<string | null>(null);
+  const [payoutErrorMessage, setPayoutErrorMessage] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showMasterPass, setShowMasterPass] = useState(false);
   const [showInvestorPass, setShowInvestorPass] = useState(false);
@@ -63,28 +64,28 @@ export default function AccountAnalyticsTerminalPage() {
 
   const [account, setAccount] = useState({
     id: accountId,
-    loginNumber: '1092841',
+    loginNumber: '',
     server: 'Velton-Demo',
-    groupSlug: 'fg-rr-funded',
+    groupSlug: '',
     masterPassword: null as string | null,
     investorPassword: null as string | null,
     platform: 'SteraTrader',
-    planName: 'Rhino Rush',
+    planName: 'Trading Account',
     planType: 'RHINO_RUSH',
-    currentPhase: 'Funded',
-    sizeNgn: 10000000,
-    currentBalanceNgn: 10420000,
-    currentEquityNgn: 10420000,
-    freeMarginNgn: 10300000,
-    marginLevelPercent: 8680.0,
-    profitNgn: 420000,
-    profitPercent: '+4.20%',
-    dailyDrawdownNgn: 180000,
-    dailyDrawdownLimitNgn: 400000,
-    dailyHeadroomNgn: 220000,
-    maxDrawdownNgn: 250000,
-    maxDrawdownLimitNgn: 1000000,
-    maxLossHeadroomNgn: 750000,
+    currentPhase: 'Evaluation',
+    sizeNgn: 0,
+    currentBalanceNgn: 0,
+    currentEquityNgn: 0,
+    freeMarginNgn: 0,
+    marginLevelPercent: 0,
+    profitNgn: 0,
+    profitPercent: '0.00%',
+    dailyDrawdownNgn: 0,
+    dailyDrawdownLimitNgn: 0,
+    dailyHeadroomNgn: 0,
+    maxDrawdownNgn: 0,
+    maxDrawdownLimitNgn: 0,
+    maxLossHeadroomNgn: 0,
     targetEvaluation: null as {
       profitTargetNgn: number;
       profitTargetPercent: number;
@@ -99,15 +100,15 @@ export default function AccountAnalyticsTerminalPage() {
       resetTime: string;
       excessNotice: string | null;
     } | null,
-    isPayoutEligible: true,
+    isPayoutEligible: false,
     payoutIneligibilityReason: undefined as string | undefined,
     minPayoutPercent: 2,
     payoutNumber: 1,
     traderSplitPercent: 50,
     profitSplitRatio: '50:50',
-    traderProfitSplitNgn: 210000,
-    firmProfitSplitNgn: 210000,
-    tradingDays: 14,
+    traderProfitSplitNgn: 0,
+    firmProfitSplitNgn: 0,
+    tradingDays: 0,
     status: 'Active',
     leverage: '1:100',
     trades: [] as TradeItem[],
@@ -152,8 +153,8 @@ export default function AccountAnalyticsTerminalPage() {
           ...accData,
         }));
       }
-    } catch {
-      // Fallback to static mock for local preview
+    } catch (err: any) {
+      console.warn('Could not fetch trading account analytics', err);
     } finally {
       setLoading(false);
     }
@@ -177,58 +178,21 @@ export default function AccountAnalyticsTerminalPage() {
         data.message || `Success: ${formatNaira(account.traderProfitSplitNgn)} credited to your Giants Vault!`
       );
     } catch (err: any) {
-      setPayoutSuccessMessage(err.message || 'Payout processed.');
+      setPayoutErrorMessage(err.message || 'Payout request failed.');
     } finally {
       setRequestingPayout(false);
-      setTimeout(() => setPayoutSuccessMessage(null), 6000);
+      setTimeout(() => {
+        setPayoutSuccessMessage(null);
+        setPayoutErrorMessage(null);
+      }, 6000);
     }
   };
 
   const isPhoenix = account.planType === 'PHOENIX_RISE';
-  const dailyDdPercent = Math.min(100, Math.round((account.dailyDrawdownNgn / account.dailyDrawdownLimitNgn) * 100));
-  const maxDdPercent = Math.min(100, Math.round((account.maxDrawdownNgn / account.maxDrawdownLimitNgn) * 100));
+  const dailyDdPercent = account.dailyDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.dailyDrawdownNgn / account.dailyDrawdownLimitNgn) * 100)) : 0;
+  const maxDdPercent = account.maxDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.maxDrawdownNgn / account.maxDrawdownLimitNgn) * 100)) : 0;
 
-  const sampleTrades: TradeItem[] = account.trades.length > 0 ? account.trades : [
-    {
-      ticketId: 'TR-98214',
-      symbol: 'XAUUSD',
-      direction: 'BUY',
-      volume: 2.0,
-      openPrice: 2635.40,
-      closePrice: 2648.10,
-      stopLoss: 2628.00,
-      takeProfit: 2650.00,
-      profitNgn: 185000,
-      openedAt: 'Today, 09:14 AM',
-      closedAt: 'Today, 11:32 AM',
-    },
-    {
-      ticketId: 'TR-98190',
-      symbol: 'EURUSD',
-      direction: 'SELL',
-      volume: 5.0,
-      openPrice: 1.0842,
-      closePrice: 1.0815,
-      stopLoss: 1.0865,
-      takeProfit: 1.0800,
-      profitNgn: 142000,
-      openedAt: 'Yesterday, 02:40 PM',
-      closedAt: 'Yesterday, 04:55 PM',
-    },
-    {
-      ticketId: 'TR-98055',
-      symbol: 'GBPUSD',
-      direction: 'BUY',
-      volume: 3.5,
-      openPrice: 1.2910,
-      closePrice: 1.2942,
-      stopLoss: 1.2880,
-      takeProfit: 1.2960,
-      profitNgn: 93000,
-      openedAt: 'Nov 12, 10:15 AM',
-      closedAt: 'Nov 12, 01:20 PM',
-    },
-  ];
+  const trades: TradeItem[] = account.trades;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-16">
@@ -335,7 +299,7 @@ export default function AccountAnalyticsTerminalPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
           {/* Server */}
           <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
             <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
@@ -349,12 +313,6 @@ export default function AccountAnalyticsTerminalPage() {
                 {copiedField === 'srv' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
-          </div>
-
-          {/* Group */}
-          <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
-            <span className="text-[10px] text-fgText-muted uppercase block">Partner Group</span>
-            <span className="text-white font-bold block truncate">{account.groupSlug || 'fg-rr-eval'}</span>
           </div>
 
           {/* Login Number */}
@@ -629,7 +587,14 @@ export default function AccountAnalyticsTerminalPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.03]">
-              {sampleTrades.map((t) => (
+              {trades.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-xs text-fgText-muted">
+                    No trades recorded on this account yet.
+                  </td>
+                </tr>
+              ) : (
+                trades.map((t) => (
                 <tr key={t.ticketId} className="hover:bg-white/[0.02] transition-colors font-mono">
                   <td className="py-3 pl-1 font-bold text-white">{t.ticketId}</td>
                   <td className="py-3 px-3 text-white font-semibold">{t.symbol}</td>
@@ -651,7 +616,8 @@ export default function AccountAnalyticsTerminalPage() {
                     +{formatNaira(t.profitNgn)}
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>

@@ -8,15 +8,18 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { prisma } from '@fundedgiants/database';
+import { prisma, NotificationCategory, NotificationPriority } from '@fundedgiants/database';
 import { RequestOtpDto, LoginIdentifierType, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, UpdateProfileDto } from './dto/auth.dto';
 import { RobaseService } from '../integrations/robase/robase.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NombaService } from '../integrations/nomba/nomba.service';
 
 @Injectable()
 export class AuthService {
   private readonly robaseService: RobaseService;
   private readonly ninjaKycService: NinjaKycService;
+  private readonly notificationsService: NotificationsService;
   private readonly otpExpirySeconds = 300; // 5 minutes
   private readonly cooldownSeconds = 45; // 45s between resends
   private readonly logger = new Logger(AuthService.name);
@@ -24,6 +27,7 @@ export class AuthService {
   constructor() {
     this.robaseService = new RobaseService();
     this.ninjaKycService = new NinjaKycService();
+    this.notificationsService = new NotificationsService();
   }
 
   private generateSecureCode(): string {
@@ -36,6 +40,19 @@ export class AuthService {
 
   async requestOtp(dto: RequestOtpDto) {
     const identifier = dto.identifier.trim().toLowerCase();
+
+    // 0. Format & Sanitization Validation
+    if (dto.type === LoginIdentifierType.EMAIL) {
+      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+      if (!emailRegex.test(identifier) || identifier.length > 100) {
+        throw new BadRequestException('Please provide a valid email address.');
+      }
+    } else {
+      const cleanPhone = identifier.replace(/[^0-9+]/g, '');
+      if (cleanPhone.length < 8 || cleanPhone.length > 20) {
+        throw new BadRequestException('Please provide a valid international or Nigerian phone number.');
+      }
+    }
 
     // 1. Rate-limit / cooldown check
     const recentOtp = await prisma.otpChallenge.findFirst({
@@ -107,8 +124,15 @@ export class AuthService {
       providerMessageId = sendResult.messageId;
       providerCost = sendResult.providerCost;
     } else {
-      // Email delivery via Brevo / Resend SMTP integration
-      // Production email dispatch handled by mailer adapter
+      // Email delivery via Brevo / SMTP integration
+      const recipientName = user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Valued Trader';
+      await this.notificationsService.sendEmail(
+        identifier,
+        recipientName,
+        'Your FundedGiants Verification Code',
+        `Your one-time login verification code is:\n\n${rawCode}\n\nThis code expires in 5 minutes (300 seconds). Do not share this code with anyone.\n\nIf you did not request this verification code, please ignore this email or contact support@fundedgiants.ng.`,
+        '/auth/login'
+      );
     }
 
     // 6. Record OTP Challenge in database
@@ -269,6 +293,11 @@ export class AuthService {
       },
     });
 
+    // Ensure dedicated Nomba virtual account exists (auto-provision on login/first-login)
+    this.ensureDedicatedNombaAccount(session.user.id).catch((err) => {
+      this.logger.warn(`Background Nomba account provisioning error on login: ${err.message}`);
+    });
+
     return {
       success: true,
       sessionToken,
@@ -422,36 +451,14 @@ export class AuthService {
       },
     });
 
-    // Dispatch via Brevo if configured
-    const brevoKey = process.env.BREVO_API_KEY;
-    if (brevoKey) {
-      try {
-        await fetch('https://api.brevo.com/v3/smtp/email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'api-key': brevoKey,
-          },
-          body: JSON.stringify({
-            sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.ng' },
-            to: [{ email: cleanEmail, name: `${cleanFirstName} ${cleanLastName}` }],
-            subject: 'Confirm Your FundedGiants Registration Code',
-            htmlContent: `
-              <div style="font-family: Arial, sans-serif; background: #070a08; color: #ffffff; padding: 24px; border-radius: 12px;">
-                <h2 style="color: #00f59b;">Welcome to FundedGiants, ${cleanFirstName}!</h2>
-                <p>Use the following 6-digit verification code to confirm your registration and access your dashboard:</p>
-                <div style="background: #0f1712; border: 1px solid #1b3322; padding: 16px; border-radius: 8px; margin: 16px 0; text-align: center;">
-                  <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #00f59b;">${rawCode}</span>
-                </div>
-                <p style="font-size: 12px; color: #a1a1aa;">This code expires in 5 minutes. Do not share it with anyone.</p>
-              </div>
-            `,
-          }),
-        });
-      } catch (err: any) {
-        console.warn('Failed to send registration email:', err.message);
-      }
-    }
+    // Dispatch via Brevo / SMTP
+    await this.notificationsService.sendEmail(
+      cleanEmail,
+      `${cleanFirstName} ${cleanLastName}`.trim(),
+      'Confirm Your FundedGiants Registration Code',
+      `Welcome to FundedGiants, ${cleanFirstName}!\n\nUse the following 6-digit verification code to confirm your registration and access your dashboard:\n\n${rawCode}\n\nThis code expires in 5 minutes. Do not share it with anyone.`,
+      '/auth/login'
+    );
 
     console.log(`[SIGNUP OTP DISPATCHED] Email: ${cleanEmail} | Code: ${rawCode}`);
 
@@ -503,9 +510,20 @@ export class AuthService {
       throw new NotFoundException('User profile not found');
     }
 
+    if (user.kycStatus === 'APPROVED') {
+      if (dto.firstName && dto.firstName.trim().toLowerCase() !== (user.firstName || '').trim().toLowerCase()) {
+        throw new BadRequestException('Your identity has been verified via Ninja KYC. Verified legal name cannot be modified.');
+      }
+      if (dto.lastName && dto.lastName.trim().toLowerCase() !== (user.lastName || '').trim().toLowerCase()) {
+        throw new BadRequestException('Your identity has been verified via Ninja KYC. Verified legal name cannot be modified.');
+      }
+    }
+
     const dataToUpdate: any = {};
-    if (dto.firstName) dataToUpdate.firstName = dto.firstName.trim();
-    if (dto.lastName) dataToUpdate.lastName = dto.lastName.trim();
+    if (user.kycStatus !== 'APPROVED') {
+      if (dto.firstName) dataToUpdate.firstName = dto.firstName.trim();
+      if (dto.lastName) dataToUpdate.lastName = dto.lastName.trim();
+    }
     if (dto.phone) dataToUpdate.phone = dto.phone.trim();
     if (dto.address !== undefined) dataToUpdate.address = dto.address.trim();
 
@@ -539,6 +557,26 @@ export class AuthService {
       },
     });
 
+    // Automatically provision or ensure dedicated Nomba Virtual Account when completing/updating profile
+    const wallet = await this.ensureDedicatedNombaAccount(userId);
+
+    // Notify user to perform KYC if not already verified (non-compulsory notification)
+    if (updated.kycStatus !== 'APPROVED') {
+      try {
+        await this.notificationsService.createNotification({
+          userId: updated.id,
+          title: 'Complete Your KYC Verification',
+          message: 'Your profile details have been saved! You can complete your Ninja KYC verification at your convenience. KYC is required when you request withdrawals and payouts.',
+          category: NotificationCategory.SYSTEM,
+          priority: NotificationPriority.NORMAL,
+          actionUrl: '/dashboard/profile',
+          sendEmail: false,
+        });
+      } catch (notifErr: any) {
+        this.logger.warn(`Could not create KYC reminder notification: ${notifErr.message}`);
+      }
+    }
+
     return {
       success: true,
       message: 'Profile updated successfully',
@@ -552,11 +590,62 @@ export class AuthService {
         address: updated.address,
         role: updated.role,
         kycStatus: updated.kycStatus,
-        wallet: updated.wallet,
+        wallet: wallet || updated.wallet,
         affiliateProfile: updated.affiliateProfile,
         kycRecord: updated.kycRecords[0] || null,
       },
     };
+  }
+
+  /**
+   * Automatically ensure a dedicated Nomba Virtual Account exists for user.
+   * Invoked on first login, signup, and profile completion.
+   * Nomba sub-accounts inherit parent business account BVN, so user BVN is NOT required!
+   */
+  async ensureDedicatedNombaAccount(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+    if (!user) return null;
+
+    if (user.wallet?.nombaAccountNumber) {
+      return user.wallet;
+    }
+
+    const cleanFirst = (user.firstName || 'Trader').trim();
+    const cleanLast = (user.lastName || 'Account').trim();
+
+    try {
+      const nombaService = new NombaService();
+      const nombaRes = await nombaService.createVirtualAccount({
+        userId: user.id,
+        firstName: cleanFirst,
+        lastName: cleanLast,
+      });
+
+      if (nombaRes.status && nombaRes.data) {
+        return await prisma.customerWallet.upsert({
+          where: { userId: user.id },
+          update: {
+            nombaVirtualBankName: nombaRes.data.bankName,
+            nombaAccountName: nombaRes.data.bankAccountName,
+            nombaAccountNumber: nombaRes.data.bankAccountNumber,
+            nombaAccountReference: nombaRes.data.accountRef,
+          },
+          create: {
+            userId: user.id,
+            nombaVirtualBankName: nombaRes.data.bankName,
+            nombaAccountName: nombaRes.data.bankAccountName,
+            nombaAccountNumber: nombaRes.data.bankAccountNumber,
+            nombaAccountReference: nombaRes.data.accountRef,
+          },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not provision Nomba dedicated virtual account for user ${user.id}: ${err.message}`);
+    }
+    return user.wallet;
   }
 
   /**
@@ -584,7 +673,7 @@ export class AuthService {
     const lastName = user.lastName || 'Trader';
 
     // 1. Call NinjaKYC API (or sandbox verification)
-    const ninjaBaseUrl = process.env.NINJA_KYC_BASE_URL || 'https://api.ninja.ng/v1';
+    const ninjaBaseUrl = process.env.NINJA_KYC_BASE_URL || 'https://api.ninja.boucloud.io';
     const ninjaKey = process.env.NINJA_KYC_API_KEY;
 
     let externalRef = `FG-NINJA-${userId.slice(0, 8)}-${Date.now()}`;

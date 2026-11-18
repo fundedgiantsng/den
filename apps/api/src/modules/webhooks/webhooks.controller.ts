@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import * as crypto from 'crypto';
-import { prisma, PaymentStatus, TransactionType } from '@fundedgiants/database';
+import { prisma, PaymentStatus, TransactionType, WithdrawalStatus } from '@fundedgiants/database';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
@@ -78,16 +78,22 @@ export class WebhooksController {
     const orderNumber = orderData.order_number || `FG-ORD-${orderData.order_id || Date.now()}`;
     this.logger.log(`Received WooCommerce order webhook: ${orderNumber}`);
 
-    // 2. Verify webhook signature if provided
+    // 2. Strict webhook signature verification
     const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
     const activeSignature = signature || wcSignature;
-    if (activeSignature) {
-      const computedSignature = crypto
-        .createHmac('sha256', secret)
-        .update(JSON.stringify(payload))
-        .digest('hex');
+    if (secret) {
+      if (!activeSignature) {
+        throw new UnauthorizedException('Missing required WooCommerce webhook signature');
+      }
 
-      if (activeSignature !== computedSignature) {
+      const rawPayload = JSON.stringify(payload);
+      const computedHex = crypto.createHmac('sha256', secret).update(rawPayload).digest('hex');
+      const computedBase64 = crypto.createHmac('sha256', secret).update(rawPayload).digest('base64');
+
+      const matchesHex = activeSignature === computedHex;
+      const matchesBase64 = activeSignature === computedBase64;
+
+      if (!matchesHex && !matchesBase64) {
         throw new UnauthorizedException('Invalid WooCommerce webhook signature');
       }
     }
@@ -464,7 +470,32 @@ export class WebhooksController {
       }
     }
 
-    // 8. Dispatch Account Ready Notification with SteraTrader details
+    // 8. Ensure dedicated Nomba Virtual Account is issued and bound to user on successful challenge purchase
+    try {
+      if (!customerWallet.nombaAccountNumber) {
+        const nombaRes = await this.nombaService.createVirtualAccount({
+          userId: user.id,
+          firstName: user.firstName || 'Trader',
+          lastName: user.lastName || 'Account',
+        });
+        if (nombaRes.status && nombaRes.data) {
+          await prisma.customerWallet.update({
+            where: { id: customerWallet.id },
+            data: {
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
+            },
+          });
+          this.logger.log(`Provisioned Nomba account ${nombaRes.data.bankAccountNumber} for user ${user.id} on WooCommerce order purchase`);
+        }
+      }
+    } catch (nombaErr: any) {
+      this.logger.warn(`Could not provision Nomba account on WooCommerce order purchase for user ${user.id}: ${nombaErr.message}`);
+    }
+
+    // 9. Dispatch Account Ready Notification with SteraTrader details
     await this.notificationsService.createNotification({
       userId: user.id,
       title: `Your ${planType === 'phoenix-rise' ? 'Phoenix Rise' : 'Rhino Rush'} Account is Ready!`,
@@ -485,12 +516,90 @@ export class WebhooksController {
   }
 
   /**
-   * Nomba Dedicated Virtual Account Funding Webhook
-   * Dispatched on payment_success when customer transfers funds to their dedicated virtual account
+   * Endpoint for WordPress to request a Dynamic One-Time Nomba Virtual Account for checkout
+   * WordPress calls this endpoint so it doesn't need Nomba credentials or direct Nomba integration!
+   */
+  @Post('nomba/create-order-account')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Generate dynamic Nomba virtual account for WordPress WooCommerce checkout' })
+  async createNombaOrderAccount(
+    @Body()
+    body: {
+      orderId: string | number;
+      amount: number;
+      customerName: string;
+      email: string;
+    },
+    @Headers('x-fgt-api-key') apiKey?: string,
+  ) {
+    if (!body.orderId || !body.amount) {
+      throw new BadRequestException('orderId and amount are required');
+    }
+
+    this.logger.log(`Generating Nomba dynamic virtual account for WordPress Order #${body.orderId} (₦${Number(body.amount).toLocaleString()})`);
+
+    const res = await this.nombaService.createDynamicOrderAccount({
+      orderId: body.orderId,
+      amountNgn: Number(body.amount),
+      customerName: body.customerName || 'Trader',
+      email: body.email || 'customer@fundedgiants.ng',
+    });
+
+    if (!res.status || !res.data) {
+      throw new BadRequestException(res.message || 'Could not create dynamic virtual account on Nomba');
+    }
+
+    return {
+      success: true,
+      bank_name: res.data.bankName,
+      account_number: res.data.bankAccountNumber,
+      account_name: res.data.bankAccountName || res.data.accountName,
+      reference: res.data.accountRef,
+      expected_amount: body.amount,
+      currency: 'NGN',
+    };
+  }
+
+  private async forwardToWordPressNomba(payload: any, signature?: string, sigValue?: string) {
+    const wcNombaUrl = process.env.WOOCOMMERCE_NOMBA_WEBHOOK_URL;
+    if (wcNombaUrl && wcNombaUrl.trim()) {
+      try {
+        this.logger.log(`Proxying Nomba checkout webhook to WordPress WooCommerce: ${wcNombaUrl}`);
+        const forwardRes = await fetch(wcNombaUrl.trim(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(signature ? { 'nomba-signature': signature } : {}),
+            ...(sigValue ? { 'nomba-sig-value': sigValue } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const respText = await forwardRes.text().catch(() => '');
+        this.logger.log(`WordPress WooCommerce response (HTTP ${forwardRes.status}): ${respText.slice(0, 150)}`);
+        return {
+          status: 'forwarded_to_woocommerce',
+          target: wcNombaUrl,
+          httpStatus: forwardRes.status,
+        };
+      } catch (fwdErr: any) {
+        this.logger.error(`Failed to proxy Nomba webhook to WordPress WooCommerce: ${fwdErr.message}`);
+        return { status: 'forward_failed', error: fwdErr.message };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Nomba Dedicated Virtual Account Funding & Dynamic Checkout Webhook
+   * Handles:
+   * 1. WordPress Checkout Dynamic Accounts (NMB... or FG-ORD-...) with strict underpayment checks
+   * 2. Trader Dashboard Dedicated Virtual Accounts (FG-VA-...)
+   * 3. Trader Payout / Transfer completion & failure alerts
    */
   @Post('nomba')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Receive and process Nomba virtual account deposit notifications' })
+  @ApiOperation({ summary: 'Receive and process Nomba virtual account deposit and transfer notifications' })
   async handleNombaWebhook(
     @Body() payload: any,
     @Headers('nomba-signature') signature: string,
@@ -499,15 +608,106 @@ export class WebhooksController {
     this.logger.log(`Received Nomba webhook: ${JSON.stringify(payload)}`);
 
     const activeSig = signature || sigValue;
-    if (activeSig) {
+    const webhookSecret = process.env.NOMBA_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      if (!activeSig) {
+        throw new UnauthorizedException('Missing required Nomba webhook signature');
+      }
       const isValid = this.nombaService.verifyWebhookSignature(JSON.stringify(payload), activeSig);
       if (!isValid) {
-        this.logger.warn(`Invalid Nomba webhook signature received: ${activeSig}`);
+        this.logger.error(`Rejected invalid Nomba webhook signature: ${activeSig}`);
+        throw new UnauthorizedException('Invalid Nomba webhook signature');
       }
     }
 
     const eventType = payload.event_type || payload.event;
-    if (eventType && eventType !== 'payment_success' && eventType !== 'collection.successful') {
+
+    // -------------------------------------------------------------
+    // FLOW 3: Nomba Payout / Transfer Status Webhook
+    // -------------------------------------------------------------
+    if (
+      eventType &&
+      (eventType.includes('transfer') ||
+        eventType.includes('payout') ||
+        payload.data?.transaction?.type === 'TRANSFER')
+    ) {
+      const txRef =
+        payload.data?.merchantTxRef ||
+        payload.data?.reference ||
+        payload.reference ||
+        payload.data?.transaction?.transactionId;
+
+      if (txRef) {
+        this.logger.log(`Processing Nomba Payout/Transfer event [${eventType}] for ref ${txRef}`);
+        const withdrawal = await prisma.withdrawal.findFirst({
+          where: {
+            OR: [
+              { reference: txRef },
+              { nombaDisbursementRef: txRef },
+            ],
+          },
+          include: { wallet: true },
+        });
+
+        if (withdrawal) {
+          const isSuccess =
+            eventType === 'transfer.successful' ||
+            payload.data?.status === 'SUCCESS' ||
+            payload.data?.status === 'SUCCESSFUL';
+          const isFailed =
+            eventType === 'transfer.failed' ||
+            payload.data?.status === 'FAILED';
+
+          if (isSuccess && withdrawal.status !== WithdrawalStatus.PAID) {
+            await prisma.withdrawal.update({
+              where: { id: withdrawal.id },
+              data: { status: WithdrawalStatus.PAID },
+            });
+            await this.notificationsService.createNotification({
+              userId: withdrawal.wallet.userId,
+              title: 'Withdrawal Payout Completed',
+              message: `Your profit withdrawal of ₦${Number(withdrawal.amount).toLocaleString()} has been successfully transferred to your bank account via Nomba.`,
+              category: 'FINANCE',
+              priority: 'HIGH',
+              sendEmail: true,
+            });
+            return { status: 'payout_completed', withdrawalId: withdrawal.id };
+          } else if (
+            isFailed &&
+            withdrawal.status !== WithdrawalStatus.REJECTED &&
+            withdrawal.status !== WithdrawalStatus.FAILED
+          ) {
+            await prisma.withdrawal.update({
+              where: { id: withdrawal.id },
+              data: {
+                status: WithdrawalStatus.FAILED,
+                rejectionReason: payload.data?.description || 'Bank transfer rejected by provider',
+              },
+            });
+            // Refund to customer wallet
+            await prisma.deposit.create({
+              data: {
+                walletId: withdrawal.walletId,
+                amount: withdrawal.amount,
+                currency: 'NGN',
+                status: PaymentStatus.SUCCESSFUL,
+                reference: `REFUND-${withdrawal.reference}`,
+                senderName: 'FundedGiants Payout Reversal',
+                reconciled: true,
+              },
+            });
+            return { status: 'payout_failed_refunded', withdrawalId: withdrawal.id };
+          }
+        }
+      }
+    }
+
+    // Filter incoming credit events
+    if (
+      eventType &&
+      eventType !== 'payment_success' &&
+      eventType !== 'collection.successful'
+    ) {
       this.logger.log(`Ignoring Nomba event type: ${eventType}`);
       return { status: 'ignored', eventType };
     }
@@ -548,6 +748,9 @@ export class WebhooksController {
       throw new BadRequestException('Invalid deposit amount in webhook payload');
     }
 
+    // -------------------------------------------------------------
+    // FLOW 2: Check Dedicated Trader Wallet (Permanent Account)
+    // -------------------------------------------------------------
     const wallet = await prisma.customerWallet.findFirst({
       where: {
         OR: [
@@ -558,8 +761,112 @@ export class WebhooksController {
       include: { user: true },
     });
 
+    // -------------------------------------------------------------
+    // FLOW 1: WordPress WooCommerce Order Payment (Dynamic Account)
+    // -------------------------------------------------------------
     if (!wallet) {
-      this.logger.warn(`No wallet found matching account number ${accountNumber} or ref ${accountRef}`);
+      this.logger.log(`Account ${accountNumber || 'N/A'} / ref ${accountRef || 'N/A'} is not a Dedicated Trader Wallet. Inspecting order reference...`);
+
+      let orderId: number | null = null;
+      if (accountRef) {
+        if (accountRef.startsWith('NMB')) {
+          const temp = accountRef.slice(3);
+          orderId = parseInt(temp.includes('T') ? temp.split('T')[0] : temp, 10);
+        } else if (accountRef.startsWith('FG-ORD-')) {
+          orderId = parseInt(accountRef.replace('FG-ORD-', ''), 10);
+        }
+      }
+
+      if (orderId && !isNaN(orderId) && orderId > 0) {
+        this.logger.log(`Detected WordPress WooCommerce Order #${orderId} from Nomba accountRef "${accountRef}"`);
+
+        // Fetch order from WooCommerce to check exact required amount
+        const wcOrder = await this.woocommerceService.getOrder(orderId);
+        const requiredAmount = wcOrder ? Number(wcOrder.total) : amount;
+        const receivedAmount = amount;
+
+        // UNDERPAYMENT CHECK: Reject order completion if payment is less than exact required amount
+        if (receivedAmount < requiredAmount) {
+          const deficit = requiredAmount - receivedAmount;
+          this.logger.warn(`UNDERPAYMENT on Order #${orderId}: Received ₦${receivedAmount.toLocaleString()}, Required ₦${requiredAmount.toLocaleString()} (Deficit: ₦${deficit.toLocaleString()})`);
+
+          // Mark WooCommerce order on-hold with explanation note
+          await this.woocommerceService.updateOrderStatus(
+            orderId,
+            'on-hold',
+            `Underpayment received via Nomba: ₦${receivedAmount.toLocaleString()} of ₦${requiredAmount.toLocaleString()} (Outstanding deficit: ₦${deficit.toLocaleString()}). Trading account provisioning is PAUSED until balance is paid in full.`
+          );
+
+          // Proxy to WordPress Nomba handler as well
+          await this.forwardToWordPressNomba(payload, signature, sigValue);
+
+          return {
+            status: 'underpayment_recorded',
+            orderId,
+            receivedAmount,
+            requiredAmount,
+            deficit,
+          };
+        }
+
+        // EXACT OR OVERPAYMENT: Mark complete, provision SteraTrader, credit surplus to Giants Vault
+        this.logger.log(`Payment confirmed for Order #${orderId}: Received ₦${receivedAmount.toLocaleString()} (Required: ₦${requiredAmount.toLocaleString()})`);
+
+        await this.woocommerceService.updateOrderStatus(
+          orderId,
+          'completed',
+          `Full payment confirmed via Nomba (Received ₦${receivedAmount.toLocaleString()}). SteraTrader account provisioning initiated.`
+        );
+
+        // Proxy to WordPress Nomba handler as well
+        await this.forwardToWordPressNomba(payload, signature, sigValue);
+
+        // If WooCommerce order details retrieved, provision SteraTrader trading challenge
+        if (wcOrder) {
+          const billing = wcOrder.billing || {};
+          const accountSize = Number(
+            wcOrder.meta_data?.find((m: any) => m.key === '_account_size')?.value ||
+            wcOrder.total
+          );
+          const planSku =
+            wcOrder.line_items?.[0]?.sku ||
+            wcOrder.line_items?.[0]?.name ||
+            'rhino-rush-10000000';
+
+          await this.handleWooCommerceWebhook(
+            {
+              order_id: orderId,
+              order_number: `FG-ORD-${orderId}`,
+              billing: {
+                email: billing.email,
+                first_name: billing.first_name,
+                last_name: billing.last_name,
+                phone: billing.phone,
+              },
+              total: requiredAmount,
+              amount_received: receivedAmount,
+              overage_amount: receivedAmount > requiredAmount ? receivedAmount - requiredAmount : 0,
+              account_size: accountSize,
+              plan_sku: planSku,
+              payment_method: 'NOMBA_DYNAMIC_TRANSFER',
+            },
+            signature,
+            '',
+          );
+        }
+
+        return {
+          status: 'order_payment_completed',
+          orderId,
+          amountReceived: receivedAmount,
+        };
+      }
+
+      // Fallback: Proxy to WordPress WooCommerce if WOOCOMMERCE_NOMBA_WEBHOOK_URL is set
+      const fwdResult = await this.forwardToWordPressNomba(payload, signature, sigValue);
+      if (fwdResult) return fwdResult;
+
+      this.logger.warn(`No wallet or order found matching account number ${accountNumber} or ref ${accountRef}`);
       return { status: 'wallet_not_found', accountNumber, accountRef };
     }
 
@@ -746,7 +1053,7 @@ export class WebhooksController {
     @Headers('x-signature') altSignature?: string,
   ) {
     const rawSignature = signature || altSignature;
-    if (rawSignature && process.env.NINJA_KYC_WEBHOOK_SECRET) {
+    if (rawSignature) {
       const isValid = this.ninjaKycService.verifyWebhookSignature(
         JSON.stringify(payload),
         rawSignature
@@ -757,19 +1064,33 @@ export class WebhooksController {
       }
     }
 
-    const reference = payload.data?.reference || payload.reference;
-    const userId = reference?.replace('FG-KYC-', '');
+    const reference =
+      payload.data?.verification_id ||
+      payload.data?.customer_ref ||
+      payload.customer_ref ||
+      payload.data?.reference ||
+      payload.reference ||
+      `FG-KYC-${Date.now()}`;
+
+    const userId =
+      payload.data?.customer_ref ||
+      payload.customer_ref ||
+      payload.data?.reference ||
+      payload.reference;
 
     if (!userId) {
-      throw new BadRequestException('Invalid reference in KYC webhook');
+      this.logger.warn(`Invalid reference/customer_ref in KYC webhook: ${JSON.stringify(payload)}`);
+      throw new BadRequestException('Invalid reference or customer_ref in KYC webhook');
     }
 
+    const outcome = payload.data?.outcome || payload.outcome || payload.data?.status || payload.status;
     const isApproved =
-      payload.event === 'verification.approved' ||
-      payload.event === 'kyc.completed' ||
-      payload.data?.status === 'approved' ||
-      payload.status === 'approved' ||
-      payload.status === 'success';
+      outcome === 'verified' ||
+      outcome === 'completed' ||
+      outcome === 'approved' ||
+      outcome === 'success' ||
+      payload.event === 'verification.completed' ||
+      payload.event === 'verification.approved';
 
     const bvn = payload.data?.bvn || payload.bvn || payload.data?.id_number || null;
     const verifiedFirstName = payload.data?.first_name || payload.first_name;
@@ -872,8 +1193,11 @@ export class WebhooksController {
     @Body() payload: any,
     @Headers('x-steratrader-signature') signature: string
   ) {
-    const secret = process.env.STERATRADER_WEBHOOK_SECRET || 'fg_stera_live_secret';
-    if (signature) {
+    const secret = process.env.STERATRADER_WEBHOOK_SECRET || process.env.STERATRADER_API_KEY || 'fg_stera_live_secret';
+    if (secret) {
+      if (!signature) {
+        throw new UnauthorizedException('Missing required SteraTrader webhook signature');
+      }
       const expected = crypto
         .createHmac('sha256', secret)
         .update(JSON.stringify(payload))

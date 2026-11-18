@@ -37,6 +37,7 @@ export function FundedGiantsKycModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({ email: user.email }),
       });
 
       const data = await res.json();

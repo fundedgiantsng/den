@@ -50,82 +50,13 @@ interface ActivityItem {
 
 export default function DashboardOverviewPage() {
   const [wallet, setWallet] = useState({
-    availableBalanceNgn: 12450000.0,
-    withdrawableProfitsNgn: 2480000.0,
-    totalCapitalNgn: 60000000.0,
+    availableBalanceNgn: 0,
+    withdrawableProfitsNgn: 0,
+    totalCapitalNgn: 0,
   });
 
-  const [activeAccounts, setActiveAccounts] = useState<AccountItem[]>([
-    {
-      id: 'FG-48291',
-      loginId: '#FG-48291',
-      planName: 'Rhino Rush',
-      stage: 'Funded',
-      sizeNgn: 10000000,
-      status: 'Active',
-      platform: 'SteraTrader',
-      leverage: '1:100',
-    },
-    {
-      id: 'FG-51732',
-      loginId: '#FG-51732',
-      planName: 'Rhino Rush',
-      stage: 'Challenge',
-      sizeNgn: 50000000,
-      status: 'Active',
-      platform: 'SteraTrader',
-      leverage: '1:100',
-    },
-    {
-      id: 'FG-60194',
-      loginId: '#FG-60194',
-      planName: 'Phoenix Rise',
-      stage: 'Funded',
-      sizeNgn: 25000000,
-      status: 'Active',
-      platform: 'SteraTrader',
-      leverage: '1:30',
-    },
-  ]);
-
-  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([
-    {
-      id: 'tx-1',
-      title: 'Trading Payout',
-      ref: 'FG-48291 • 2h ago',
-      date: 'Today, 10:15 AM',
-      amountNgn: 1240000,
-      isCredit: true,
-      status: 'Successful',
-    },
-    {
-      id: 'tx-2',
-      title: 'IB Commission',
-      ref: 'Referral #FG2B47 • 3h ago',
-      date: 'Yesterday, 04:20 PM',
-      amountNgn: 500000,
-      isCredit: true,
-      status: 'Successful',
-    },
-    {
-      id: 'tx-3',
-      title: 'Prop Account Purchase',
-      ref: '100K Challenge • 5h ago',
-      date: 'Nov 12, 2026',
-      amountNgn: 250000,
-      isCredit: false,
-      status: 'Successful',
-    },
-    {
-      id: 'tx-4',
-      title: 'Withdrawal Processed',
-      ref: 'Bank Transfer • 1d ago',
-      date: 'Nov 11, 2026',
-      amountNgn: 1000000,
-      isCredit: false,
-      status: 'Successful',
-    },
-  ]);
+  const [activeAccounts, setActiveAccounts] = useState<AccountItem[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
   // Affiliate link copy
   const [copiedLink, setCopiedLink] = useState(false);
@@ -161,6 +92,8 @@ export default function DashboardOverviewPage() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
   useEffect(() => {
     const updateBanner = () => {
       const currentHour = new Date().getHours();
@@ -169,33 +102,88 @@ export default function DashboardOverviewPage() {
     updateBanner();
     const interval = setInterval(updateBanner, 60000);
 
-    // Fetch current user session & KYC status
-    fetch('http://localhost:4000/api/v1/auth/me', {
+    // 1. Fetch current user session
+    fetch(`${apiUrl}/api/v1/auth/me`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.user) {
           setCurrentUser(data.user);
-          // Sequential first-login gating:
-          // 1. Username selection (WordPress buyers or direct signups without username)
+          // First-login profile gating:
           if (!data.user.username) {
             setIsUsernameModalOpen(true);
-          }
-          // 2. Profile completion (WordPress buyers who only have email/name but lack phone/address)
-          else if (!data.user.phone || !data.user.address) {
+          } else if (!data.user.phone || !data.user.address) {
             setIsProfileModalOpen(true);
-          }
-          // 3. Non-dismissible FundedGiants KYC Prompt
-          else if (data.user.kycStatus !== 'APPROVED') {
-            setIsKycModalOpen(true);
           }
         }
       })
       .catch(() => {});
 
+    // 2. Fetch live wallet overview
+    fetch(`${apiUrl}/api/v1/wallet/overview`, {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((wData) => {
+        if (wData) {
+          setWallet((prev) => ({
+            ...prev,
+            availableBalanceNgn: wData.availableBalanceNgn ?? 0,
+            withdrawableProfitsNgn: wData.withdrawableProfitsNgn ?? 0,
+          }));
+        }
+      })
+      .catch(() => {});
+
+    // 3. Fetch live active trading accounts
+    fetch(`${apiUrl}/api/v1/challenges/my-accounts`, {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((accData) => {
+        if (Array.isArray(accData)) {
+          const mapped: AccountItem[] = accData.map((a: any) => ({
+            id: a.loginNumber || a.id,
+            loginId: `#${a.loginNumber || a.id}`,
+            planName: a.planName || 'Rhino Rush',
+            stage: a.currentPhase === 'Funded' ? 'Funded' : 'Challenge',
+            sizeNgn: a.sizeNgn || 0,
+            status: a.status === 'Breached' ? 'Closed' : 'Active',
+            platform: a.platform || 'SteraTrader',
+            leverage: a.leverage || '1:100',
+          }));
+          setActiveAccounts(mapped);
+          const totalCap = accData.reduce((sum: number, item: any) => sum + (item.sizeNgn || 0), 0);
+          setWallet((prev) => ({ ...prev, totalCapitalNgn: totalCap }));
+        }
+      })
+      .catch(() => {});
+
+    // 4. Fetch live transactions
+    fetch(`${apiUrl}/api/v1/wallet/transactions`, {
+      credentials: 'include',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((txData) => {
+        if (Array.isArray(txData)) {
+          setRecentActivity(
+            txData.slice(0, 5).map((t: any) => ({
+              id: t.id,
+              title: t.title || (t.isCredit ? 'Wallet Deposit' : 'Challenge Purchase'),
+              ref: t.ref || `FG-TRX-${t.id.slice(0, 8)}`,
+              date: t.date ? new Date(t.date).toLocaleDateString() : 'Recent',
+              amountNgn: t.amountNgn || 0,
+              isCredit: !!t.isCredit,
+              status: t.status || 'Successful',
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+
     return () => clearInterval(interval);
-  }, []);
+  }, [apiUrl]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(affiliateLink);
@@ -215,8 +203,6 @@ export default function DashboardOverviewPage() {
           // Check if profile details are missing next
           if (!updated?.phone || !updated?.address) {
             setIsProfileModalOpen(true);
-          } else if (updated?.kycStatus !== 'APPROVED') {
-            setIsKycModalOpen(true);
           }
         }}
       />
@@ -236,10 +222,6 @@ export default function DashboardOverviewPage() {
           const updated = currentUser ? { ...currentUser, ...updatedDetails } : null;
           setCurrentUser(updated);
           setIsProfileModalOpen(false);
-          // Proceed to KYC verification
-          if (updated?.kycStatus !== 'APPROVED') {
-            setIsKycModalOpen(true);
-          }
         }}
       />
 
@@ -421,7 +403,27 @@ export default function DashboardOverviewPage() {
 
             {/* Stacked Full-Width Account Rows (Compact Height & Sleek Spacing) */}
             <div className="space-y-2.5">
-              {activeAccounts.map((acc) => (
+              {activeAccounts.length === 0 ? (
+                <div className="py-8 text-center text-fgText-secondary space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mx-auto text-fgText-muted">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-white">No Trading Accounts Found</p>
+                    <p className="text-xs text-fgText-muted max-w-sm mx-auto">
+                      Purchase an evaluation challenge on FundedGiants to begin trading.
+                    </p>
+                  </div>
+                  <Link
+                    href="/dashboard/challenges/buy"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#f5a623] hover:bg-[#e0961f] text-black font-heading font-extrabold text-xs transition shadow-lg shadow-amber-500/20 active:scale-95"
+                  >
+                    <span>Buy New Account</span>
+                    <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+                  </Link>
+                </div>
+              ) : (
+                activeAccounts.map((acc) => (
                 <Link
                   key={acc.id}
                   href={`/dashboard/trading-accounts/${acc.id}`}
@@ -493,7 +495,8 @@ export default function DashboardOverviewPage() {
                     </div>
                   </div>
                 </Link>
-              ))}
+              ))
+              )}
             </div>
           </div>
 
@@ -513,7 +516,12 @@ export default function DashboardOverviewPage() {
             </div>
 
             <div className="space-y-2.5">
-              {recentActivity.map((tx) => (
+              {recentActivity.length === 0 ? (
+                <div className="py-6 text-center text-xs text-fgText-muted">
+                  No recent activity recorded yet.
+                </div>
+              ) : (
+                recentActivity.map((tx) => (
                 <div
                   key={tx.id}
                   className="p-3 rounded-xl bg-black/40 border border-white/[0.04] flex items-center justify-between text-xs hover:border-emerald-500/30 transition-colors"
@@ -531,7 +539,8 @@ export default function DashboardOverviewPage() {
                     {formatNaira(tx.amountNgn)}
                   </span>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         </div>

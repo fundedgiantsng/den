@@ -27,7 +27,8 @@ async function bootstrap() {
       'http://localhost:3001',
       'https://fundedgiants.ng',
       'https://trader.fundedgiants.ng',
-      'https://admin.fundedgiants.ng',
+      'https://giant.fundedgiants.ng',
+      'https://api.fundedgiants.ng',
     ],
     credentials: true,
   });

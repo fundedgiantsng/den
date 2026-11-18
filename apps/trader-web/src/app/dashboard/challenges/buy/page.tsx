@@ -101,7 +101,7 @@ export default function InDashboardBuyChallengePage() {
   const [successResult, setSuccessResult] = useState<any | null>(null);
 
   // Live Wallet Balance
-  const [walletBalanceNgn, setWalletBalanceNgn] = useState<number>(18450000);
+  const [walletBalanceNgn, setWalletBalanceNgn] = useState<number>(0);
 
   const currentPlan = plans.find((p) => p.id === selectedPlan)!;
   const currentPrice = currentPlan.prices[selectedSize] || 0;

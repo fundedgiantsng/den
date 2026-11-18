@@ -67,6 +67,7 @@ interface TransactionItem {
 
 export default function GiantsVaultPage() {
   const [showBalance, setShowBalance] = useState<boolean>(true);
+  const [showAccountNumber, setShowAccountNumber] = useState<boolean>(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -93,107 +94,59 @@ export default function GiantsVaultPage() {
     stampedUrl?: string;
   } | null>(null);
   const [isRequestCardOpen, setIsRequestCardOpen] = useState(false);
-  const [cardFullName, setCardFullName] = useState('Olugbenga Olamide');
-  const [cardStreet, setCardStreet] = useState('14 Admiralty Way, Lekki Phase 1');
-  const [cardCity, setCardCity] = useState('Lekki');
-  const [cardState, setCardState] = useState('Lagos State');
-  const [cardPhone, setCardPhone] = useState('+234 803 123 4567');
+  const [cardFullName, setCardFullName] = useState('');
+  const [cardStreet, setCardStreet] = useState('');
+  const [cardCity, setCardCity] = useState('');
+  const [cardState, setCardState] = useState('');
+  const [cardPhone, setCardPhone] = useState('');
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardSuccessMsg, setCardSuccessMsg] = useState<string | null>(null);
   const [cardErrorMsg, setCardErrorMsg] = useState<string | null>(null);
 
   const [vault, setVault] = useState<VaultData>({
-    availableBalanceNgn: 12450000.0,
-    totalDepositsNgn: 12450000.0,
-    totalWithdrawalsNgn: 9000000.0,
-    totalTransactionsCount: 24,
+    availableBalanceNgn: 0,
+    totalDepositsNgn: 0,
+    totalWithdrawalsNgn: 0,
+    totalTransactionsCount: 0,
     accountStatus: 'Active',
     dedicatedAccount: {
-      bankName: 'Wema Bank',
-      accountName: 'FG / JOHN DOE',
-      accountNumber: '7041289410',
+      bankName: '',
+      accountName: '',
+      accountNumber: '',
       currency: 'NGN (₦)',
     },
-    boundBankAccounts: [
-      {
-        id: 'ba-1',
-        bankName: 'Access Bank',
-        accountNumber: '0091823741',
-        accountName: 'JOHN DOE',
-        isVerified: true,
-        isPrimary: true,
-      },
-    ],
+    boundBankAccounts: [],
   });
 
-  const [transactions, setTransactions] = useState<TransactionItem[]>([
-    {
-      id: 'tx-1',
-      type: 'Deposit',
-      amountNgn: 2000000,
-      isCredit: true,
-      status: 'Completed',
-      date: 'Apr 28, 2026 10:24 AM',
-      reference: 'FG-TRX-78452',
-    },
-    {
-      id: 'tx-2',
-      type: 'Trading Payout',
-      amountNgn: 680000,
-      isCredit: true,
-      status: 'Completed',
-      date: 'Apr 27, 2026 08:15 PM',
-      reference: 'FG-TRX-78451',
-    },
-    {
-      id: 'tx-3',
-      type: 'Withdrawal (NGN)',
-      amountNgn: 500000,
-      isCredit: false,
-      status: 'Completed',
-      date: 'Apr 26, 2026 02:43 PM',
-      reference: 'FG-WTH-78450',
-    },
-    {
-      id: 'tx-4',
-      type: 'Commission',
-      amountNgn: 120000,
-      isCredit: true,
-      status: 'Completed',
-      date: 'Apr 24, 2026 11:12 AM',
-      reference: 'FG-CMM-78449',
-    },
-    {
-      id: 'tx-5',
-      type: 'Deposit (USDT)',
-      amountNgn: 750000,
-      isCredit: true,
-      status: 'Completed',
-      date: 'Apr 22, 2026 09:30 AM',
-      reference: 'FG-TRX-78448',
-    },
-  ]);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
   const fetchWalletData = async () => {
     setLoading(true);
     try {
       const [resOverview, resTx] = await Promise.all([
-        fetch('http://localhost:4000/api/v1/wallet/overview', { credentials: 'include' }),
-        fetch('http://localhost:4000/api/v1/wallet/transactions', { credentials: 'include' }),
+        fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' }),
+        fetch(`${apiUrl}/api/v1/wallet/transactions`, { credentials: 'include' }),
       ]);
 
       if (resOverview.ok) {
         const data = await resOverview.json();
-        setVault((prev) => ({
-          ...prev,
-          availableBalanceNgn: data.availableBalanceNgn ?? prev.availableBalanceNgn,
-          totalDepositsNgn: data.totalDepositsNgn ?? prev.totalDepositsNgn,
-          totalWithdrawalsNgn: data.totalWithdrawalsNgn ?? prev.totalWithdrawalsNgn,
-          dedicatedAccount: data.dedicatedAccount || prev.dedicatedAccount,
-          boundBankAccounts: data.boundBankAccounts?.length ? data.boundBankAccounts : prev.boundBankAccounts,
-        }));
+        setVault({
+          availableBalanceNgn: data.availableBalanceNgn ?? 0,
+          totalDepositsNgn: data.totalDepositsNgn ?? 0,
+          totalWithdrawalsNgn: data.totalWithdrawalsNgn ?? 0,
+          totalTransactionsCount: data.totalTransactionsCount ?? 0,
+          accountStatus: 'Active',
+          dedicatedAccount: data.dedicatedAccount || {
+            bankName: '',
+            accountName: '',
+            accountNumber: '',
+            currency: 'NGN (₦)',
+          },
+          boundBankAccounts: data.boundBankAccounts || [],
+        });
         if (data.boundBankAccounts?.length > 0 && !selectedBankId) {
           setSelectedBankId(data.boundBankAccounts[0].id);
         }
@@ -201,7 +154,7 @@ export default function GiantsVaultPage() {
 
       if (resTx.ok) {
         const txData = await resTx.json();
-        if (Array.isArray(txData) && txData.length > 0) {
+        if (Array.isArray(txData)) {
           setTransactions(
             txData.map((t: any) => ({
               id: t.id,
@@ -213,8 +166,8 @@ export default function GiantsVaultPage() {
               amountNgn: t.amountNgn,
               isCredit: t.isCredit,
               status: 'Completed',
-              date: t.date || new Date().toLocaleString(),
-              reference: t.ref || `FG-TRX-${Math.floor(10000 + Math.random() * 90000)}`,
+              date: t.date ? new Date(t.date).toLocaleDateString() : 'Recent',
+              reference: t.ref || `FG-TRX-${t.id.slice(0, 8)}`,
             }))
           );
         }
@@ -228,16 +181,20 @@ export default function GiantsVaultPage() {
 
   const fetchCardInfo = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/v1/cards/my-card', { credentials: 'include' });
+      const res = await fetch(`${apiUrl}/api/v1/cards/my-card`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setMyCardData(data);
         if (data.cardOrder?.fullName) {
           setCardFullName(data.cardOrder.fullName);
+          setCardStreet(data.cardOrder.deliveryStreet || '');
+          setCardCity(data.cardOrder.deliveryCity || '');
+          setCardState(data.cardOrder.deliveryState || '');
+          setCardPhone(data.cardOrder.phone || '');
         }
       }
     } catch (err) {
-      console.warn('Failed to load spend card data', err);
+      console.error('Failed to load card info', err);
     }
   };
 
@@ -529,7 +486,14 @@ export default function GiantsVaultPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
-                  {filteredTransactions.map((tx) => (
+                  {filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-10 text-center text-xs text-fgText-muted">
+                        No transactions recorded yet in Giants Vault.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTransactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors group">
                       {/* Type Column with Icon */}
                       <td className="py-3.5 pl-1 whitespace-nowrap">
@@ -582,7 +546,8 @@ export default function GiantsVaultPage() {
                         {tx.reference}
                       </td>
                     </tr>
-                  ))}
+                  ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -632,12 +597,13 @@ export default function GiantsVaultPage() {
                 <div>
                   <span className="text-[9px] text-fgText-muted uppercase block">Bank Name</span>
                   <span className="font-bold text-white font-mono text-xs">
-                    {vault.dedicatedAccount?.bankName || 'Wema Bank'}
+                    {vault.dedicatedAccount?.accountNumber ? (vault.dedicatedAccount?.bankName || 'Nomba Bank MFB') : 'Pending Generation'}
                   </span>
                 </div>
                 <button
-                  onClick={() => handleCopy(vault.dedicatedAccount?.bankName || 'Wema Bank', 'bank')}
-                  className="p-1 text-fgText-secondary hover:text-white transition"
+                  onClick={() => handleCopy(vault.dedicatedAccount?.bankName || '', 'bank')}
+                  disabled={!vault.dedicatedAccount?.accountNumber}
+                  className="p-1 text-fgText-secondary hover:text-white transition disabled:opacity-40"
                   title="Copy Bank Name"
                 >
                   {copied === 'bank' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -647,18 +613,35 @@ export default function GiantsVaultPage() {
               {/* Account Number */}
               <div className="py-2 px-3 rounded-xl bg-black/40 border border-emerald-500/20 flex items-center justify-between">
                 <div>
-                  <span className="text-[9px] text-fgText-muted uppercase block">Account Number</span>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[9px] text-fgText-muted uppercase block">Account Number</span>
+                  </div>
                   <span className="font-extrabold text-[#00f59b] font-mono text-sm tracking-wider">
-                    {vault.dedicatedAccount?.accountNumber || '7041289410'}
+                    {vault.dedicatedAccount?.accountNumber
+                      ? showAccountNumber
+                        ? vault.dedicatedAccount.accountNumber
+                        : '••••••••••'
+                      : 'Pending Generation'}
                   </span>
                 </div>
-                <button
-                  onClick={() => handleCopy(vault.dedicatedAccount?.accountNumber || '7041289410', 'acc')}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold font-mono hover:bg-emerald-500/25 transition flex items-center gap-1"
-                >
-                  {copied === 'acc' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{copied === 'acc' ? 'Copied' : 'Copy'}</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAccountNumber(!showAccountNumber)}
+                    className="p-1 text-fgText-secondary hover:text-white transition rounded-lg hover:bg-white/[0.05]"
+                    title={showAccountNumber ? 'Hide account number' : 'Show account number'}
+                  >
+                    {showAccountNumber ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => handleCopy(vault.dedicatedAccount?.accountNumber || '', 'acc')}
+                    disabled={!vault.dedicatedAccount?.accountNumber}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold font-mono hover:bg-emerald-500/25 transition flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {copied === 'acc' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    <span>{copied === 'acc' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Beneficiary Name */}
@@ -666,12 +649,13 @@ export default function GiantsVaultPage() {
                 <div>
                   <span className="text-[9px] text-fgText-muted uppercase block">Beneficiary</span>
                   <span className="font-semibold text-white font-mono text-[11px]">
-                    {vault.dedicatedAccount?.accountName || 'FG / JOHN DOE'}
+                    {vault.dedicatedAccount?.accountNumber ? (vault.dedicatedAccount?.accountName || 'FundedGiants Trader') : 'Pending Generation'}
                   </span>
                 </div>
                 <button
-                  onClick={() => handleCopy(vault.dedicatedAccount?.accountName || 'FG / JOHN DOE', 'name')}
-                  className="p-1 text-fgText-secondary hover:text-white transition"
+                  onClick={() => handleCopy(vault.dedicatedAccount?.accountName || '', 'name')}
+                  disabled={!vault.dedicatedAccount?.accountNumber}
+                  className="p-1 text-fgText-secondary hover:text-white transition disabled:opacity-40"
                   title="Copy Name"
                 >
                   {copied === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -790,17 +774,35 @@ export default function GiantsVaultPage() {
             <div className="p-4 rounded-xl bg-black/50 border border-emerald-500/25 space-y-3 font-mono text-xs">
               <div className="flex justify-between items-center border-b border-white/[0.06] pb-2">
                 <span className="text-fgText-muted text-[10px] uppercase">Bank</span>
-                <span className="font-bold text-white">{vault.dedicatedAccount?.bankName || 'Wema Bank'}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-white/[0.06] pb-2">
-                <span className="text-fgText-muted text-[10px] uppercase">Account Number</span>
-                <span className="font-extrabold text-[#00f59b] text-base tracking-widest">
-                  {vault.dedicatedAccount?.accountNumber || '7041289410'}
+                <span className="font-bold text-white">
+                  {vault.dedicatedAccount?.accountNumber ? (vault.dedicatedAccount?.bankName || 'Nomba Bank MFB') : 'Pending Generation'}
                 </span>
               </div>
               <div className="flex justify-between items-center border-b border-white/[0.06] pb-2">
+                <span className="text-fgText-muted text-[10px] uppercase">Account Number</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-[#00f59b] text-base tracking-widest font-mono">
+                    {vault.dedicatedAccount?.accountNumber
+                      ? showAccountNumber
+                        ? vault.dedicatedAccount.accountNumber
+                        : '••••••••••'
+                      : 'Pending Generation'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAccountNumber(!showAccountNumber)}
+                    className="text-fgText-muted hover:text-white transition p-1 rounded-md hover:bg-white/[0.05]"
+                    title={showAccountNumber ? 'Hide account number' : 'Show account number'}
+                  >
+                    {showAccountNumber ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex justify-between items-center border-b border-white/[0.06] pb-2">
                 <span className="text-fgText-muted text-[10px] uppercase">Beneficiary</span>
-                <span className="font-semibold text-white">{vault.dedicatedAccount?.accountName || 'FG / JOHN DOE'}</span>
+                <span className="font-semibold text-white">
+                  {vault.dedicatedAccount?.accountNumber ? (vault.dedicatedAccount?.accountName || 'FundedGiants Trader') : 'Pending Generation'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-fgText-muted text-[10px] uppercase">Currency</span>
@@ -809,8 +811,9 @@ export default function GiantsVaultPage() {
             </div>
 
             <button
-              onClick={() => handleCopy(vault.dedicatedAccount?.accountNumber || '7041289410', 'modal_acc')}
-              className="w-full py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
+              onClick={() => handleCopy(vault.dedicatedAccount?.accountNumber || '', 'modal_acc')}
+              disabled={!vault.dedicatedAccount?.accountNumber}
+              className="w-full py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {copied === 'modal_acc' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span>{copied === 'modal_acc' ? 'Copied Account Number!' : 'Copy Account Number'}</span>

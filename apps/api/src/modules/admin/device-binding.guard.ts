@@ -170,14 +170,8 @@ export class DeviceBindingGuard implements CanActivate {
       return true;
     }
 
-    // Allow loopback in development only if no specific hardware header was sent
-    const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost';
-    if (isLoopback && !clientHardwareId) {
-      return true;
-    }
-
     this.logger.warn(
-      `Hardware Lockdown: Access blocked from unauthorized terminal: IP=${clientIp}, DeviceHeader=${clientHardwareId}`
+      `Hardware Lockdown: Access blocked from unauthorized terminal: IP=${clientIp}, DeviceHeader=${clientHardwareId || 'NONE'}`
     );
 
     throw new ForbiddenException(

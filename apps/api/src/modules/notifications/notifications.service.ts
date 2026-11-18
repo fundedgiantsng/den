@@ -175,7 +175,6 @@ Account Details:
 • Server: ${server}
 • Leverage: ${leverage}
 • Currency: Nigerian Naira (NGN)
-• Account Group: ${groupSlug}
 
 IMPORTANT SECURITY NOTICE:
 Your master password is displayed once upon creation and cannot be recovered by support. Please store it securely or save it in your private password manager.
@@ -211,7 +210,7 @@ Outstanding trading performance!
 
 You have successfully reached the profit target for ${planTitle} (₦${capitalNgn.toLocaleString()} Capital) on account #${accountNumber}.
 
-Your account has been officially promoted to the FUNDED stage (Group: ${newGroup}).
+Your account has been officially promoted to the FUNDED stage.
 
 What happens next:
 1. Your account status is now FUNDED with up to 80% profit split.

@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Put, Body, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
+import { prisma } from '@fundedgiants/database';
 import { AuthService } from './auth.service';
 import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto, UpdateProfileDto, SetUsernameDto } from './dto/auth.dto';
 
@@ -55,6 +56,7 @@ export class AuthController {
     return {
       success: true,
       user: result.user,
+      sessionToken: result.sessionToken,
     };
   }
 
@@ -128,14 +130,10 @@ export class AuthController {
     @Req() req: any,
   ) {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
-    let user = token ? await this.authService.getSessionUser(token) : null;
-    let userId = user?.id || req.user?.id;
-    if (!userId && dto.email) {
-      const u = await this.authService.findUserByEmail(dto.email);
-      userId = u?.id;
-    }
+    const user = token ? await this.authService.getSessionUser(token) : null;
+    const userId = user?.id || req.user?.id;
     if (!userId) {
-      throw new UnauthorizedException('User identification required for KYC');
+      throw new UnauthorizedException('Authentication required for KYC verification');
     }
     return this.authService.verifyNinjaBvn({ userId, bvn: dto.bvn });
   }
@@ -144,10 +142,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Initiate Ninja.ng Hosted KYC verification session' })
   @ApiResponse({ status: 200, description: 'Returns hosted verification URL' })
-  async initiateNinjaHostedKyc(@Req() req: any) {
+  async initiateNinjaHostedKyc(@Body() body: any, @Req() req: any) {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
     const user = token ? await this.authService.getSessionUser(token) : null;
-    const userId = user?.id || req.user?.id;
+    let userId = user?.id || req.user?.id || body?.userId;
+
+    if (!userId && body?.email) {
+      const userByEmail = await prisma.user.findUnique({ where: { email: body.email } });
+      if (userByEmail) {
+        userId = userByEmail.id;
+      }
+    }
+
     if (!userId) {
       throw new UnauthorizedException('Authentication required to start Ninja KYC');
     }

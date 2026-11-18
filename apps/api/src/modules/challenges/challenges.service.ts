@@ -8,6 +8,7 @@ import {
 import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NombaService } from '../integrations/nomba/nomba.service';
 import { PurchaseFromWalletDto, ValidateCouponsDto } from './dto/purchase.dto';
 
 // Official Pricing Table in NGN synced with WordPress FG_Admin_Settings
@@ -512,6 +513,39 @@ export class ChallengesService implements OnModuleInit {
       this.logger.error(`SteraTrader provisioning error: ${err.message}`);
     }
 
+    // 6. Ensure dedicated Nomba Virtual Account is issued and bound to user on successful challenge purchase
+    try {
+      if (!user.wallet?.nombaAccountNumber) {
+        const nombaService = new NombaService();
+        const nombaRes = await nombaService.createVirtualAccount({
+          userId: user.id,
+          firstName: user.firstName || 'Trader',
+          lastName: user.lastName || 'Account',
+        });
+        if (nombaRes.status && nombaRes.data) {
+          await prisma.customerWallet.upsert({
+            where: { userId: user.id },
+            update: {
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
+            },
+            create: {
+              userId: user.id,
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
+            },
+          });
+          this.logger.log(`Provisioned Nomba account ${nombaRes.data.bankAccountNumber} for user ${user.id} on wallet challenge purchase`);
+        }
+      }
+    } catch (nombaErr: any) {
+      this.logger.warn(`Could not provision Nomba account on challenge purchase for user ${user.id}: ${nombaErr.message}`);
+    }
+
     return {
       success: true,
       orderNumber,
@@ -838,6 +872,12 @@ export class ChallengesService implements OnModuleInit {
 
     if (!user || !user.wallet) {
       throw new NotFoundException('User wallet not found');
+    }
+
+    if (user.kycStatus !== 'APPROVED') {
+      throw new BadRequestException(
+        'Identity verification (KYC) is required before requesting trading account profit payouts. Please complete your Ninja KYC verification in your Profile.'
+      );
     }
 
     const reference = `PAYOUT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;

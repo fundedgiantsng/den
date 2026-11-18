@@ -42,22 +42,26 @@ export class NombaService {
   // Production Live Base URL
   public static readonly PRODUCTION_BASE_URL = 'https://api.nomba.com';
 
-  private readonly baseUrl: string;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly accountId: string;
-  private readonly webhookSecret: string;
+  private get baseUrl(): string {
+    return (process.env.NOMBA_BASE_URL || NombaService.PRODUCTION_BASE_URL).replace(/\/+$/, '');
+  }
+  private get clientId(): string {
+    return process.env.NOMBA_CLIENT_ID || '';
+  }
+  private get clientSecret(): string {
+    return process.env.NOMBA_PRIVATE_KEY || process.env.NOMBA_CLIENT_SECRET || '';
+  }
+  private get accountId(): string {
+    return process.env.NOMBA_ACCOUNT_ID || '';
+  }
+  private get webhookSecret(): string {
+    return process.env.NOMBA_WEBHOOK_SECRET || '';
+  }
 
   private cachedToken: string | null = null;
   private tokenExpiresAt: number = 0;
 
-  constructor() {
-    this.baseUrl = (process.env.NOMBA_BASE_URL || NombaService.PRODUCTION_BASE_URL).replace(/\/+$/, '');
-    this.clientId = process.env.NOMBA_CLIENT_ID || '';
-    this.clientSecret = process.env.NOMBA_PRIVATE_KEY || process.env.NOMBA_CLIENT_SECRET || '';
-    this.accountId = process.env.NOMBA_ACCOUNT_ID || '';
-    this.webhookSecret = process.env.NOMBA_WEBHOOK_SECRET || '';
-  }
+  constructor() {}
 
   /**
    * Issue OAuth 2.0 Access Token via client_credentials
@@ -169,6 +173,79 @@ export class NombaService {
       };
     } catch (err: any) {
       this.logger.error(`Network error during Nomba virtual account creation: ${err.message}`);
+      return {
+        status: false,
+        message: err.message,
+      };
+    }
+  }
+
+  /**
+   * Create One-Time Dynamic Virtual Account for WordPress Checkout Order
+   * Tied to exact expectedAmount with 24-hour expiration
+   */
+  async createDynamicOrderAccount(params: {
+    orderId: string | number;
+    amountNgn: number;
+    customerName: string;
+    email: string;
+  }): Promise<NombaVirtualAccountResponse> {
+    const cleanCustomer = (params.customerName || 'Trader').trim().replace(/[^a-zA-Z0-9 ]/g, ' ');
+    const accountRef = `NMB${params.orderId}T${Date.now()}`;
+
+    if (!this.clientId || !this.clientSecret || !this.accountId) {
+      throw new Error('Nomba API credentials are missing in environment.');
+    }
+
+    try {
+      const token = await this.getAccessToken();
+
+      const body = {
+        accountRef,
+        accountName: cleanCustomer.slice(0, 80),
+        currency: 'NGN',
+        expectedAmount: Number(params.amountNgn),
+        expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        customerEmail: params.email,
+        customerName: cleanCustomer,
+      };
+
+      const response = await fetch(`${this.baseUrl}/v1/accounts/virtual`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          accountId: this.accountId,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const resData = await response.json().catch(() => ({}));
+
+      if (!response.ok || (resData.status === false && resData.code !== '00')) {
+        const errorMsg = resData.message || resData.description || `HTTP ${response.status}`;
+        this.logger.error(`Nomba dynamic virtual account creation failed: ${JSON.stringify(resData)}`);
+        return {
+          status: false,
+          message: errorMsg,
+        };
+      }
+
+      const d = resData.data || resData;
+      return {
+        status: true,
+        message: 'Dynamic order virtual account created successfully',
+        data: {
+          accountRef: d.accountRef || accountRef,
+          accountName: d.bankAccountName || d.accountName || `Fundedgiants/${cleanCustomer}`,
+          bankAccountNumber: d.bankAccountNumber || d.accountNumber,
+          bankAccountName: d.bankAccountName || `Fundedgiants/${cleanCustomer}`,
+          bankName: d.bankName || 'Nomba Bank MFB',
+          currency: d.currency || 'NGN',
+        },
+      };
+    } catch (err: any) {
+      this.logger.error(`Network error during Nomba dynamic virtual account creation: ${err.message}`);
       return {
         status: false,
         message: err.message,

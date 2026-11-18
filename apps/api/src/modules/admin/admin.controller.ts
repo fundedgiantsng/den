@@ -12,11 +12,14 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { AdminService, AdminActionContext } from './admin.service';
+import { DeviceBindingGuard } from './device-binding.guard';
 import { KycStatus, UserRole, ChallengeStatus, WithdrawalStatus } from '@fundedgiants/database';
 
 @Controller('admin')
+@UseGuards(DeviceBindingGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 

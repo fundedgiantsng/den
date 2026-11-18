@@ -323,7 +323,7 @@ export default function CustomerDetailPage() {
                 <div className="text-lg font-bold text-white mt-2 font-mono">
                   {wallet?.virtualAccount || 'Unassigned'}
                 </div>
-                <div className="text-xs text-slate-400 mt-0.5">{wallet?.virtualBank || 'Wema Bank'}</div>
+                <div className="text-xs text-slate-400 mt-0.5">{wallet?.virtualBank || 'Nombank MFB'}</div>
               </div>
             </div>
 

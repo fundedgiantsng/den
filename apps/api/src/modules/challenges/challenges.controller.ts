@@ -71,10 +71,7 @@ export class ChallengesController {
   private async resolveUserId(req: Request): Promise<string> {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
     if (!token) {
-      // Fallback for development/testing if no cookie set
-      const demoUser = await prisma.user.findFirst({ where: { role: 'CUSTOMER' } });
-      if (!demoUser) throw new UnauthorizedException('Authentication required');
-      return demoUser.id;
+      throw new UnauthorizedException('Authentication required');
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');

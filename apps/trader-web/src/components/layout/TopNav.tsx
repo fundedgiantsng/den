@@ -89,7 +89,7 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
     }
   };
 
-  const fullName = currentUser ? `${currentUser.firstName || 'Valued'} ${currentUser.lastName || 'Trader'}` : 'John Doe';
+  const fullName = currentUser ? `${currentUser.firstName || 'Valued'} ${currentUser.lastName || 'Trader'}` : 'Trader';
   const initials = currentUser
     ? `${(currentUser.firstName?.[0] || 'V').toUpperCase()}${(currentUser.lastName?.[0] || 'T').toUpperCase()}`
     : 'JD';

@@ -59,59 +59,18 @@ export default function GiantsCardDashboardPage() {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
   // Request form state
-  const [cardFullName, setCardFullName] = useState('OLUGBENGA OLAMIDE');
-  const [cardStreet, setCardStreet] = useState('14 Admiralty Way, Lekki Phase 1');
-  const [cardCity, setCardCity] = useState('Lekki');
-  const [cardState, setCardState] = useState('Lagos State');
-  const [cardPhone, setCardPhone] = useState('+234 803 123 4567');
+  const [cardFullName, setCardFullName] = useState('');
+  const [cardStreet, setCardStreet] = useState('');
+  const [cardCity, setCardCity] = useState('');
+  const [cardState, setCardState] = useState('');
+  const [cardPhone, setCardPhone] = useState('');
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [cancelReason, setCancelReason] = useState('Lost Card');
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Transactions mock data
-  const [transactions, setTransactions] = useState<CardTransaction[]>([
-    {
-      id: 'ctx-1',
-      merchant: 'Jumia Nigeria (Web Checkout)',
-      category: 'Online Shopping',
-      amountNgn: 45000,
-      date: 'May 14, 2026 • 02:15 PM',
-      type: 'WEB',
-      status: 'Completed',
-      ref: 'TXN-MC-88192',
-    },
-    {
-      id: 'ctx-2',
-      merchant: 'Shoprite Lekki Mall (POS Terminal)',
-      category: 'Groceries & Retail',
-      amountNgn: 82500,
-      date: 'May 12, 2026 • 06:40 PM',
-      type: 'POS',
-      status: 'Completed',
-      ref: 'TXN-MC-88191',
-    },
-    {
-      id: 'ctx-3',
-      merchant: 'GTBank ATM Cash Withdrawal',
-      category: 'Cash Withdrawal',
-      amountNgn: 50000,
-      date: 'May 10, 2026 • 11:20 AM',
-      type: 'ATM',
-      status: 'Completed',
-      ref: 'TXN-MC-88190',
-    },
-    {
-      id: 'ctx-4',
-      merchant: 'Uber Nigeria Ride Fare',
-      category: 'Transportation',
-      amountNgn: 12400,
-      date: 'May 08, 2026 • 09:10 PM',
-      type: 'WEB',
-      status: 'Completed',
-      ref: 'TXN-MC-88189',
-    },
-  ]);
+  // Real card transactions (populated from card usage)
+  const [transactions, setTransactions] = useState<CardTransaction[]>([]);
 
   const fetchCardData = async () => {
     setLoading(true);
@@ -298,14 +257,24 @@ export default function GiantsCardDashboardPage() {
                   <span>{isCardFrozen ? 'Unfreeze Card' : 'Freeze Card'}</span>
                 </button>
 
-                <a
-                  href={myCardData?.stampedUrl || '/cards/generated/sample-stamped-card.jpg'}
-                  download="FundedGiants-Spend-Card.jpg"
-                  className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-white/[0.05] border border-white/[0.1] text-white hover:bg-white/[0.1] transition text-center flex items-center justify-center gap-1.5 active:scale-95"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download JPEG</span>
-                </a>
+                {myCardData?.stampedUrl ? (
+                  <a
+                    href={myCardData.stampedUrl}
+                    download="FundedGiants-Spend-Card.jpg"
+                    className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-white/[0.05] border border-white/[0.1] text-white hover:bg-white/[0.1] transition text-center flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download JPEG</span>
+                  </a>
+                ) : (
+                  <button
+                    disabled
+                    className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-white/[0.02] border border-white/[0.05] text-fgText-muted transition text-center flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Card Not Issued</span>
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">

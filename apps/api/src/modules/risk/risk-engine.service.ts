@@ -148,6 +148,17 @@ export class RiskEngineService {
         const currentEquity = metrics?.equity ?? Number(account.currentEquity);
         const initialBal = Number(account.initialBalance);
 
+        // Check 30-Day Inactivity Breach Rule
+        const isInactive = await this.checkInactivityBreach(account, currentBalance, currentEquity);
+        if (isInactive) {
+          resetResults.push({
+            accountNumber: account.accountNumber,
+            status: 'BREACHED_INACTIVITY',
+            reason: '30-Day Inactivity Rule Breach',
+          });
+          continue;
+        }
+
         const isRhinoRushEvaluation =
           account.challenge.product.skuPrefix === 'rhino-rush' &&
           account.challenge.status === 'ACTIVE';
@@ -370,6 +381,13 @@ export class RiskEngineService {
       },
     });
 
+    // CHECK RULE 0: 30-Day Inactivity Rule
+    // If a trader has not placed a trade within 30 consecutive calendar days, the account is breached.
+    const inactivityBreached = await this.checkInactivityBreach(account, currentBalance, currentEquity);
+    if (inactivityBreached) {
+      return { status: 'breached', rule: 'INACTIVITY_BREACH' };
+    }
+
     // CHECK RULE 1: 4% Daily Drawdown Breach (Open & Closed Trades Inclusive)
     if (dailyLoss >= dailyLimit) {
       this.totalBreachesCaught++;
@@ -434,6 +452,49 @@ export class RiskEngineService {
     }
 
     return { status: 'safe', currentEquity, currentProfit: currentEquity - initialBal };
+  }
+
+  /**
+   * Check 30-Day Inactivity Rule:
+   * A trader must place at least one trade within 30 consecutive calendar days.
+   * If an active account has had no trade activity for 30 calendar days (720 hours / 2,592,000,000 ms),
+   * the account is breached due to "Breach of Inactivity Rule", closed/terminated on SteraTrader,
+   * archived, and dual real-time breach notifications are sent to the trader and administrator.
+   */
+  async checkInactivityBreach(
+    account: any,
+    currentBalance: number,
+    currentEquity: number
+  ): Promise<boolean> {
+    const latestTrade = await prisma.tradeRecord.findFirst({
+      where: { tradingAccountId: account.id },
+      orderBy: { openedAt: 'desc' },
+      select: { openedAt: true },
+    });
+
+    const lastActivityDate = latestTrade?.openedAt
+      ? new Date(latestTrade.openedAt)
+      : new Date(account.createdAt);
+
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const elapsedMs = Date.now() - lastActivityDate.getTime();
+
+    if (elapsedMs >= THIRTY_DAYS_MS) {
+      const daysInactive = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
+      this.totalBreachesCaught++;
+      const reason = `Breach of 30-Day Inactivity Rule: No trade placed in ${daysInactive} calendar days (Last Activity: ${lastActivityDate.toISOString().split('T')[0]}). The 30-day inactivity window has expired. Account terminated and archived.`;
+
+      await this.handleBreach(
+        account,
+        'INACTIVITY_BREACH',
+        reason,
+        currentBalance,
+        currentEquity
+      );
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -596,8 +657,8 @@ export class RiskEngineService {
         include: { user: true },
       });
       const traderName = challengeWithUser?.user
-        ? `${challengeWithUser.user.firstName || 'John'} ${challengeWithUser.user.lastName || 'Doe'}`.trim()
-        : 'John Doe';
+        ? `${challengeWithUser.user.firstName || 'Valued'} ${challengeWithUser.user.lastName || 'Trader'}`.trim()
+        : 'Valued Trader';
       const traderEmail = challengeWithUser?.user?.email;
 
       await this.certificatesService.generateCompletionCertificate({
@@ -759,11 +820,20 @@ export class RiskEngineService {
     // Rule C: No active critical risk breaches
     const noActiveBreachesMet = account.riskEvents.length === 0;
 
-    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
+    // Rule D: Identity verification (KYC) must be approved before payout
+    const accountUser = await prisma.user.findUnique({
+      where: { id: account.userId },
+      select: { kycStatus: true },
+    });
+    const kycApproved = accountUser?.kycStatus === 'APPROVED';
+
+    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && kycApproved;
     const traderProfitSplit = isEligible ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
 
     let failureReason: string | undefined;
-    if (!zeroOpenTradesMet) {
+    if (!kycApproved) {
+      failureReason = 'Identity verification (KYC) is required before requesting a payout. Please complete KYC in your profile.';
+    } else if (!zeroOpenTradesMet) {
       failureReason = `Account has ${openTradesCount} open position(s). All positions must be closed before payout.`;
     } else if (!minimumProfitMet) {
       failureReason = isPhoenix && payoutNumber === 1
@@ -975,6 +1045,10 @@ export class RiskEngineService {
 
     if (!user || !user.wallet) {
       throw new BadRequestException('Customer wallet not initialized');
+    }
+
+    if (user.kycStatus !== 'APPROVED') {
+      throw new BadRequestException('Identity verification (KYC) is required before requesting a payout. Please complete KYC in your profile.');
     }
 
     const payoutAmount = eligibility.withdrawableProfitNgn;

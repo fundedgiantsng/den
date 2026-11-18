@@ -4,7 +4,7 @@ const config = {
   webDir: 'public',
   server: {
     // In local development / emulator, points directly to Admin Web instance
-    // In production, points to https://admin.fundedgiants.ng
+    // In production, points to https://giant.fundedgiants.ng
     url: process.env.CAPACITOR_SERVER_URL || 'http://localhost:3001',
     cleartext: true,
   },

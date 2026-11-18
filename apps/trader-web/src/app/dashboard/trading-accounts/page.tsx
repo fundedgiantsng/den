@@ -78,80 +78,13 @@ export default function TradingAccountsPage() {
     setShowPasswordMap((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const defaultAccounts: any[] = [
-    {
-      id: '1092841',
-      loginNumber: '1092841',
-      server: 'Velton-Demo',
-      groupSlug: 'fg-rr-funded',
-      masterPassword: '••••••••',
-      investorPassword: '••••••••',
-      planName: 'Rhino Rush',
-      stage: 'Funded',
-      status: 'Active',
-      sizeNgn: 10000000,
-      balanceNgn: 10420000,
-      equityNgn: 10420000,
-      profitNgn: 420000,
-      profitPercent: '+4.20%',
-      dailyLossNgn: 180000,
-      dailyLossLimitNgn: 400000,
-      maxLossNgn: 250000,
-      maxLossLimitNgn: 1000000,
-      platform: 'SteraTrader',
-      leverage: '1:100',
-    },
-    {
-      id: '1094519',
-      loginNumber: '1094519',
-      server: 'Velton-Demo',
-      groupSlug: 'fg-rr-eval',
-      masterPassword: '••••••••',
-      investorPassword: '••••••••',
-      planName: 'Rhino Rush',
-      stage: 'Challenge',
-      status: 'Active',
-      sizeNgn: 50000000,
-      balanceNgn: 50820000,
-      equityNgn: 50820000,
-      profitNgn: 820000,
-      profitPercent: '+1.64%',
-      dailyLossNgn: 220000,
-      dailyLossLimitNgn: 2000000,
-      maxLossNgn: 650000,
-      maxLossLimitNgn: 5000000,
-      platform: 'SteraTrader',
-      leverage: '1:100',
-    },
-    {
-      id: '1098204',
-      loginNumber: '1098204',
-      server: 'Velton-Demo',
-      groupSlug: 'fg-pr-funded',
-      masterPassword: '••••••••',
-      investorPassword: '••••••••',
-      planName: 'Phoenix Rise',
-      stage: 'Funded',
-      status: 'Active',
-      sizeNgn: 25000000,
-      balanceNgn: 25600000,
-      equityNgn: 25600000,
-      profitNgn: 600000,
-      profitPercent: '+2.40%',
-      dailyLossNgn: 140000,
-      dailyLossLimitNgn: 1000000,
-      maxLossNgn: 300000,
-      maxLossLimitNgn: 1750000,
-      platform: 'SteraTrader',
-      leverage: '1:30',
-    },
-  ];
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
         setLoading(true);
-        const res = await fetch('http://localhost:4000/api/v1/challenges/my-accounts', {
+        const res = await fetch(`${apiUrl}/api/v1/challenges/my-accounts`, {
           credentials: 'include',
         });
         if (res.ok) {
@@ -184,15 +117,15 @@ export default function TradingAccountsPage() {
             return;
           }
         }
-        setAccounts(defaultAccounts);
+        setAccounts([]);
       } catch {
-        setAccounts(defaultAccounts);
+        setAccounts([]);
       } finally {
         setLoading(false);
       }
     };
     fetchAccounts();
-  }, []);
+  }, [apiUrl]);
 
   const filtered = accounts.filter((a) => {
     if (filter === 'ACTIVE') return a.status === 'Active';
@@ -349,14 +282,10 @@ export default function TradingAccountsPage() {
                 </div>
 
                 {/* SteraTrader Live Credentials Box */}
-                <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+                <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
                   <div>
                     <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
                     <span className="text-emerald-400 font-bold text-[11px] truncate block">{acc.server || 'Velton-Demo'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-fgText-muted uppercase block">Group</span>
-                    <span className="text-slate-300 font-semibold text-[11px]">{acc.groupSlug || 'fg-rr-eval'}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-fgText-muted uppercase block">Login ID</span>
@@ -373,7 +302,7 @@ export default function TradingAccountsPage() {
                     </div>
                   </div>
                   <div>
-                    <span className="text-[10px] text-fgText-muted uppercase block">Master Pass</span>
+                    <span className="text-[10px] text-fgText-muted uppercase block">Master Password</span>
                     <div className="flex items-center gap-1">
                       <span className="text-white font-bold text-[11px]">
                         {acc.masterPassword

@@ -61,6 +61,7 @@ export default function SettingsAndDevicePage() {
     wooCommerceConsumerKey: '',
     wooCommerceConsumerSecret: '',
     wooCommerceWebhookSecret: '',
+    woocommerceNombaWebhookUrl: '',
 
     // KYC (Strictly Ninja Hosted KYC)
     ninjaKycPublicKey: '',
@@ -130,6 +131,7 @@ export default function SettingsAndDevicePage() {
           nombaAccountId: s.nomba?.accountId || prev.nombaAccountId,
 
           wooCommerceApiUrl: s.wooCommerce?.apiUrl || prev.wooCommerceApiUrl,
+          woocommerceNombaWebhookUrl: s.wooCommerce?.nombaWebhookUrl || prev.woocommerceNombaWebhookUrl,
 
           ninjaKycFlowId: s.kyc?.flowId || prev.ninjaKycFlowId,
 
@@ -734,6 +736,16 @@ export default function SettingsAndDevicePage() {
                 {renderInputField('Consumer Key (ck_...)', 'wooCommerceConsumerKey', 'ck_...', false, undefined, statusData?.credentialsSummary?.wooCommerce?.consumerKeyMasked)}
                 {renderInputField('Consumer Secret (cs_...)', 'wooCommerceConsumerSecret', 'cs_...', true)}
                 {renderInputField('Order Webhook Secret', 'wooCommerceWebhookSecret', 'Webhook signature secret', true)}
+                <div className="md:col-span-2">
+                  {renderInputField(
+                    'WordPress Nomba Webhook URL (For Proxy Sync)',
+                    'woocommerceNombaWebhookUrl',
+                    'https://fundedgiants.ng/?wc-api=nomba_webhook'
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    When your Nomba Dashboard Webhook points to FundedGiants (<code className="text-emerald-400">/api/v1/webhooks/nomba</code>), any dynamic checkout payments from WordPress are automatically forwarded to this URL so WooCommerce marks orders as Paid.
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -755,7 +767,7 @@ export default function SettingsAndDevicePage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                    HOSTED KYC ACTIVE (api.ninja.ng/v1)
+                    HOSTED KYC ACTIVE (api.ninja.boucloud.io)
                   </span>
                   <button
                     type="button"
@@ -818,12 +830,11 @@ export default function SettingsAndDevicePage() {
                 </div>
               </div>
 
-              {/* Strictly 4 Keys */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {renderInputField('Ninja Public Key / Client ID', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard')}
-                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard')}
-                {renderInputField('Hosted KYC Flow ID', 'ninjaKycFlowId', 'flow_...', false, 'Flow ID created for FundedGiants on Ninja', statusData?.credentialsSummary?.kyc?.flowId)}
-                {renderInputField('Ninja Webhook Secret', 'ninjaKycWebhookSecret', 'HMAC verification secret', true, 'Configured in Ninja webhook settings')}
+              {/* Ninja KYC Credentials */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard (sk_...)')}
+                {renderInputField('Hosted KYC Flow ID', 'ninjaKycFlowId', 'vf_...', false, 'Flow ID created on Ninja (vf_...)', statusData?.credentialsSummary?.kyc?.flowId)}
+                {renderInputField('Ninja Public Key / Client ID (Optional)', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard (pk_...)')}
               </div>
             </div>
           )}

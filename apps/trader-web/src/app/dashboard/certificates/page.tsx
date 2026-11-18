@@ -29,53 +29,27 @@ export default function CertificatesPage() {
   const [selectedPreview, setSelectedPreview] = useState<CertificateItem | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'COMPLETION' | 'PAYOUT'>('ALL');
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
   useEffect(() => {
     async function loadCertificates() {
       try {
-        const res = await fetch('/api/v1/certificates');
+        const res = await fetch(`${apiUrl}/api/v1/certificates`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             setCertificates(data);
-            setLoading(false);
-            return;
           }
         }
       } catch (err) {
         console.error('Failed to fetch certificates from API:', err);
+      } finally {
+        setLoading(false);
       }
-
-      // Default sample certificates matching the exact issued templates
-      setCertificates([
-        {
-          id: 'FG-CERT-2025-84920',
-          type: 'COMPLETION',
-          title: 'Rhino Rush (1 Step) Completion',
-          program: 'Rhino Rush Evaluation',
-          recipientName: 'John Doe',
-          accountNumber: 'FG-48291',
-          issueDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-          certificateUrl: '/certificates/generated/sample-completion.jpg',
-          verificationUrl: 'https://fundedgiants.local/#payouts',
-        },
-        {
-          id: 'FG-PAY-2025-10492',
-          type: 'PAYOUT',
-          title: 'Official Trader Payout Certificate',
-          program: 'Funded Giant Profit Split',
-          recipientName: 'John Doe',
-          accountNumber: 'FG-48291',
-          amount: 680000,
-          issueDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-          certificateUrl: '/certificates/generated/sample-payout.jpg',
-          verificationUrl: 'https://fundedgiants.local/#payouts',
-        },
-      ]);
-      setLoading(false);
     }
 
     loadCertificates();
-  }, []);
+  }, [apiUrl]);
 
   const filteredCerts = certificates.filter((cert) => {
     if (filter === 'ALL') return true;

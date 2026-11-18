@@ -1,10 +1,30 @@
-import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, UnauthorizedException } from '@nestjs/common';
 import { CardsService } from './cards.service';
 import { prisma } from '@fundedgiants/database';
+import * as crypto from 'crypto';
 
 @Controller('cards')
 export class CardsController {
   constructor(private readonly cardsService: CardsService) {}
+
+  private async resolveSessionUser(req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const session = await prisma.session.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!session || new Date() > session.expiresAt) {
+      throw new UnauthorizedException('Session expired or invalid');
+    }
+
+    return session.user;
+  }
 
   @Post('request')
   async requestCard(
@@ -20,22 +40,14 @@ export class CardsController {
     },
     @Req() req: any,
   ) {
-    // Resolve user from cookie/session or default customer for local dev
-    let userId = req.user?.id;
-    if (!userId) {
-      const user = await prisma.user.findFirst({
-        where: { role: 'CUSTOMER' },
-        orderBy: { createdAt: 'desc' },
-      });
-      userId = user ? user.id : 'trader-guest';
-    }
-
+    const user = await this.resolveSessionUser(req);
     const resolvedName =
       body.fullName ||
-      (req.user ? `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() : 'OLUGBENGA OLAMIDE');
+      `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+      'Trader';
 
     return this.cardsService.requestCard({
-      userId,
+      userId: user.id,
       fullName: resolvedName,
       deliveryAddress: body.deliveryAddress,
     });
@@ -43,15 +55,7 @@ export class CardsController {
 
   @Get('my-card')
   async getMyCard(@Req() req: any) {
-    let userId = req.user?.id;
-    if (!userId) {
-      const user = await prisma.user.findFirst({
-        where: { role: 'CUSTOMER' },
-        orderBy: { createdAt: 'desc' },
-      });
-      userId = user ? user.id : 'trader-guest';
-    }
-
-    return this.cardsService.getMyCard(userId);
+    const user = await this.resolveSessionUser(req);
+    return this.cardsService.getMyCard(user.id);
   }
 }

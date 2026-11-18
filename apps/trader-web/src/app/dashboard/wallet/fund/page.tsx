@@ -25,9 +25,9 @@ export default function FundWalletPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [virtualAccount, setVirtualAccount] = useState<DedicatedAccount>({
-    bankName: 'Wema Bank',
-    accountName: 'FG / TRADER',
-    accountNumber: '7041289410',
+    bankName: '',
+    accountName: '',
+    accountNumber: '',
     currency: 'NGN (₦)',
   });
 
@@ -40,11 +40,11 @@ export default function FundWalletPage() {
         const res = await fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          if (data.dedicatedAccount) {
+          if (data.dedicatedAccount && data.dedicatedAccount.accountNumber) {
             setVirtualAccount({
-              bankName: data.dedicatedAccount.bankName || 'Wema Bank',
-              accountName: data.dedicatedAccount.accountName || 'FG / TRADER',
-              accountNumber: data.dedicatedAccount.accountNumber || '7041289410',
+              bankName: data.dedicatedAccount.bankName || 'Nombank MFB',
+              accountName: data.dedicatedAccount.accountName || 'FundedGiants Trader',
+              accountNumber: data.dedicatedAccount.accountNumber,
               currency: data.dedicatedAccount.currency || 'NGN (₦)',
             });
           }

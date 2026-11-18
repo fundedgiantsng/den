@@ -43,14 +43,14 @@ export default function AffiliateProgramPage() {
 
   // Affiliate profile data
   const [affiliateData, setAffiliateData] = useState({
-    username: 'giantstrader',
-    referralLink: 'https://fundedgiants.ng/?ref=giantstrader',
+    username: '',
+    referralLink: '',
     cpaRatePercent: 10,
     payoutRatePercent: 3,
-    totalReferrals: 18,
-    totalCommissionsNgn: 1350000,
-    withdrawnCommissionsNgn: 850000,
-    availableCommissionNgn: 500000,
+    totalReferrals: 0,
+    totalCommissionsNgn: 0,
+    withdrawnCommissionsNgn: 0,
+    availableCommissionNgn: 0,
   });
 
   // Custom Discount Code Generator State
@@ -62,30 +62,7 @@ export default function AffiliateProgramPage() {
   const [createCodeSuccess, setCreateCodeSuccess] = useState<string | null>(null);
 
   // Active custom discount codes list
-  const [myCoupons, setMyCoupons] = useState<CustomCoupon[]>([
-    {
-      id: 'cp-demo-1',
-      code: 'TRADER5',
-      discountPercent: 5,
-      maxUsage: 50,
-      usageCount: 14,
-      remainingUses: 36,
-      isActive: true,
-      netCpaPercent: 5,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'cp-demo-2',
-      code: 'VIPGIANT',
-      discountPercent: 3,
-      maxUsage: 20,
-      usageCount: 8,
-      remainingUses: 12,
-      isActive: true,
-      netCpaPercent: 7,
-      createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    },
-  ]);
+  const [myCoupons, setMyCoupons] = useState<CustomCoupon[]>([]);
 
   const netCpa = Math.max(0, affiliateData.cpaRatePercent - discountPercent);
 
@@ -179,21 +156,7 @@ export default function AffiliateProgramPage() {
         setMyCoupons((prev) => [data.coupon, ...prev.filter((c) => c.code !== data.coupon.code)]);
       }
     } catch (err: any) {
-      // Local fallback simulator if backend offline
-      const mockCreated: CustomCoupon = {
-        id: `cp-${Date.now()}`,
-        code: cleanCode,
-        discountPercent,
-        maxUsage: maxUsageInput,
-        usageCount: 0,
-        remainingUses: maxUsageInput,
-        isActive: true,
-        netCpaPercent: 10 - discountPercent,
-        createdAt: new Date().toISOString(),
-      };
-      setMyCoupons((prev) => [mockCreated, ...prev]);
-      setCreateCodeSuccess(`Code '${cleanCode}' created! ${discountPercent}% discount shared (Net CPA: ${10 - discountPercent}%) for ${maxUsageInput} users.`);
-      setCustomCodeInput('');
+      setCreateCodeError(err.message || 'Failed to create discount code.');
     } finally {
       setCreatingCode(false);
       setTimeout(() => setCreateCodeSuccess(null), 5000);

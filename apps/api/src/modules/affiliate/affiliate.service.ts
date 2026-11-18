@@ -304,6 +304,12 @@ export class AffiliateService {
       throw new NotFoundException('Affiliate profile or user wallet not found');
     }
 
+    if (profile.user.kycStatus !== 'APPROVED') {
+      throw new BadRequestException(
+        'Identity verification (KYC) is required before transferring affiliate commission to your Giants Vault. Please complete your Ninja KYC verification in your Profile.'
+      );
+    }
+
     const available =
       Number(profile.totalCommissions) - Number(profile.withdrawnCommissions);
 

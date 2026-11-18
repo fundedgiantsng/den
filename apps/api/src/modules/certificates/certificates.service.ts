@@ -371,16 +371,16 @@ export class CertificatesService {
 
     if (!user) return [];
 
-    const fullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
+    const fullName = `${user.firstName || 'Valued'} ${user.lastName || 'Trader'}`.trim();
     const certificates: any[] = [];
 
     // 1. Completion certificates for passed challenges
     for (const challenge of user.challenges) {
       if (challenge.status === 'PASSED' || challenge.status === 'COMPLETED') {
-        const certId = `FG-CERT-${challenge.challengeNumber.replace(/[^0-9]/g, '') || '48291'}`;
+        const certId = `FG-CERT-${challenge.challengeNumber.replace(/[^0-9]/g, '') || challenge.id.slice(0, 5)}`;
         const issueDate = challenge.passedAt
           ? new Date(challenge.passedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-          : 'October 24, 2026';
+          : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
         certificates.push({
           id: challenge.id,
@@ -393,8 +393,8 @@ export class CertificatesService {
           planName: 'Rhino Rush (1 Step)',
           capitalSizeNgn: Number(challenge.product.accountSize),
           issueDate,
-          imageUrl: `/certificates/generated/sample-completion.jpg`,
-          verificationUrl: `https://fundedgiants.local/#payouts`,
+          imageUrl: `/certificates/generated/${certId}.jpg`,
+          verificationUrl: `https://fundedgiants.ng/#payouts`,
           verificationHash: `0x${Buffer.from(certId).toString('hex')}`,
         });
       }
@@ -418,6 +418,8 @@ export class CertificatesService {
         month: 'long',
         day: 'numeric',
       });
+      const match = payout.description.match(/₦([\d,]+)/);
+      const payoutAmount = match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
 
       certificates.push({
         id: payout.id,
@@ -426,50 +428,14 @@ export class CertificatesService {
         title: 'PAYOUT DISBURSEMENT',
         subtitle: 'PROFIT REWARD ISSUED',
         recipientName: fullName,
-        accountNumber: payout.tradingAccount?.accountNumber || 'FG-48291',
+        accountNumber: payout.tradingAccount?.accountNumber || 'FG-ACCOUNT',
         planName: 'Funded Giant Trader',
-        amountNgn: 2480000,
+        amountNgn: payoutAmount,
         issueDate,
-        imageUrl: `/certificates/generated/sample-payout.jpg`,
-        verificationUrl: `https://fundedgiants.local/#payouts`,
+        imageUrl: `/certificates/generated/${payoutCertId}.jpg`,
+        verificationUrl: `https://fundedgiants.ng/#payouts`,
         verificationHash: `0x${Buffer.from(payoutCertId).toString('hex')}`,
       });
-    }
-
-    // If empty in dev, return baseline verified completion & payout certificates
-    if (certificates.length === 0) {
-      certificates.push(
-        {
-          id: 'cert-sample-01',
-          certificateNumber: 'FG-CERT-48291',
-          type: 'EVALUATION_PASSED',
-          title: 'RHINO RUSH COMPLETION',
-          subtitle: 'OFFICIAL FUNDED GIANT',
-          recipientName: fullName,
-          accountNumber: 'FG-48291',
-          planName: 'Rhino Rush (1 Step)',
-          capitalSizeNgn: 10000000,
-          issueDate: 'October 24, 2026',
-          imageUrl: '/certificates/generated/sample-completion.jpg',
-          verificationUrl: 'https://fundedgiants.local/#payouts',
-          verificationHash: '0x46472d434552542d3438323931',
-        },
-        {
-          id: 'cert-sample-02',
-          certificateNumber: 'FG-PAY-98412',
-          type: 'ELITE_PAYOUT',
-          title: 'PAYOUT DISBURSEMENT',
-          subtitle: 'PROFIT REWARD ISSUED',
-          recipientName: fullName,
-          accountNumber: 'FG-48291',
-          planName: 'Funded Giant Trader',
-          amountNgn: 2480000,
-          issueDate: 'November 14, 2026',
-          imageUrl: '/certificates/generated/sample-payout.jpg',
-          verificationUrl: 'https://fundedgiants.local/#payouts',
-          verificationHash: '0x46472d5041592d3938343132',
-        }
-      );
     }
 
     return certificates;

@@ -217,30 +217,56 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* First Name */}
             <div>
-              <label className="block text-xs font-semibold text-fgText-secondary mb-1.5">
-                First Name
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-fgText-secondary">
+                  First Name
+                </label>
+                {isKycApproved && (
+                  <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 font-semibold">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Locked (KYC Verified)</span>
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 value={profile.firstName}
-                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e) => !isKycApproved && setProfile({ ...profile, firstName: e.target.value })}
+                disabled={isKycApproved}
                 placeholder="Enter first name"
-                className="w-full px-4 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-xs text-white placeholder-fgText-muted focus:outline-none focus:border-emerald-500 transition-colors"
+                className={`w-full px-4 py-2.5 rounded-xl border border-fgBorder-subtle text-xs transition-colors ${
+                  isKycApproved
+                    ? 'bg-bg-card/50 text-fgText-muted cursor-not-allowed'
+                    : 'bg-bg-card text-white placeholder-fgText-muted focus:outline-none focus:border-emerald-500'
+                }`}
                 required
               />
             </div>
 
             {/* Last Name */}
             <div>
-              <label className="block text-xs font-semibold text-fgText-secondary mb-1.5">
-                Last Name
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-fgText-secondary">
+                  Last Name
+                </label>
+                {isKycApproved && (
+                  <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 font-semibold">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Locked (KYC Verified)</span>
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 value={profile.lastName}
-                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e) => !isKycApproved && setProfile({ ...profile, lastName: e.target.value })}
+                disabled={isKycApproved}
                 placeholder="Enter last name"
-                className="w-full px-4 py-2.5 bg-bg-card rounded-xl border border-fgBorder-subtle text-xs text-white placeholder-fgText-muted focus:outline-none focus:border-emerald-500 transition-colors"
+                className={`w-full px-4 py-2.5 rounded-xl border border-fgBorder-subtle text-xs transition-colors ${
+                  isKycApproved
+                    ? 'bg-bg-card/50 text-fgText-muted cursor-not-allowed'
+                    : 'bg-bg-card text-white placeholder-fgText-muted focus:outline-none focus:border-emerald-500'
+                }`}
                 required
               />
             </div>
@@ -428,7 +454,7 @@ export default function ProfilePage() {
             <div>
               <span className="text-[11px] text-fgText-muted block">Bank Name</span>
               <span className="text-xs font-bold text-white">
-                {profile.wallet.nombaVirtualBankName || profile.wallet.lencoVirtualBankName || 'Nomba / Wema Bank'}
+                {profile.wallet.nombaVirtualBankName || profile.wallet.lencoVirtualBankName || 'Nombank MFB'}
               </span>
             </div>
             <div>

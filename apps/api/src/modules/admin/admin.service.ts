@@ -338,7 +338,7 @@ export class AdminService {
               lockedBalanceNgn,
               currency: customer.wallet.currency,
               virtualAccount: customer.wallet.lencoAccountNumber,
-              virtualBank: customer.wallet.lencoVirtualBankName || 'Wema Bank',
+              virtualBank: customer.wallet.nombaVirtualBankName || customer.wallet.lencoVirtualBankName || 'Nombank MFB',
               recentDeposits: customer.wallet.deposits,
               recentWithdrawals: customer.wallet.withdrawals,
             }

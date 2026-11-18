@@ -7,12 +7,14 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { RiskEngineService } from './risk-engine.service';
+import { DeviceBindingGuard } from '../admin/device-binding.guard';
 
 @ApiTags('Risk Engine')
 @Controller('risk')
@@ -83,6 +85,7 @@ export class RiskEngineController {
    * Admin endpoint: Trigger on-demand full fleet audit across all active accounts
    */
   @Post('admin/run-audit')
+  @UseGuards(DeviceBindingGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Trigger on-demand routine fleet audit across all active accounts' })
   async runAudit() {
@@ -94,6 +97,7 @@ export class RiskEngineController {
    * (Enforces 2% daily profit cap banking & open/closed trades inclusive baseline reset)
    */
   @Post('admin/trigger-session-reset')
+  @UseGuards(DeviceBindingGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Trigger daily session reset (23:00 GMT+1) manually' })
   async triggerSessionReset() {
@@ -103,9 +107,7 @@ export class RiskEngineController {
   private async resolveUserId(req: Request): Promise<string> {
     const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
     if (!token) {
-      const demoUser = await prisma.user.findFirst({ where: { role: 'CUSTOMER' } });
-      if (!demoUser) throw new UnauthorizedException('Authentication required');
-      return demoUser.id;
+      throw new UnauthorizedException('Authentication required');
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');

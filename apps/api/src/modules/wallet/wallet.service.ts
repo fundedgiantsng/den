@@ -42,7 +42,7 @@ export class WalletService {
     const withdrawals = await prisma.withdrawal.aggregate({
       where: {
         walletId: user.wallet?.id,
-        status: { in: ['APPROVED', 'PROCESSING', 'PAID'] },
+        status: { in: ['REQUESTED', 'PENDING_REVIEW', 'APPROVED', 'PROCESSING', 'PAID'] },
       },
       _sum: { amount: true },
     });
@@ -61,12 +61,45 @@ export class WalletService {
     const totalSpentNgn = Number(previousWalletOrders._sum.amount || 0);
     const availableBalanceNgn = Math.max(0, totalDepositsNgn - totalWithdrawalsNgn - totalSpentNgn);
 
+    // Auto-provision dedicated Nomba Virtual Account if not present yet
+    let userWallet = user.wallet;
+    if (!userWallet?.nombaAccountNumber && !userWallet?.lencoAccountNumber) {
+      try {
+        const nombaService = new (require('../integrations/nomba/nomba.service').NombaService)();
+        const nombaRes = await nombaService.createVirtualAccount({
+          userId: user.id,
+          firstName: user.firstName || 'Trader',
+          lastName: user.lastName || 'Account',
+        });
+        if (nombaRes.status && nombaRes.data) {
+          userWallet = await prisma.customerWallet.upsert({
+            where: { userId: user.id },
+            update: {
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
+            },
+            create: {
+              userId: user.id,
+              nombaVirtualBankName: nombaRes.data.bankName,
+              nombaAccountName: nombaRes.data.bankAccountName,
+              nombaAccountNumber: nombaRes.data.bankAccountNumber,
+              nombaAccountReference: nombaRes.data.accountRef,
+            },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not on-demand provision Nomba virtual account for ${user.id}: ${err.message}`);
+      }
+    }
+
     // Dedicated Nomba Virtual Bank Account
     const customerFullName = `${user.firstName || 'Trader'} ${user.lastName || ''}`.trim();
     const dedicatedVirtualAccount = {
-      bankName: user.wallet?.nombaVirtualBankName || user.wallet?.lencoVirtualBankName || 'Nomba Bank MFB',
-      accountName: user.wallet?.nombaAccountName || user.wallet?.lencoAccountName || `Fundedgiants/${customerFullName}`,
-      accountNumber: user.wallet?.nombaAccountNumber || user.wallet?.lencoAccountNumber || '7041289410',
+      bankName: userWallet?.nombaVirtualBankName || userWallet?.lencoVirtualBankName || 'Nomba Bank MFB',
+      accountName: userWallet?.nombaAccountName || userWallet?.lencoAccountName || `Fundedgiants/${customerFullName}`,
+      accountNumber: userWallet?.nombaAccountNumber || userWallet?.lencoAccountNumber || '',
       currency: 'NGN (₦)',
     };
 
@@ -241,51 +274,106 @@ export class WalletService {
     bankAccountId: string;
     amountNgn: number;
   }) {
-    if (params.amountNgn < 5000) {
-      throw new BadRequestException('Minimum withdrawal amount is ₦5,000');
+    if (!Number.isFinite(params.amountNgn) || params.amountNgn < 5000 || params.amountNgn > 50000000) {
+      throw new BadRequestException('Withdrawal amount must be a valid amount between ₦5,000 and ₦50,000,000');
     }
 
-    const overview = await this.getWalletOverview(params.userId);
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: params.userId },
+        include: { wallet: true },
+      });
 
-    if (overview.availableBalanceNgn < params.amountNgn) {
-      throw new BadRequestException('Insufficient available wallet balance');
-    }
+      if (!user || !user.wallet) {
+        throw new NotFoundException('User wallet not found');
+      }
 
-    const bankAccount = await prisma.customerBankAccount.findFirst({
-      where: { id: params.bankAccountId, userId: params.userId },
-    });
+      if (user.kycStatus !== 'APPROVED') {
+        throw new BadRequestException('Identity verification (KYC) is required before requesting withdrawals. Please complete KYC in your profile.');
+      }
 
-    if (!bankAccount) {
-      throw new BadRequestException('Selected bank account is not bound to this user');
-    }
+      const deposits = await tx.deposit.aggregate({
+        where: { walletId: user.wallet.id, status: 'SUCCESSFUL' },
+        _sum: { amount: true },
+      });
 
-    const reference = `FG-WTH-${Date.now()}`;
+      const withdrawals = await tx.withdrawal.aggregate({
+        where: {
+          walletId: user.wallet.id,
+          status: { in: ['REQUESTED', 'PENDING_REVIEW', 'APPROVED', 'PROCESSING', 'PAID'] },
+        },
+        _sum: { amount: true },
+      });
 
-    // Create withdrawal record in REQUESTED status awaiting manual admin approval
-    const withdrawal = await prisma.withdrawal.create({
-      data: {
-        walletId: overview.walletId!,
-        bankAccountId: bankAccount.id,
+      const walletOrders = await tx.internalOrder.aggregate({
+        where: {
+          userId: user.id,
+          paymentMethod: 'WALLET',
+          paymentStatus: 'SUCCESSFUL',
+        },
+        _sum: { amount: true },
+      });
+
+      const totalDeposits = Number(deposits._sum.amount || 0);
+      const totalWithdrawals = Number(withdrawals._sum.amount || 0);
+      const totalSpent = Number(walletOrders._sum.amount || 0);
+      const availableBalance = Math.max(0, totalDeposits - totalWithdrawals - totalSpent);
+
+      if (availableBalance < params.amountNgn) {
+        throw new BadRequestException(
+          `Insufficient available balance. Available: ₦${availableBalance.toLocaleString()}, Requested: ₦${params.amountNgn.toLocaleString()}`
+        );
+      }
+
+      const bankAccount = await tx.customerBankAccount.findFirst({
+        where: { id: params.bankAccountId, userId: params.userId },
+      });
+
+      if (!bankAccount) {
+        throw new BadRequestException('Selected bank account is not bound to this user');
+      }
+
+      // Enforce strict name matching: Name on destination withdrawal account MUST match verified profile name
+      const profileName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
+      const accountHolderName = bankAccount.accountName.toUpperCase().trim();
+      const nameParts = profileName.split(' ').filter(Boolean);
+      const isNameMatching = nameParts.length > 0 && nameParts.every((part) => accountHolderName.includes(part));
+
+      if (!isNameMatching) {
+        throw new BadRequestException(
+          `Withdrawal rejected: Destination account name '${bankAccount.accountName}' does not match your verified legal name '${profileName}'. Third-party withdrawals are strictly prohibited under AML regulations.`
+        );
+      }
+
+      const reference = `FG-WTH-${Date.now()}`;
+
+      // Create withdrawal record in REQUESTED status awaiting manual admin approval
+      const withdrawal = await tx.withdrawal.create({
+        data: {
+          walletId: user.wallet.id,
+          bankAccountId: bankAccount.id,
+          reference,
+          amount: params.amountNgn,
+          fee: 0,
+          netAmount: params.amountNgn,
+          currency: 'NGN',
+          status: 'REQUESTED',
+        },
+      });
+
+      this.logger.log(
+        `Withdrawal ${reference} for ₦${params.amountNgn.toLocaleString()} submitted by user ${params.userId} — queued for manual admin approval.`
+      );
+
+      return {
+        success: true,
+        withdrawalId: withdrawal.id,
         reference,
-        amount: params.amountNgn,
-        fee: 0,
-        netAmount: params.amountNgn,
-        currency: 'NGN',
-        status: 'REQUESTED',
-      },
+        status: 'PENDING_APPROVAL',
+        message:
+          'Withdrawal request submitted successfully. It is now awaiting compliance review and admin approval before disbursement.',
+      };
     });
-
-    this.logger.log(
-      `Withdrawal ${reference} for ₦${params.amountNgn.toLocaleString()} submitted by user ${params.userId} — queued for manual admin approval.`
-    );
-
-    return {
-      success: true,
-      withdrawalId: withdrawal.id,
-      reference,
-      status: 'PENDING_APPROVAL',
-      message: 'Withdrawal request submitted successfully. It is now awaiting compliance review and admin approval before disbursement.',
-    };
   }
 
   /**

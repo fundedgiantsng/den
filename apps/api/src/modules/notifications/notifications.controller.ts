@@ -10,10 +10,12 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { AuthService } from '../auth/auth.service';
+import { DeviceBindingGuard } from '../admin/device-binding.guard';
 import { CreateBroadcastDto } from './dto/notifications.dto';
 import { NotificationCategory } from '@fundedgiants/database';
 
@@ -121,6 +123,7 @@ export class NotificationsController {
   // ================= ADMIN ENDPOINTS ================= //
 
   @Post('admin/broadcast')
+  @UseGuards(DeviceBindingGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Admin: Dispatch broadcast notification & email to traders' })
   async createBroadcast(@Body() dto: CreateBroadcastDto) {
@@ -128,6 +131,7 @@ export class NotificationsController {
   }
 
   @Get('admin/broadcasts')
+  @UseGuards(DeviceBindingGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin: List broadcast history' })
   async getBroadcasts() {
@@ -139,6 +143,7 @@ export class NotificationsController {
   }
 
   @Post('admin/settle-monthly-fees')
+  @UseGuards(DeviceBindingGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin: Manually trigger monthly notification fee settlement' })
   async triggerMonthlyFeeSettlement(@Body('targetMonth') targetMonth?: string) {
