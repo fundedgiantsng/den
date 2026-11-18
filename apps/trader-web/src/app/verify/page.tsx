@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ShieldCheck, ArrowRight, ArrowLeft, MessageSquare, Loader2, Edit3 } from 'lucide-react';
 
 function VerifyOtpContent() {
@@ -122,14 +123,17 @@ function VerifyOtpContent() {
     <div className="min-h-screen flex flex-col justify-between p-6 md:p-12">
       {/* Top Bar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-bg-card card-border-glow flex items-center justify-center">
-            <span className="text-emerald-400 font-bold text-xl font-heading">FG</span>
+        <Link href="/" className="flex items-center">
+          <div className="relative h-10 w-48">
+            <Image
+              src="/brand/logo-white.png"
+              alt="FundedGiants"
+              fill
+              className="object-contain object-left"
+              priority
+            />
           </div>
-          <span className="text-xl font-heading font-extrabold tracking-tight text-white">
-            FundedGiants
-          </span>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-2 text-xs text-fgText-secondary">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -253,9 +257,35 @@ function VerifyOtpContent() {
         </div>
       </div>
 
-      <div className="text-center py-4 border-t border-fgBorder-subtle text-xs text-fgText-muted">
-        FundedGiants Platform &copy; {new Date().getFullYear()}. All Rights Reserved.
-      </div>
+      <footer className="w-full max-w-7xl mx-auto py-4 border-t border-fgBorder-subtle flex flex-col sm:flex-row items-center justify-between text-xs text-fgText-muted gap-3">
+        <span>&copy; {new Date().getFullYear()} FundedGiants. All Rights Reserved.</span>
+        <div className="flex items-center gap-6">
+          <a
+            href="http://fundedgiants.ng/terms-and-conditions/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Terms and Conditions
+          </a>
+          <a
+            href="https://fundedgiants.ng/privacy-policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="https://fundedgiants.ng/help-center/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Rules and Help Center
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

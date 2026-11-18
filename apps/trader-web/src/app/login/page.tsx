@@ -492,9 +492,30 @@ function LoginContent() {
       <footer className="w-full max-w-7xl mx-auto px-6 py-6 border-t border-fgBorder-subtle flex flex-col sm:flex-row items-center justify-between text-xs text-fgText-muted gap-4">
         <span>&copy; {new Date().getFullYear()} FundedGiants. All Rights Reserved.</span>
         <div className="flex items-center gap-6">
-          <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
-          <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
-          <Link href="/support" className="hover:text-white transition-colors">Contact Support</Link>
+          <a
+            href="http://fundedgiants.ng/terms-and-conditions/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Terms and Conditions
+          </a>
+          <a
+            href="https://fundedgiants.ng/privacy-policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="https://fundedgiants.ng/help-center/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition-colors"
+          >
+            Rules and Help Center
+          </a>
         </div>
       </footer>
     </div>

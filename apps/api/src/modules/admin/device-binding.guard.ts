@@ -184,6 +184,8 @@ export class DeviceBindingGuard implements CanActivate {
     // Public auth / recovery routes are bypassed from the dual-lock
     if (
       reqPath.includes('/admin/auth/login') ||
+      reqPath.includes('/admin/auth/request-otp') ||
+      reqPath.includes('/admin/auth/verify-otp') ||
       reqPath.includes('/admin/auth/emergency-recovery')
     ) {
       return true;
