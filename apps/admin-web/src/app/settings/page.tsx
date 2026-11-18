@@ -131,8 +131,10 @@ export default function SettingsAndDevicePage() {
           nombaAccountId: s.nomba?.accountId || prev.nombaAccountId,
 
           wooCommerceApiUrl: s.wooCommerce?.apiUrl || prev.wooCommerceApiUrl,
+          wooCommerceConsumerKey: s.wooCommerce?.consumerKey || prev.wooCommerceConsumerKey,
           woocommerceNombaWebhookUrl: s.wooCommerce?.nombaWebhookUrl || prev.woocommerceNombaWebhookUrl,
 
+          ninjaKycPublicKey: s.kyc?.publicKey || prev.ninjaKycPublicKey,
           ninjaKycFlowId: s.kyc?.flowId || prev.ninjaKycFlowId,
 
           emailProvider: s.smtp?.provider || prev.emailProvider,
@@ -630,7 +632,7 @@ export default function SettingsAndDevicePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderInputField('CRM v1 Base URL', 'steraTraderApiUrl', 'https://api.steratrader.com/crm/v1', false, 'Official partner endpoint for Velton Markets')}
-                {renderInputField('API Key (Bearer Token)', 'steraTraderApiKey', 'Leave blank to retain current key', true, 'Sent as Authorization: Bearer <token>', statusData?.credentialsSummary?.steraTrader?.hasApiKey ? 'Configured' : null)}
+                {renderInputField('API Key (Bearer Token)', 'steraTraderApiKey', 'Leave blank to retain current key', true, 'Sent as Authorization: Bearer <token>', statusData?.credentialsSummary?.steraTrader?.apiKeyMask)}
               </div>
             </div>
           )}
@@ -698,9 +700,9 @@ export default function SettingsAndDevicePage() {
               {/* Strictly 4 Production Keys */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderInputField('Nomba Client ID', 'nombaClientId', 'client_id_...', false, 'Provided in your Nomba merchant portal', statusData?.credentialsSummary?.nomba?.clientId)}
-                {renderInputField('Nomba Private Key / Client Secret', 'nombaClientSecret', 'Leave blank to retain secret', true, 'Your live private key or secret')}
+                {renderInputField('Nomba Private Key / Client Secret', 'nombaClientSecret', 'Leave blank to retain secret', true, 'Your live private key or secret', statusData?.credentialsSummary?.nomba?.privateKeyMask)}
                 {renderInputField('Parent Nomba Account ID', 'nombaAccountId', 'Your primary Nomba root account ID', false, 'Root settlement account ID', statusData?.credentialsSummary?.nomba?.accountId)}
-                {renderInputField('Nomba Webhook Secret', 'nombaWebhookSecret', 'HMAC SHA256 Signature Secret', true, 'Created by you and configured in both dashboards')}
+                {renderInputField('Nomba Webhook Secret', 'nombaWebhookSecret', 'HMAC SHA256 Signature Secret', true, 'Created by you and configured in both dashboards', statusData?.credentialsSummary?.nomba?.webhookSecretMask)}
               </div>
             </div>
           )}
@@ -733,9 +735,9 @@ export default function SettingsAndDevicePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderInputField('Store REST API URL', 'wooCommerceApiUrl', 'https://fundedgiants.ng/wp-json/wc/v3')}
-                {renderInputField('Consumer Key (ck_...)', 'wooCommerceConsumerKey', 'ck_...', false, undefined, statusData?.credentialsSummary?.wooCommerce?.consumerKeyMasked)}
-                {renderInputField('Consumer Secret (cs_...)', 'wooCommerceConsumerSecret', 'cs_...', true)}
-                {renderInputField('Order Webhook Secret', 'wooCommerceWebhookSecret', 'Webhook signature secret', true)}
+                {renderInputField('Consumer Key (ck_...)', 'wooCommerceConsumerKey', 'ck_...', false, undefined, statusData?.credentialsSummary?.wooCommerce?.consumerKeyMask)}
+                {renderInputField('Consumer Secret (cs_...)', 'wooCommerceConsumerSecret', 'cs_...', true, undefined, statusData?.credentialsSummary?.wooCommerce?.consumerSecretMask)}
+                {renderInputField('Order Webhook Secret', 'wooCommerceWebhookSecret', 'Webhook signature secret', true, undefined, statusData?.credentialsSummary?.wooCommerce?.webhookSecretMask)}
                 <div className="md:col-span-2">
                   {renderInputField(
                     'WordPress Nomba Webhook URL (For Proxy Sync)',
@@ -832,9 +834,9 @@ export default function SettingsAndDevicePage() {
 
               {/* Ninja KYC Credentials */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard (sk_...)')}
+                {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard (sk_...)', statusData?.credentialsSummary?.kyc?.secretKeyMask)}
                 {renderInputField('Hosted KYC Flow ID', 'ninjaKycFlowId', 'vf_...', false, 'Flow ID created on Ninja (vf_...)', statusData?.credentialsSummary?.kyc?.flowId)}
-                {renderInputField('Ninja Public Key / Client ID (Optional)', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard (pk_...)')}
+                {renderInputField('Ninja Public Key / Client ID (Optional)', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard (pk_...)', statusData?.credentialsSummary?.kyc?.publicKeyMask)}
               </div>
             </div>
           )}
@@ -880,10 +882,10 @@ export default function SettingsAndDevicePage() {
                 {renderInputField('SMTP Host', 'smtpHost', 'smtp-relay.brevo.com')}
                 {renderInputField('SMTP Port', 'smtpPort', '587')}
                 {renderInputField('SMTP Username / Email', 'smtpUser', 'login@fundedgiants.ng')}
-                {renderInputField('SMTP Password', 'smtpPass', 'password', true)}
+                {renderInputField('SMTP Password', 'smtpPass', 'password', true, undefined, statusData?.credentialsSummary?.smtp?.passMask)}
                 {renderInputField('Sender Address (From)', 'smtpFrom', 'support@fundedgiants.ng')}
                 {renderInputField('Sender Display Name', 'smtpFromName', 'FundedGiants Operations')}
-                {renderInputField('Brevo API Key (Optional)', 'brevoApiKey', 'xkeysib-...', true)}
+                {renderInputField('Brevo API Key (Optional)', 'brevoApiKey', 'xkeysib-...', true, undefined, statusData?.credentialsSummary?.smtp?.brevoApiKeyMask)}
               </div>
             </div>
           )}
@@ -917,7 +919,7 @@ export default function SettingsAndDevicePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderInputField('Admin Direct Alert Phone', 'adminAlertPhone', '+2348012345678', false, 'Receives instant SMS for withdrawal requests and breaches', statusData?.credentialsSummary?.robase?.adminAlertPhone)}
-                {renderInputField('Robase API Key', 'robaseApiKey', 'rbs_...', true, 'Secret API key from robase.dev')}
+                {renderInputField('Robase API Key', 'robaseApiKey', 'rbs_...', true, 'Secret API key from robase.dev', statusData?.credentialsSummary?.robase?.apiKeyMask)}
                 {renderInputField('Robase Sender ID', 'robaseSenderId', 'FundedGiants', false, 'Registered alphanumeric sender ID on Robase')}
                 {renderInputField('Robase API Host URL', 'robaseApiUrl', 'https://api.robase.dev/v1', false, 'Production API gateway URL')}
               </div>

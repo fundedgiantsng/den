@@ -53,7 +53,7 @@ export class UpdateFullConfigDto {
   @IsString()
   steraTraderWebhookSecret?: string;
 
-  // Nomba Live Banking Gateway (Virtual Accounts & Disbursements)
+  // Nomba Live Banking Gateway
   @IsOptional()
   @IsString()
   nombaClientId?: string;
@@ -95,7 +95,7 @@ export class UpdateFullConfigDto {
   @IsString()
   woocommerceNombaWebhookUrl?: string;
 
-  // KYC Provider (Strictly Ninja KYC Hosted)
+  // KYC Provider (Ninja KYC Hosted)
   @IsOptional()
   @IsString()
   ninjaKycPublicKey?: string;
@@ -119,7 +119,7 @@ export class UpdateFullConfigDto {
   // Transactional Email / SMTP / Brevo
   @IsOptional()
   @IsString()
-  emailProvider?: string; // smtp | brevo
+  emailProvider?: string;
 
   @IsOptional()
   @IsString()
@@ -166,7 +166,15 @@ export class UpdateFullConfigDto {
   @IsString()
   robaseApiUrl?: string;
 
-  // Master Security Override
+  // Admin Credentials & Emergency Override
+  @IsOptional()
+  @IsString()
+  adminUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  adminPassword?: string;
+
   @IsOptional()
   @IsString()
   adminEmergencyRecoveryKey?: string;
@@ -201,12 +209,57 @@ export class UpdateFullConfigDto {
 @UseGuards(DeviceBindingGuard)
 export class AdminConfigController {
   private readonly logger = new Logger(AdminConfigController.name);
-  private readonly envPath = path.resolve(process.cwd(), '../../.env');
 
   constructor(
     private readonly nombaService: NombaService,
     private readonly steraTraderService: SteraTraderService,
   ) {}
+
+  /**
+   * Discovers all candidate .env file locations across root and packages
+   */
+  private getEnvFilePaths(): string[] {
+    const candidates = [
+      path.resolve(process.cwd(), '.env'),
+      path.resolve(process.cwd(), '../.env'),
+      path.resolve(process.cwd(), '../../.env'),
+      path.resolve(__dirname, '../../../../.env'),
+      path.resolve(__dirname, '../../../../../.env'),
+      '/var/www/fundedgiants/.env',
+      path.resolve(process.cwd(), 'apps/api/.env'),
+      path.resolve(__dirname, '../../../.env'),
+      '/var/www/fundedgiants/apps/api/.env',
+    ];
+
+    const existing: string[] = [];
+    for (const c of Array.from(new Set(candidates))) {
+      try {
+        if (fs.existsSync(c) && !existing.includes(c)) {
+          existing.push(c);
+        }
+      } catch {}
+    }
+
+    if (existing.length === 0) {
+      existing.push(path.resolve(process.cwd(), '.env'));
+    }
+    return existing;
+  }
+
+  private readAllEnv(): string {
+    const paths = this.getEnvFilePaths();
+    for (const p of paths) {
+      try {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, 'utf8');
+          if (content && content.trim().length > 0) {
+            return content;
+          }
+        }
+      } catch {}
+    }
+    return '';
+  }
 
   private maskValue(val?: string): string | null {
     if (!val || val.trim().length === 0) return null;
@@ -216,26 +269,34 @@ export class AdminConfigController {
 
   @Get('status')
   getConfigStatus() {
-    let currentEnv = '';
-    if (fs.existsSync(this.envPath)) {
-      currentEnv = fs.readFileSync(this.envPath, 'utf8');
-    }
+    const currentEnv = this.readAllEnv();
 
     const parseEnvVal = (key: string): string => {
       const match = currentEnv.match(new RegExp(`^${key}="?([^"\\r\\n]+)"?$`, 'm'));
-      return match ? match[1] : (process.env[key] || '');
+      if (match && match[1]) return match[1].trim();
+      return (process.env[key] || '').trim();
     };
 
     return {
       success: true,
       boundHardwareId: DeviceBindingGuard.PRIMARY_HARDWARE_ID,
       deviceProtection: 'ENFORCED',
-      envExists: fs.existsSync(this.envPath),
+      envExists: this.getEnvFilePaths().length > 0,
       credentialsSummary: {
         steraTrader: {
           apiUrl: parseEnvVal('STERATRADER_API_URL') || 'https://api.steratrader.com/crm/v1',
           hasApiKey: !!parseEnvVal('STERATRADER_API_KEY'),
+          apiKeyMask: this.maskValue(parseEnvVal('STERATRADER_API_KEY')),
+          clientId: parseEnvVal('STERATRADER_CLIENT_ID') || '',
+          hasClientSecret: !!parseEnvVal('STERATRADER_CLIENT_SECRET'),
+          clientSecretMask: this.maskValue(parseEnvVal('STERATRADER_CLIENT_SECRET')),
           serverName: parseEnvVal('STERATRADER_SERVER_NAME') || 'Velton-Demo',
+          accountGroup: parseEnvVal('STERATRADER_ACCOUNT_GROUP') || 'fg-rr-eval',
+          managerLogin: parseEnvVal('STERATRADER_MANAGER_LOGIN') || '',
+          hasManagerPassword: !!parseEnvVal('STERATRADER_MANAGER_PASSWORD'),
+          managerPasswordMask: this.maskValue(parseEnvVal('STERATRADER_MANAGER_PASSWORD')),
+          hasWebhookSecret: !!parseEnvVal('STERATRADER_WEBHOOK_SECRET'),
+          webhookSecretMask: this.maskValue(parseEnvVal('STERATRADER_WEBHOOK_SECRET')),
           partnerGroups: 'fg-rr-eval (32), fg-rr-funded (33), fg-pr-funded (34)',
           currency: 'NGN (Kobo minor units)',
         },
@@ -243,22 +304,32 @@ export class AdminConfigController {
           baseUrl: 'https://api.nomba.com',
           clientId: parseEnvVal('NOMBA_CLIENT_ID') || '',
           hasPrivateKey: !!parseEnvVal('NOMBA_PRIVATE_KEY') || !!parseEnvVal('NOMBA_CLIENT_SECRET'),
+          privateKeyMask: this.maskValue(parseEnvVal('NOMBA_PRIVATE_KEY') || parseEnvVal('NOMBA_CLIENT_SECRET')),
           accountId: parseEnvVal('NOMBA_ACCOUNT_ID') || '',
           hasWebhookSecret: !!parseEnvVal('NOMBA_WEBHOOK_SECRET'),
+          webhookSecretMask: this.maskValue(parseEnvVal('NOMBA_WEBHOOK_SECRET')),
         },
         wooCommerce: {
           apiUrl: parseEnvVal('WOOCOMMERCE_API_URL') || 'https://fundedgiants.ng/wp-json/wc/v3',
+          consumerKey: parseEnvVal('WOOCOMMERCE_CONSUMER_KEY') || '',
           hasConsumerKey: !!parseEnvVal('WOOCOMMERCE_CONSUMER_KEY'),
+          consumerKeyMask: this.maskValue(parseEnvVal('WOOCOMMERCE_CONSUMER_KEY')),
           hasConsumerSecret: !!parseEnvVal('WOOCOMMERCE_CONSUMER_SECRET'),
+          consumerSecretMask: this.maskValue(parseEnvVal('WOOCOMMERCE_CONSUMER_SECRET')),
           hasWebhookSecret: !!parseEnvVal('WOOCOMMERCE_WEBHOOK_SECRET'),
-          nombaWebhookUrl: parseEnvVal('WOOCOMMERCE_NOMBA_WEBHOOK_URL') || '',
+          webhookSecretMask: this.maskValue(parseEnvVal('WOOCOMMERCE_WEBHOOK_SECRET')),
+          nombaWebhookUrl: parseEnvVal('WOOCOMMERCE_NOMBA_WEBHOOK_URL') || 'https://fundedgiants.ng/wp-json/nomba/v1/webhook',
         },
         kyc: {
           baseUrl: 'https://api.ninja.boucloud.io',
+          publicKey: parseEnvVal('NINJA_KYC_PUBLIC_KEY') || parseEnvVal('NINJA_KYC_API_KEY') || '',
           hasPublicKey: !!parseEnvVal('NINJA_KYC_PUBLIC_KEY') || !!parseEnvVal('NINJA_KYC_API_KEY'),
+          publicKeyMask: this.maskValue(parseEnvVal('NINJA_KYC_PUBLIC_KEY') || parseEnvVal('NINJA_KYC_API_KEY')),
           hasSecretKey: !!parseEnvVal('NINJA_KYC_SECRET_KEY'),
+          secretKeyMask: this.maskValue(parseEnvVal('NINJA_KYC_SECRET_KEY')),
           flowId: parseEnvVal('NINJA_KYC_FLOW_ID') || '',
           hasWebhookSecret: !!parseEnvVal('NINJA_KYC_WEBHOOK_SECRET'),
+          webhookSecretMask: this.maskValue(parseEnvVal('NINJA_KYC_WEBHOOK_SECRET')),
         },
         smtp: {
           provider: parseEnvVal('EMAIL_PROVIDER') || 'smtp',
@@ -266,15 +337,24 @@ export class AdminConfigController {
           port: parseEnvVal('SMTP_PORT') || '587',
           user: parseEnvVal('SMTP_USER') || '',
           hasPassword: !!parseEnvVal('SMTP_PASS'),
+          passMask: this.maskValue(parseEnvVal('SMTP_PASS')),
           from: parseEnvVal('SMTP_FROM') || 'support@fundedgiants.ng',
           fromName: parseEnvVal('SMTP_FROM_NAME') || 'FundedGiants Operations',
           hasBrevoApiKey: !!parseEnvVal('BREVO_API_KEY'),
+          brevoApiKeyMask: this.maskValue(parseEnvVal('BREVO_API_KEY')),
         },
         robase: {
           adminAlertPhone: parseEnvVal('ADMIN_ALERT_PHONE') || '',
           hasApiKey: !!parseEnvVal('ROBASE_API_KEY'),
+          apiKeyMask: this.maskValue(parseEnvVal('ROBASE_API_KEY')),
           senderId: parseEnvVal('ROBASE_SENDER_ID') || 'FundedGiants',
           apiUrl: parseEnvVal('ROBASE_API_URL') || 'https://api.robase.dev/v1',
+        },
+        security: {
+          adminUsername: parseEnvVal('ADMIN_USERNAME') || 'admin',
+          hasAdminPassword: !!parseEnvVal('ADMIN_PASSWORD'),
+          hasEmergencyRecoveryKey: !!parseEnvVal('ADMIN_EMERGENCY_RECOVERY_KEY'),
+          emergencyRecoveryKeyMask: this.maskValue(parseEnvVal('ADMIN_EMERGENCY_RECOVERY_KEY') || 'FG-SEC-RECOVERY-8849-2026-X9B2-MASTER-OVERRIDE'),
         },
         cryptoGateways: {
           hasKorapayPublicKey: !!parseEnvVal('KORAPAY_PUBLIC_KEY'),
@@ -291,89 +371,113 @@ export class AdminConfigController {
   @HttpCode(HttpStatus.OK)
   updateCredentials(@Body() dto: UpdateFullConfigDto) {
     try {
-      let currentEnv = fs.existsSync(this.envPath)
-        ? fs.readFileSync(this.envPath, 'utf8')
-        : '';
+      const envPaths = this.getEnvFilePaths();
+      let currentEnv = this.readAllEnv();
 
-      const updateKey = (key: string, value: string | undefined) => {
-        if (value === undefined || value === null || value.trim() === '') return;
+      const updates: Record<string, string> = {};
+
+      const registerUpdate = (key: string, value: string | undefined) => {
+        if (value === undefined || value === null) return;
         const cleanVal = value.trim();
+        if (cleanVal === '') return;
+        updates[key] = cleanVal;
         process.env[key] = cleanVal;
+      };
+
+      // SteraTrader
+      registerUpdate('STERATRADER_API_URL', dto.steraTraderApiUrl);
+      registerUpdate('STERATRADER_API_KEY', dto.steraTraderApiKey);
+      registerUpdate('STERATRADER_CLIENT_ID', dto.steraTraderClientId);
+      registerUpdate('STERATRADER_CLIENT_SECRET', dto.steraTraderClientSecret);
+      registerUpdate('STERATRADER_SERVER_NAME', dto.steraTraderServerName);
+      registerUpdate('STERATRADER_ACCOUNT_GROUP', dto.steraTraderAccountGroup);
+      registerUpdate('STERATRADER_MANAGER_LOGIN', dto.steraTraderManagerLogin);
+      registerUpdate('STERATRADER_MANAGER_PASSWORD', dto.steraTraderManagerPassword);
+      registerUpdate('STERATRADER_WEBHOOK_SECRET', dto.steraTraderWebhookSecret);
+
+      // Nomba Live Banking & Settlement Gateway
+      registerUpdate('NOMBA_BASE_URL', 'https://api.nomba.com');
+      registerUpdate('NOMBA_CLIENT_ID', dto.nombaClientId);
+      registerUpdate('NOMBA_PRIVATE_KEY', dto.nombaPrivateKey || dto.nombaClientSecret);
+      registerUpdate('NOMBA_CLIENT_SECRET', dto.nombaPrivateKey || dto.nombaClientSecret);
+      registerUpdate('NOMBA_ACCOUNT_ID', dto.nombaAccountId);
+      registerUpdate('NOMBA_WEBHOOK_SECRET', dto.nombaWebhookSecret);
+
+      // WooCommerce / WordPress
+      registerUpdate('WOOCOMMERCE_API_URL', dto.wooCommerceApiUrl);
+      registerUpdate('WOOCOMMERCE_CONSUMER_KEY', dto.wooCommerceConsumerKey);
+      registerUpdate('WOOCOMMERCE_CONSUMER_SECRET', dto.wooCommerceConsumerSecret);
+      registerUpdate('WOOCOMMERCE_WEBHOOK_SECRET', dto.wooCommerceWebhookSecret);
+      registerUpdate('WOOCOMMERCE_NOMBA_WEBHOOK_URL', dto.woocommerceNombaWebhookUrl);
+
+      // Ninja KYC (Hosted Flow)
+      registerUpdate('NINJA_KYC_BASE_URL', 'https://api.ninja.boucloud.io');
+      registerUpdate('NINJA_KYC_PUBLIC_KEY', dto.ninjaKycPublicKey || dto.ninjaKycApiKey);
+      registerUpdate('NINJA_KYC_API_KEY', dto.ninjaKycPublicKey || dto.ninjaKycApiKey);
+      registerUpdate('NINJA_KYC_SECRET_KEY', dto.ninjaKycSecretKey);
+      registerUpdate('NINJA_KYC_FLOW_ID', dto.ninjaKycFlowId);
+      registerUpdate('NINJA_KYC_WEBHOOK_SECRET', dto.ninjaKycWebhookSecret);
+
+      // SMTP / Email
+      registerUpdate('EMAIL_PROVIDER', dto.emailProvider);
+      registerUpdate('SMTP_HOST', dto.smtpHost);
+      registerUpdate('SMTP_PORT', dto.smtpPort);
+      registerUpdate('SMTP_USER', dto.smtpUser);
+      registerUpdate('SMTP_PASS', dto.smtpPass);
+      registerUpdate('SMTP_FROM', dto.smtpFrom);
+      registerUpdate('SMTP_FROM_NAME', dto.smtpFromName);
+      registerUpdate('BREVO_API_KEY', dto.brevoApiKey);
+
+      // Robase Admin SMS & WhatsApp
+      registerUpdate('ADMIN_ALERT_PHONE', dto.adminAlertPhone);
+      registerUpdate('ROBASE_API_KEY', dto.robaseApiKey);
+      registerUpdate('ROBASE_SENDER_ID', dto.robaseSenderId);
+      registerUpdate('ROBASE_API_URL', dto.robaseApiUrl || 'https://api.robase.dev/v1');
+
+      // Admin Emergency Credentials
+      registerUpdate('ADMIN_USERNAME', dto.adminUsername);
+      registerUpdate('ADMIN_PASSWORD', dto.adminPassword);
+      registerUpdate('ADMIN_EMERGENCY_RECOVERY_KEY', dto.adminEmergencyRecoveryKey);
+
+      // Korapay & Crypto
+      registerUpdate('KORAPAY_PUBLIC_KEY', dto.korapayPublicKey);
+      registerUpdate('KORAPAY_SECRET_KEY', dto.korapaySecretKey);
+      registerUpdate('KORAPAY_ENCRYPTION_KEY', dto.korapayEncryptionKey);
+      registerUpdate('KORAPAY_WEBHOOK_SECRET', dto.korapayWebhookSecret);
+      registerUpdate('CRYPTO_WALLET_USDT_TRC20', dto.cryptoWalletUsdtTrc20);
+      registerUpdate('CRYPTO_WALLET_USDT_ERC20', dto.cryptoWalletUsdtErc20);
+
+      // Apply updates to .env content
+      for (const [key, cleanVal] of Object.entries(updates)) {
         const regex = new RegExp(`^${key}=.*$`, 'm');
         if (regex.test(currentEnv)) {
           currentEnv = currentEnv.replace(regex, `${key}="${cleanVal}"`);
         } else {
           currentEnv += `\n${key}="${cleanVal}"`;
         }
-      };
+      }
 
-      // SteraTrader
-      updateKey('STERATRADER_API_URL', dto.steraTraderApiUrl);
-      updateKey('STERATRADER_API_KEY', dto.steraTraderApiKey);
-      updateKey('STERATRADER_CLIENT_ID', dto.steraTraderClientId);
-      updateKey('STERATRADER_CLIENT_SECRET', dto.steraTraderClientSecret);
-      updateKey('STERATRADER_SERVER_NAME', dto.steraTraderServerName);
-      updateKey('STERATRADER_ACCOUNT_GROUP', dto.steraTraderAccountGroup);
-      updateKey('STERATRADER_MANAGER_LOGIN', dto.steraTraderManagerLogin);
-      updateKey('STERATRADER_MANAGER_PASSWORD', dto.steraTraderManagerPassword);
-      updateKey('STERATRADER_WEBHOOK_SECRET', dto.steraTraderWebhookSecret);
+      // Write to all detected .env files
+      const writtenPaths: string[] = [];
+      for (const targetPath of envPaths) {
+        try {
+          const dir = path.dirname(targetPath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          fs.writeFileSync(targetPath, currentEnv.trim() + '\n', 'utf8');
+          writtenPaths.push(targetPath);
+        } catch (err: any) {
+          this.logger.warn(`Could not write to env path ${targetPath}: ${err.message}`);
+        }
+      }
 
-      // Nomba Live Banking & Settlement Gateway
-      updateKey('NOMBA_BASE_URL', 'https://api.nomba.com');
-      updateKey('NOMBA_CLIENT_ID', dto.nombaClientId);
-      updateKey('NOMBA_PRIVATE_KEY', dto.nombaPrivateKey || dto.nombaClientSecret);
-      updateKey('NOMBA_CLIENT_SECRET', dto.nombaPrivateKey || dto.nombaClientSecret);
-      updateKey('NOMBA_ACCOUNT_ID', dto.nombaAccountId);
-      updateKey('NOMBA_WEBHOOK_SECRET', dto.nombaWebhookSecret);
-
-      // WooCommerce / WordPress
-      updateKey('WOOCOMMERCE_API_URL', dto.wooCommerceApiUrl);
-      updateKey('WOOCOMMERCE_CONSUMER_KEY', dto.wooCommerceConsumerKey);
-      updateKey('WOOCOMMERCE_CONSUMER_SECRET', dto.wooCommerceConsumerSecret);
-      updateKey('WOOCOMMERCE_WEBHOOK_SECRET', dto.wooCommerceWebhookSecret);
-      updateKey('WOOCOMMERCE_NOMBA_WEBHOOK_URL', dto.woocommerceNombaWebhookUrl);
-
-      // Ninja KYC (Hosted Flow)
-      updateKey('NINJA_KYC_BASE_URL', 'https://api.ninja.boucloud.io');
-      updateKey('NINJA_KYC_PUBLIC_KEY', dto.ninjaKycPublicKey || dto.ninjaKycApiKey);
-      updateKey('NINJA_KYC_API_KEY', dto.ninjaKycPublicKey || dto.ninjaKycApiKey);
-      updateKey('NINJA_KYC_SECRET_KEY', dto.ninjaKycSecretKey);
-      updateKey('NINJA_KYC_FLOW_ID', dto.ninjaKycFlowId);
-
-      // SMTP / Email
-      updateKey('EMAIL_PROVIDER', dto.emailProvider);
-      updateKey('SMTP_HOST', dto.smtpHost);
-      updateKey('SMTP_PORT', dto.smtpPort);
-      updateKey('SMTP_USER', dto.smtpUser);
-      updateKey('SMTP_PASS', dto.smtpPass);
-      updateKey('SMTP_FROM', dto.smtpFrom);
-      updateKey('SMTP_FROM_NAME', dto.smtpFromName);
-      updateKey('BREVO_API_KEY', dto.brevoApiKey);
-
-      // Robase Admin SMS & WhatsApp
-      updateKey('ADMIN_ALERT_PHONE', dto.adminAlertPhone);
-      updateKey('ROBASE_API_KEY', dto.robaseApiKey);
-      updateKey('ROBASE_SENDER_ID', dto.robaseSenderId);
-      updateKey('ROBASE_API_URL', dto.robaseApiUrl || 'https://api.robase.dev/v1');
-
-      // Admin Emergency Recovery Key
-      updateKey('ADMIN_EMERGENCY_RECOVERY_KEY', dto.adminEmergencyRecoveryKey);
-
-      // Korapay & Crypto
-      updateKey('KORAPAY_PUBLIC_KEY', dto.korapayPublicKey);
-      updateKey('KORAPAY_SECRET_KEY', dto.korapaySecretKey);
-      updateKey('KORAPAY_ENCRYPTION_KEY', dto.korapayEncryptionKey);
-      updateKey('KORAPAY_WEBHOOK_SECRET', dto.korapayWebhookSecret);
-      updateKey('CRYPTO_WALLET_USDT_TRC20', dto.cryptoWalletUsdtTrc20);
-      updateKey('CRYPTO_WALLET_USDT_ERC20', dto.cryptoWalletUsdtErc20);
-
-      fs.writeFileSync(this.envPath, currentEnv.trim() + '\n', 'utf8');
-
-      this.logger.log('Live production external credentials securely saved to root .env');
+      this.logger.log(`Live production external credentials securely saved to: ${writtenPaths.join(', ')}`);
 
       return {
         success: true,
-        message: 'All production provider credentials and webhook secrets securely updated.',
+        message: `All production provider credentials and webhook secrets securely updated in ${writtenPaths.length} configuration file(s).`,
+        writtenFiles: writtenPaths,
       };
     } catch (error: any) {
       this.logger.error('Failed to update credentials:', error);
