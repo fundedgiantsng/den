@@ -5,6 +5,7 @@ import { SteraTraderService } from '../integrations/steratrader/steratrader.serv
 import { CertificatesService } from '../certificates/certificates.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TradeRouterService } from './trade-router.service';
 
 export interface SteraTraderAccountMetrics {
   accountNumber: string;
@@ -68,6 +69,7 @@ export class RiskEngineService {
     private readonly certificatesService: CertificatesService,
     private readonly woocommerceService: WooCommerceService,
     private readonly notificationsService: NotificationsService,
+    private readonly tradeRouterService: TradeRouterService,
   ) {}
 
   /**
@@ -313,6 +315,23 @@ export class RiskEngineService {
       });
     }
 
+    // 1.5. Exploit & Trading Integrity Rules (Immediate First-Strike Enforcement)
+    const exploitCheck = await this.checkExploitBreaches(account, payload);
+    if (exploitCheck.breached) {
+      await this.handleBreach(
+        account,
+        exploitCheck.eventType || 'EXPLOIT_RULE_BREACH',
+        exploitCheck.reason || 'Prohibited trading exploit detected.',
+        Number(account.currentBalance),
+        Number(account.currentEquity)
+      );
+      return {
+        status: 'breached',
+        accountNumber,
+        reason: exploitCheck.reason,
+      };
+    }
+
     // 2. Perform instantaneous risk assessment on the account
     const pushedMetrics: SteraTraderAccountMetrics | undefined =
       payload.equity !== undefined || payload.balance !== undefined
@@ -328,11 +347,88 @@ export class RiskEngineService {
 
     const assessment = await this.evaluateAccount(account, pushedMetrics);
 
+    // 3. Route Trade to MT5 A-Book (if admin-activated and account is ACTIVE)
+    let routeResult: any = null;
+    if (account.status === 'ACTIVE' && event !== 'EQUITY_TICK' && tradeId && symbol) {
+      routeResult = await this.tradeRouterService.routeTradeEvent(account, {
+        event: event as any,
+        tradeId,
+        symbol,
+        direction,
+        volume,
+        openPrice,
+        closePrice,
+        stopLoss: undefined,
+        takeProfit: undefined,
+      });
+    }
+
     return {
       status: 'evaluated',
       accountNumber,
       assessment,
+      aBookRoute: routeResult,
     };
+  }
+
+  /**
+   * Exploit & Trading Integrity Rules (Immediate First-Strike Enforcement):
+   * 1. Ultra-Scalping / Latency Exploitation Rule:
+   *    Any trade closed in <30 seconds with a positive profit.
+   * 2. Prohibited News Straddling / Bracket Exploitation Rule:
+   *    Opening simultaneous opposite positions (BUY and SELL) on the same asset within 60s.
+   */
+  private async checkExploitBreaches(
+    account: any,
+    payload: TradeEventPayload
+  ): Promise<{ breached: boolean; reason?: string; eventType?: string }> {
+    const { event, tradeId, symbol, direction, profit } = payload;
+
+    // 1. Ultra-Scalping / Latency Tick Exploit Check on Trade Close
+    if (event === 'TRADE_CLOSE' && tradeId) {
+      const existingTrade = await prisma.tradeRecord.findUnique({
+        where: { externalTradeId: tradeId },
+      });
+
+      if (existingTrade) {
+        const durationMs = Date.now() - existingTrade.openedAt.getTime();
+        const netProfit = profit !== undefined ? Number(profit) : Number(existingTrade.profit || 0);
+
+        if (durationMs < 30_000 && netProfit > 0) {
+          return {
+            breached: true,
+            eventType: 'EXPLOIT_ULTRA_SCALPING',
+            reason: `Prohibited ultra-scalping/latency exploit: Trade ${tradeId} (${existingTrade.symbol}) closed in ${(durationMs / 1000).toFixed(1)}s (<30s minimum hold duration) with profit ₦${netProfit.toLocaleString()}. Account terminated on first strike.`,
+          };
+        }
+      }
+    }
+
+    // 2. Prohibited News Straddling / Dual Direction Exploit Check on Trade Open
+    if (event === 'TRADE_OPEN' && symbol && direction) {
+      const oppositeDir = direction === 'BUY' ? 'SELL' : 'BUY';
+      const recentOppositeTrade = await prisma.tradeRecord.findFirst({
+        where: {
+          tradingAccountId: account.id,
+          symbol,
+          direction: oppositeDir,
+          closedAt: null,
+          openedAt: {
+            gte: new Date(Date.now() - 60_000), // Within last 60 seconds
+          },
+        },
+      });
+
+      if (recentOppositeTrade) {
+        return {
+          breached: true,
+          eventType: 'EXPLOIT_NEWS_STRADDLE',
+          reason: `Prohibited news straddling / latency arbitrage: Opened opposite ${direction} position on ${symbol} within 60s of an active ${oppositeDir} position. Account terminated on first strike.`,
+        };
+      }
+    }
+
+    return { breached: false };
   }
 
   /**
@@ -544,6 +640,9 @@ export class RiskEngineService {
 
     // Instruct SteraTrader to terminate/archive the breached account
     await this.steraTraderService.terminateAccount(account.accountNumber, reason);
+
+    // Liquidate any active hedged positions on broker MT5 immediately
+    await this.tradeRouterService.forceCloseHedgedTrades(account.id, account.accountNumber);
 
     // Dispatch dual real-time notifications to trader and admin
     await this.dispatchBreachNotifications(account, eventType, reason, snapshotBalance, snapshotEquity);

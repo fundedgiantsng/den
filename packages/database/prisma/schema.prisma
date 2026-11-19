@@ -544,6 +544,14 @@ model TradingAccount {
   dailyDrawdownLimit     Decimal              @db.Decimal(18, 2)
   maxDrawdownLimit       Decimal              @db.Decimal(18, 2)
   lastSyncedAt           DateTime?
+  
+  // A-Book Real-Time Hedging Controls (Manual Admin Activation)
+  abookEnabled           Boolean              @default(false)
+  abookTargetAccount     String?              // e.g. "PR-1M", "PR-2.5M", "RR-10M", etc. (12 segregated accounts)
+  abookCopyRatio         Decimal              @default(1.00) @db.Decimal(3, 2) // Set & adjusted dynamically by Admin per trader (default 1.00)
+  abookNotes             String?              // Admin notes on trader connection
+  abookEnabledAt         DateTime?
+  
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
 
@@ -551,9 +559,12 @@ model TradingAccount {
   challenge              CustomerChallenge    @relation(fields: [challengeId], references: [id])
   tradeRecords           TradeRecord[]
   riskEvents             RiskEvent[]
+  hedgedTrades           HedgeTradeRecord[]
 
   @@index([userId])
   @@index([accountNumber])
+  @@index([abookEnabled])
+  @@index([abookTargetAccount])
 }
 
 model TradeRecord {
@@ -575,6 +586,33 @@ model TradeRecord {
   tradingAccount   TradingAccount @relation(fields: [tradingAccountId], references: [id])
 
   @@index([tradingAccountId])
+}
+
+model HedgeTradeRecord {
+  id               String         @id @default(uuid())
+  tradingAccountId String
+  steraTradeId     String         // SteraTrader ticket
+  brokerTicketId   Int?           // MT5 order ticket
+  targetAccount    String         // e.g. "PR-1M", "RR-10M" (one of the 12 segregated pools)
+  symbol           String         // e.g. XAUUSD
+  direction        String         // BUY, SELL
+  steraVolume      Decimal        @db.Decimal(10, 2)
+  brokerVolume     Decimal        @db.Decimal(10, 2)
+  openPrice        Decimal?       @db.Decimal(18, 5)
+  closePrice       Decimal?       @db.Decimal(18, 5)
+  profit           Decimal?       @db.Decimal(18, 2)
+  status           String         @default("PENDING") // PENDING, OPEN, CLOSED, FAILED
+  errorMessage     String?
+  openedAt         DateTime       @default(now())
+  closedAt         DateTime?
+  createdAt        DateTime       @default(now())
+
+  tradingAccount   TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([tradingAccountId])
+  @@index([steraTradeId])
+  @@index([brokerTicketId])
+  @@index([targetAccount])
 }
 
 model RiskEvent {

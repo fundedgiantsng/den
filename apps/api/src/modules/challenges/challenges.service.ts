@@ -102,7 +102,80 @@ export class ChallengesService implements OnModuleInit {
    * Dual Coupon Validator:
    * Validates both Site Discount Coupon (admin) and Affiliate Partner Code (username).
    */
-  async validateCoupons(dto: ValidateCouponsDto) {
+  async lookupCoupon(code: string) {
+    const cleanCode = (code || '').trim().toUpperCase();
+    if (!cleanCode) {
+      return { valid: false, coupon: null, message: 'Missing coupon code' };
+    }
+
+    const coupon = await prisma.coupon.findUnique({
+      where: { code: cleanCode },
+    });
+
+    if (coupon && coupon.isActive) {
+      if (coupon.expiresAt && new Date() > coupon.expiresAt) {
+        return { valid: false, coupon: null, message: 'Coupon has expired.' };
+      }
+      if (coupon.maxUsage && coupon.usageCount >= coupon.maxUsage) {
+        return { valid: false, coupon: null, message: 'Coupon usage limit reached.' };
+      }
+
+      return {
+        valid: true,
+        coupon: {
+          id: coupon.id,
+          code: coupon.code,
+          discountPercent: Number(coupon.discountPercent),
+          maxUsage: coupon.maxUsage,
+          assignedEmails: coupon.restrictedEmails ? coupon.restrictedEmails.split(',').map((e) => e.trim().toLowerCase()) : [],
+          description: coupon.description,
+          restrictedAccountType: coupon.restrictedAccountType,
+          restrictedAccountSize: coupon.restrictedAccountSize ? Number(coupon.restrictedAccountSize) : null,
+        },
+        message: `Coupon ${coupon.code} verified (${Number(coupon.discountPercent)}% off)`,
+      };
+    }
+
+    // Check affiliate profile as coupon
+    const affiliate = await prisma.affiliateProfile.findFirst({
+      where: {
+        OR: [
+          { referralCode: { equals: cleanCode.toLowerCase(), mode: 'insensitive' } },
+          { user: { username: { equals: cleanCode.toLowerCase(), mode: 'insensitive' } } },
+        ],
+      },
+      include: { user: true },
+    });
+
+    if (affiliate) {
+      const discount = Number(affiliate.customDiscountPercent || 5);
+      return {
+        valid: true,
+        coupon: {
+          code: affiliate.referralCode.toUpperCase(),
+          discountPercent: discount,
+          maxUsage: null,
+          assignedEmails: [],
+          description: `Affiliate Partner ${affiliate.referralCode}`,
+        },
+        message: `Affiliate code verified (${discount}% discount)`,
+      };
+    }
+
+    return {
+      valid: false,
+      coupon: null,
+      message: 'Invalid or expired discount coupon.',
+    };
+  }
+
+  async validateCoupons(dto: {
+    planType: 'rhino-rush' | 'phoenix-rise';
+    accountSizeNgn: number;
+    siteCouponCode?: string;
+    couponCode?: string;
+    affiliateCode?: string;
+  }) {
     const planPrices = PLAN_PRICING_TABLE[dto.planType];
     if (!planPrices || !planPrices[dto.accountSizeNgn]) {
       throw new BadRequestException('Invalid plan type or account size requested');
@@ -115,8 +188,9 @@ export class ChallengesService implements OnModuleInit {
     let siteMessage = '';
     let isSiteValid = false;
 
-    if (dto.siteCouponCode && dto.siteCouponCode.trim()) {
-      const cleanSiteCode = dto.siteCouponCode.trim().toUpperCase();
+    const siteCode = (dto.siteCouponCode || dto.couponCode || '').trim();
+    if (siteCode) {
+      const cleanSiteCode = siteCode.toUpperCase();
       const coupon = await prisma.coupon.findUnique({
         where: { code: cleanSiteCode },
       });

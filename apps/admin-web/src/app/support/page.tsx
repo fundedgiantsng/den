@@ -18,6 +18,7 @@ import {
   Sparkles,
   ExternalLink,
 } from 'lucide-react';
+import { fetchAdminApi } from '@/lib/api';
 
 interface TicketMessage {
   id: string;
@@ -105,16 +106,13 @@ export default function AdminSupportPage() {
   const loadTickets = async () => {
     setLoading(true);
     try {
-      let url = 'http://localhost:4000/api/v1/support/admin/tickets?';
+      let url = '/support/admin/tickets?';
       if (statusFilter) url += `status=${statusFilter}&`;
       if (categoryFilter) url += `category=${categoryFilter}&`;
       if (searchQuery) url += `search=${encodeURIComponent(searchQuery)}&`;
 
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) setTickets(data.data);
-      }
+      const data = await fetchAdminApi(url);
+      if (data?.data) setTickets(data.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -124,11 +122,8 @@ export default function AdminSupportPage() {
 
   const loadTicketDetails = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/tickets/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) setSelectedTicket(data.data);
-      }
+      const data = await fetchAdminApi(`/support/tickets/${id}`);
+      if (data?.data) setSelectedTicket(data.data);
     } catch (e) {
       console.error(e);
     }
@@ -136,15 +131,12 @@ export default function AdminSupportPage() {
 
   const loadChatThreads = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/v1/support/admin/chats');
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) {
-          setChatThreads(data.data);
-          if (!selectedChatUser && data.data.length > 0) {
-            setSelectedChatUser(data.data[0].user);
-            loadUserChatMessages(data.data[0].user.id);
-          }
+      const data = await fetchAdminApi('/support/admin/chats');
+      if (data?.data) {
+        setChatThreads(data.data);
+        if (!selectedChatUser && data.data.length > 0) {
+          setSelectedChatUser(data.data[0].user);
+          loadUserChatMessages(data.data[0].user.id);
         }
       }
     } catch (e) {
@@ -154,12 +146,9 @@ export default function AdminSupportPage() {
 
   const loadUserChatMessages = async (userId: string) => {
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/admin/chats/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) {
-          setChatMessages(data.data);
-        }
+      const data = await fetchAdminApi(`/support/admin/chats/${userId}`);
+      if (data?.data) {
+        setChatMessages(data.data);
       }
     } catch (e) {
       console.error(e);
@@ -184,15 +173,13 @@ export default function AdminSupportPage() {
     if (!selectedTicket) return;
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/admin/tickets/${selectedTicket.id}/status`, {
+      await fetchAdminApi(`/support/admin/tickets/${selectedTicket.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      if (res.ok) {
-        loadTicketDetails(selectedTicket.id);
-        loadTickets();
-      }
+      loadTicketDetails(selectedTicket.id);
+      loadTickets();
     } catch (e) {
       console.error(e);
     } finally {
@@ -206,17 +193,15 @@ export default function AdminSupportPage() {
 
     setReplying(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/admin/tickets/${selectedTicket.id}/reply`, {
+      await fetchAdminApi(`/support/admin/tickets/${selectedTicket.id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: replyMessage }),
       });
 
-      if (res.ok) {
-        setReplyMessage('');
-        loadTicketDetails(selectedTicket.id);
-        loadTickets();
-      }
+      setReplyMessage('');
+      loadTicketDetails(selectedTicket.id);
+      loadTickets();
     } catch (e) {
       console.error(e);
     } finally {
@@ -233,14 +218,13 @@ export default function AdminSupportPage() {
     setAdminChatInput('');
 
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/admin/chats/${selectedChatUser.id}`, {
+      const data = await fetchAdminApi(`/support/admin/chats/${selectedChatUser.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      if (data?.data) {
         setChatMessages((prev) => [...prev, data.data]);
         loadChatThreads();
       }

@@ -14,12 +14,16 @@ import { Request } from 'express';
 import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { RiskEngineService } from './risk-engine.service';
+import { TradeRouterService } from './trade-router.service';
 import { DeviceBindingGuard } from '../admin/device-binding.guard';
 
 @ApiTags('Risk Engine')
 @Controller('risk')
 export class RiskEngineController {
-  constructor(private readonly riskEngineService: RiskEngineService) {}
+  constructor(
+    private readonly riskEngineService: RiskEngineService,
+    private readonly tradeRouterService: TradeRouterService,
+  ) {}
 
   /**
    * SteraTrader Webhook / Event Stream endpoint:
@@ -102,6 +106,24 @@ export class RiskEngineController {
   @ApiOperation({ summary: 'Trigger daily session reset (23:00 GMT+1) manually' })
   async triggerSessionReset() {
     return this.riskEngineService.executeDailySessionReset();
+  }
+
+  /**
+   * Admin endpoint: Configure A-Book routing for a funded trader
+   * (Enables/disables A-Book streaming, assigns 1 of the 12 accounts, sets copy ratio)
+   */
+  @Post('admin/abook/configure')
+  @UseGuards(DeviceBindingGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Admin manual activation/configuration of A-Book trade replication' })
+  async configureAbook(@Req() req: Request) {
+    const { accountNumber, enabled, targetAccount, copyRatio, notes } = req.body;
+    return this.tradeRouterService.configureAbook(accountNumber, {
+      enabled: Boolean(enabled),
+      targetAccount,
+      copyRatio: copyRatio !== undefined ? Number(copyRatio) : undefined,
+      notes,
+    });
   }
 
   private async resolveUserId(req: Request): Promise<string> {

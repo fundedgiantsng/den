@@ -15,6 +15,7 @@ import {
   Loader2,
   ExternalLink,
 } from 'lucide-react';
+import { fetchAdminApi } from '@/lib/api';
 
 interface BroadcastRecord {
   id: string;
@@ -50,11 +51,8 @@ export default function AdminBroadcastNotificationsPage() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/v1/notifications/admin/broadcasts');
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) setBroadcasts(data.data);
-      }
+      const data = await fetchAdminApi('/notifications/admin/broadcasts');
+      if (data?.data) setBroadcasts(data.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -75,16 +73,11 @@ export default function AdminBroadcastNotificationsPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/notifications/admin/broadcast', {
+      const data = await fetchAdminApi('/notifications/admin/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to dispatch broadcast notification.');
-      }
 
       setSuccess(data.message || 'Broadcast dispatched successfully!');
       setForm({

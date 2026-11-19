@@ -253,15 +253,15 @@ export class AdminConfigController {
    */
   private getEnvFilePaths(): string[] {
     const candidates = [
+      '/var/www/fundedgiants/.env',
       path.resolve(process.cwd(), '.env'),
-      path.resolve(process.cwd(), '../.env'),
       path.resolve(process.cwd(), '../../.env'),
+      path.resolve(process.cwd(), '../.env'),
+      '/var/www/fundedgiants/apps/api/.env',
+      path.resolve(process.cwd(), 'apps/api/.env'),
       path.resolve(__dirname, '../../../../.env'),
       path.resolve(__dirname, '../../../../../.env'),
-      '/var/www/fundedgiants/.env',
-      path.resolve(process.cwd(), 'apps/api/.env'),
       path.resolve(__dirname, '../../../.env'),
-      '/var/www/fundedgiants/apps/api/.env',
     ];
 
     const existing: string[] = [];
@@ -281,17 +281,18 @@ export class AdminConfigController {
 
   private readAllEnv(): string {
     const paths = this.getEnvFilePaths();
+    let combined = '';
     for (const p of paths) {
       try {
         if (fs.existsSync(p)) {
           const content = fs.readFileSync(p, 'utf8');
-          if (content && content.trim().length > 0) {
-            return content;
+          if (content) {
+            combined += '\n' + content;
           }
         }
       } catch {}
     }
-    return '';
+    return combined;
   }
 
   private maskValue(val?: string): string | null {
@@ -521,6 +522,43 @@ export class AdminConfigController {
           writtenPaths.push(targetPath);
         } catch (err: any) {
           this.logger.warn(`Could not write to env path ${targetPath}: ${err.message}`);
+        }
+      }
+
+      // Synchronize Nomba and Webhook constants to WordPress wp-config.php if detected
+      const wpConfigCandidates = [
+        'C:\\Users\\USER\\Local Sites\\fundedgiants\\app\\public\\wp-config.php',
+        '/var/www/fundedgiants.ng/wp-config.php',
+        '/var/www/wordpress/wp-config.php',
+      ];
+      for (const wpPath of wpConfigCandidates) {
+        try {
+          if (fs.existsSync(wpPath)) {
+            let wpConfig = fs.readFileSync(wpPath, 'utf8');
+            const syncWpConstant = (name: string, val?: string) => {
+              if (!val) return;
+              const defRegex = new RegExp(`define\\(\\s*['"]${name}['"]\\s*,\\s*['"][^'"]*['"]\\s*\\);`);
+              if (defRegex.test(wpConfig)) {
+                wpConfig = wpConfig.replace(defRegex, `define( '${name}', '${val}' );`);
+              } else {
+                wpConfig = wpConfig.replace(
+                  "/* That's all, stop editing!",
+                  `define( '${name}', '${val}' );\n/* That's all, stop editing!`
+                );
+              }
+            };
+
+            syncWpConstant('NOMBA_CLIENT_ID', dto.nombaClientId);
+            syncWpConstant('NOMBA_PRIVATE_KEY', dto.nombaPrivateKey || dto.nombaClientSecret);
+            syncWpConstant('NOMBA_ACCOUNT_ID', dto.nombaAccountId);
+            syncWpConstant('NOMBA_WEBHOOK_SECRET', dto.nombaWebhookSecret);
+            syncWpConstant('WOOCOMMERCE_WEBHOOK_SECRET', dto.wooCommerceWebhookSecret);
+            fs.writeFileSync(wpPath, wpConfig, 'utf8');
+            writtenPaths.push(wpPath);
+            this.logger.log(`Synchronized updated provider credentials to WordPress at ${wpPath}`);
+          }
+        } catch (wpErr: any) {
+          this.logger.warn(`Could not sync to wp-config at ${wpPath}: ${wpErr.message}`);
         }
       }
 

@@ -99,7 +99,7 @@ export function AdminSidebar() {
           <span className="font-mono text-[10px]">GMT+1</span>
         </div>
         <a
-          href="http://localhost:3000"
+          href={process.env.NEXT_PUBLIC_APP_URL || 'https://trader.fundedgiants.ng'}
           target="_blank"
           rel="noreferrer"
           className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0f1712] border border-[#1b3322] text-xs text-slate-300 hover:text-white hover:border-emerald-500/40 transition-colors"

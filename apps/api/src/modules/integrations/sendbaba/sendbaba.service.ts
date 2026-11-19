@@ -171,6 +171,16 @@ export class SendbabaService {
     if (options.tags && options.tags.length > 0) payload.tags = options.tags;
     if (options.metadata) payload.metadata = options.metadata;
 
+    // Transactional deliverability headers to prevent landing in Gmail Promotions tab
+    payload.headers = {
+      'X-Priority': '1',
+      'X-MSMail-Priority': 'High',
+      'Importance': 'High',
+      'X-Entity-Ref-ID': crypto.randomUUID(),
+      'Auto-Submitted': 'auto-generated',
+      'X-Auto-Response-Suppress': 'All',
+    };
+
     const endpoint = `${this.apiUrl}/emails/send`;
 
     try {

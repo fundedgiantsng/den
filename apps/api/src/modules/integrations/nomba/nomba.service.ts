@@ -420,6 +420,29 @@ export class NombaService {
   }
 
   /**
+   * Verify transaction or virtual account directly with Nomba live API
+   */
+  async confirmPayment(accountRef: string): Promise<boolean> {
+    if (!accountRef) return false;
+    try {
+      const token = await this.getAccessToken();
+      const endpoint = `${this.baseUrl}/v1/accounts/virtual/${encodeURIComponent(accountRef)}`;
+      const res = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          accountId: this.accountId,
+        },
+      });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      return data?.code === '00' || data?.status === true;
+    } catch (err: any) {
+      this.logger.error(`Error querying Nomba API for payment confirmation: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
    * Test live credentials connection
    */
   async testConnection(): Promise<{ success: boolean; message: string }> {

@@ -24,20 +24,25 @@ export class PurchaseFromWalletDto {
 }
 
 export class ValidateCouponsDto {
-  @ApiProperty({ example: 'rhino-rush', description: 'Plan SKU prefix' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ example: 'rhino-rush', description: 'Plan SKU prefix' })
+  @IsOptional()
   @IsString()
-  planType!: 'rhino-rush' | 'phoenix-rise';
+  planType?: 'rhino-rush' | 'phoenix-rise';
 
-  @ApiProperty({ example: 5000000, description: 'Account size in NGN' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ example: 5000000, description: 'Account size in NGN' })
+  @IsOptional()
   @IsNumber()
-  accountSizeNgn!: number;
+  accountSizeNgn?: number;
 
   @ApiPropertyOptional({ example: 'WELCOME10', description: 'Admin or site promo code' })
   @IsOptional()
   @IsString()
   siteCouponCode?: string;
+
+  @ApiPropertyOptional({ example: 'WELCOME10', description: 'Direct coupon code alias' })
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 
   @ApiPropertyOptional({ example: 'johndoe', description: 'Affiliate username or referral code' })
   @IsOptional()

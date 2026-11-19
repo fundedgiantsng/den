@@ -67,26 +67,27 @@ export class NotificationsService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${subject}</title>
           <style>
-            body { margin: 0; padding: 24px 12px; background-color: #070b0e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #f1f5f9; }
-            .wrapper { max-width: 580px; margin: 0 auto; background: #0e151b; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.45); }
-            .accent-bar { height: 3px; background: linear-gradient(90deg, #00f59b 0%, #00b4d8 100%); }
-            .header { padding: 32px 24px 24px; text-align: center; background: #0b1116; border-bottom: 1px solid #19232d; }
-            .content { padding: 32px 28px; }
-            .title { font-size: 19px; font-weight: 700; color: #ffffff; margin-bottom: 16px; letter-spacing: -0.3px; line-height: 1.35; }
-            .card-box { background: #070e13; border: 1px solid #1a2730; border-radius: 10px; padding: 20px; margin: 20px 0; }
-            .text { font-size: 14px; line-height: 1.65; color: #cbd5e1; }
+            body { margin: 0; padding: 28px 12px; background-color: #070a08; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #e2e8f0; }
+            .wrapper { max-width: 580px; margin: 0 auto; background: #0c1610; border: 1px solid #182a1d; border-radius: 12px; overflow: hidden; box-shadow: 0 16px 36px rgba(0,0,0,0.5); }
+            .accent-line { height: 2px; background: linear-gradient(90deg, transparent, #10b981 50%, transparent); }
+            .header { padding: 36px 24px 28px; text-align: center; background: #08100b; border-bottom: 1px solid #142318; }
+            .content { padding: 32px 30px; }
+            .title { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 20px; letter-spacing: -0.2px; line-height: 1.4; }
+            .card-box { background: #08100b; border: 1px solid #1a2f21; border-radius: 8px; padding: 20px; margin: 20px 0; }
+            .geo-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.3), transparent); margin: 24px 0; }
+            .text { font-size: 14.5px; line-height: 1.7; color: #cbd5e1; }
             .btn-wrap { text-align: center; margin: 32px 0 16px; }
-            .btn { display: inline-block; padding: 13px 32px; background: #00f59b; color: #021a0f !important; font-weight: 700; text-decoration: none; border-radius: 9px; font-size: 13.5px; letter-spacing: 0.2px; box-shadow: 0 4px 14px rgba(0, 245, 155, 0.25); }
-            .security-note { font-size: 11.5px; color: #64748b; line-height: 1.5; border-top: 1px solid #17222b; padding-top: 18px; margin-top: 24px; }
-            .footer { padding: 22px 24px; background: #080c10; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #141c24; }
+            .btn { display: inline-block; padding: 13px 34px; background: #10b981; color: #03140a !important; font-weight: 700; text-decoration: none; border-radius: 8px; font-size: 14px; letter-spacing: 0.2px; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25); }
+            .security-note { font-size: 12px; color: #64748b; line-height: 1.5; padding-top: 16px; margin-top: 24px; border-top: 1px solid #142318; }
+            .footer { padding: 20px 24px; background: #060907; text-align: center; font-size: 11.5px; color: #64748b; border-top: 1px solid #121c15; }
           </style>
         </head>
         <body>
           <div class="wrapper">
-            <div class="accent-bar"></div>
+            <div class="accent-line"></div>
             <div class="header">
               <a href="${wpBase}" target="_blank" style="text-decoration: none; display: inline-block;">
-                <img src="https://fundedgiants.ng/wp-content/plugins/fundedgiants-order-pay/assets/images/fg-logo.png" alt="FundedGiants" width="160" style="display: block; margin: 0 auto; max-width: 160px; height: auto;" border="0" />
+                <img src="https://fundedgiants.ng/wp-content/uploads/2025/12/Funded-Giant-Logo-w-5-1.png" alt="FundedGiants" width="170" style="display: block; margin: 0 auto; max-width: 170px; height: auto;" border="0" />
               </a>
             </div>
             <div class="content">
@@ -95,6 +96,7 @@ export class NotificationsService {
                 Hello ${toName || 'Valued Trader'},<br><br>
                 ${bodyText.replace(/\n/g, '<br>')}
               </div>
+              <div class="geo-divider"></div>
               <div class="btn-wrap">
                 <a href="${fullActionUrl}" class="btn" target="_blank">Access Portal &rarr;</a>
               </div>

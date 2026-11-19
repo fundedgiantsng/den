@@ -31,7 +31,16 @@ export class ChallengesController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Validate site discount coupon and affiliate referral code' })
   validateCoupons(@Body() dto: ValidateCouponsDto) {
-    return this.challengesService.validateCoupons(dto);
+    if (!dto.planType || !dto.accountSizeNgn) {
+      return this.challengesService.lookupCoupon(dto.couponCode || dto.siteCouponCode || dto.affiliateCode || '');
+    }
+    return this.challengesService.validateCoupons(dto as any);
+  }
+
+  @Get('lookup-coupon/:code')
+  @ApiOperation({ summary: 'Direct lookup of coupon or affiliate code for WordPress sync' })
+  lookupCoupon(@Param('code') code: string) {
+    return this.challengesService.lookupCoupon(code);
   }
 
   @Get('my-accounts')
