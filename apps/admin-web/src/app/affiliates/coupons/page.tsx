@@ -223,7 +223,7 @@ export default function DiscountCouponsPage() {
     const size = coupon.assignedAccountSize || coupon.restrictedAccountSize || '';
     const planParam = plan ? `&plan=${encodeURIComponent(plan)}` : '';
     const sizeParam = size ? `&size=${encodeURIComponent(size)}` : '';
-    const link = `${wpBaseUrl}/checkout/?coupon=${encodeURIComponent(coupon.code)}${planParam}${sizeParam}`;
+    const link = `${wpBaseUrl}/get-funded/?coupon=${encodeURIComponent(coupon.code)}${planParam}${sizeParam}`;
 
     navigator.clipboard.writeText(link);
     setCopiedLink(coupon.code);

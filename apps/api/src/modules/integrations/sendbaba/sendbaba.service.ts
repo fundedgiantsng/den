@@ -8,6 +8,7 @@ export interface SendbabaEmailOptions {
   html?: string;
   text?: string;
   from?: string;
+  fromName?: string;
   reply_to?: string;
   cc?: string | string[];
   bcc?: string | string[];
@@ -98,11 +99,12 @@ export class SendbabaService {
   }
 
   public get fromName(): string {
-    return (
+    const raw = (
       process.env.SENDBABA_FROM_NAME ||
       process.env.SMTP_FROM_NAME ||
-      'FundedGiants Operations'
+      'FundedGiants'
     ).trim();
+    return raw.replace(/<[^>]+>/g, '').replace(/[<>"'`]/g, '').trim() || 'FundedGiants';
   }
 
   public get syncWebhookUrl(): string {
@@ -145,10 +147,13 @@ export class SendbabaService {
     const cleanFrom = this.extractCleanEmail(options.from);
     const to = Array.isArray(options.to) ? options.to : [options.to];
     const cleanTo = to.map(t => this.extractCleanEmail(t));
+    const displayName = (options.fromName || this.fromName || 'FundedGiants').replace(/<[^>]+>/g, '').replace(/[<>"'`]/g, '').trim() || 'FundedGiants';
 
     const payload: Record<string, any> = {
       from: cleanFrom,
-      from_name: this.fromName,
+      from_name: displayName,
+      name: displayName,
+      sender_name: displayName,
       to: cleanTo.length === 1 ? cleanTo[0] : cleanTo,
       subject: options.subject,
     };

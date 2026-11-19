@@ -40,3 +40,6 @@ lerna-debug.log*
 .vscode/
 *.swp
 *.swo
+ 
+fg-sync-updater.php
+fg-wordpress-sync-patch.zip

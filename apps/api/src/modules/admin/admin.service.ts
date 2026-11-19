@@ -1548,7 +1548,7 @@ export class AdminService {
     const wpBase = rawWpBase.includes('localhost') ? 'https://fundedgiants.ng' : rawWpBase;
     const planParam = assignedPlan ? `&plan=${encodeURIComponent(assignedPlan)}` : '';
     const sizeParam = assignedSize ? `&size=${encodeURIComponent(assignedSize)}` : '';
-    const checkoutUrl = `${wpBase}/checkout/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`;
+    const checkoutUrl = `${wpBase}/get-funded/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`;
 
     for (const email of emails) {
       this.logger.log(`[DISPATCH COUPON EMAIL] To: ${email} | Coupon: ${code} (${discountPercent}% off) | URL: ${checkoutUrl}`);

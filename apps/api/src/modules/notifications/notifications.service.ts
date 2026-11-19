@@ -32,16 +32,25 @@ export class NotificationsService {
   async sendEmail(toEmail: string, toName: string, subject: string, bodyText: string, actionUrl?: string) {
     const configuredProvider = (process.env.EMAIL_PROVIDER || 'sendbaba').toLowerCase().trim();
     const brevoApiKey = process.env.BREVO_API_KEY;
-    const senderEmail =
+    const rawSenderEmail =
       process.env.SENDBABA_FROM_EMAIL ||
       process.env.SMTP_FROM ||
       process.env.BREVO_SENDER_EMAIL ||
       'support@fundedgiants.ng';
-    const senderName =
+    const senderEmail =
+      rawSenderEmail.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/)?.[1]?.toLowerCase() ||
+      'support@fundedgiants.ng';
+
+    const rawSenderName =
       process.env.SENDBABA_FROM_NAME ||
       process.env.SMTP_FROM_NAME ||
       process.env.BREVO_SENDER_NAME ||
-      'FundedGiants Operations';
+      'FundedGiants';
+    const senderName =
+      rawSenderName
+        .replace(/<[^>]+>/g, '')
+        .replace(/[<>"'`]/g, '')
+        .trim() || 'FundedGiants';
 
     const wpBase = (process.env.WORDPRESS_URL || process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://fundedgiants.ng').replace(/\/+$/, '');
     const traderBase = (process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://trader.fundedgiants.ng').replace(/\/+$/, '');
@@ -50,7 +59,7 @@ export class NotificationsService {
     if (actionUrl) {
       if (actionUrl.startsWith('http://') || actionUrl.startsWith('https://')) {
         fullActionUrl = actionUrl;
-      } else if (actionUrl.startsWith('/checkout') || actionUrl.includes('checkout')) {
+      } else if (actionUrl.startsWith('/checkout') || actionUrl.includes('checkout') || actionUrl.includes('get-funded')) {
         fullActionUrl = `${wpBase}${actionUrl.startsWith('/') ? '' : '/'}${actionUrl}`;
       } else {
         fullActionUrl = `${traderBase}${actionUrl.startsWith('/') ? '' : '/'}${actionUrl}`;
@@ -121,6 +130,7 @@ export class NotificationsService {
           const sbRes = await this.sendbabaService.sendEmail({
             to: toEmail,
             from: senderEmail,
+            fromName: senderName,
             subject,
             html: htmlContent,
             text: plainText,
@@ -190,7 +200,10 @@ export class NotificationsService {
       });
 
       const info = await transporter.sendMail({
-        from: `"${senderName}" <${senderEmail}>`,
+        from: {
+          name: senderName,
+          address: senderEmail,
+        },
         to: toEmail,
         subject,
         text: plainText,
