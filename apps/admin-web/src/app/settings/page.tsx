@@ -69,14 +69,20 @@ export default function SettingsAndDevicePage() {
     ninjaKycFlowId: '',
     ninjaKycWebhookSecret: '',
 
-    // SMTP / Email
-    emailProvider: 'smtp',
-    smtpHost: '',
+    // SendBaba & SMTP / Email
+    emailProvider: 'sendbaba',
+    sendbabaApiKey: '',
+    sendbabaApiUrl: 'https://api.sendbaba.com/api/v1',
+    sendbabaFromEmail: 'support@fundedgiants.ng',
+    sendbabaFromName: 'FundedGiants Operations',
+    sendbabaSmtpUser: '',
+    sendbabaSmtpPass: '',
+    smtpHost: 'smtp.sendbaba.com',
     smtpPort: '587',
     smtpUser: '',
     smtpPass: '',
-    smtpFrom: '',
-    smtpFromName: '',
+    smtpFrom: 'support@fundedgiants.ng',
+    smtpFromName: 'FundedGiants Operations',
     brevoApiKey: '',
 
     // Admin Alerts & Robase Gateway
@@ -138,6 +144,10 @@ export default function SettingsAndDevicePage() {
           ninjaKycFlowId: s.kyc?.flowId || prev.ninjaKycFlowId,
 
           emailProvider: s.smtp?.provider || prev.emailProvider,
+          sendbabaApiKey: s.smtp?.sendbabaApiKey || prev.sendbabaApiKey,
+          sendbabaApiUrl: s.smtp?.sendbabaApiUrl || prev.sendbabaApiUrl,
+          sendbabaFromEmail: s.smtp?.sendbabaFromEmail || prev.sendbabaFromEmail,
+          sendbabaFromName: s.smtp?.sendbabaFromName || prev.sendbabaFromName,
           smtpHost: s.smtp?.host || prev.smtpHost,
           smtpPort: s.smtp?.port || prev.smtpPort,
           smtpUser: s.smtp?.user || prev.smtpUser,
@@ -841,7 +851,7 @@ export default function SettingsAndDevicePage() {
             </div>
           )}
 
-          {/* 5. SMTP / Email Provider */}
+          {/* 5. SendBaba & Transactional Email */}
           {(activeTab === 'all' || activeTab === 'smtp') && (
             <div className="rounded-2xl bg-[#0f1712] border border-[#1b3322] p-6 space-y-5">
               <div className="flex items-center justify-between border-b border-[#1b3322] pb-3">
@@ -850,42 +860,68 @@ export default function SettingsAndDevicePage() {
                     <Mail className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Transactional Email & SMTP Relay</h3>
-                    <p className="text-[11px] text-slate-400">Local SMTP / Nodemailer relay with integrated Brevo API fallback</p>
+                    <h3 className="text-sm font-bold text-white">SendBaba & Transactional Email Infrastructure</h3>
+                    <p className="text-[11px] text-slate-400">
+                      SendBaba REST API (Primary) with automated SMTP Relay & Brevo failover
+                    </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleTestConnection('smtp')}
-                  disabled={testingProvider === 'smtp'}
-                  className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
-                >
-                  {testingProvider === 'smtp' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
-                  <span>Test Relay</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleTestConnection('sendbaba')}
+                    disabled={testingProvider === 'sendbaba'}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-[11px] font-semibold text-emerald-300 hover:text-white hover:border-emerald-400 flex items-center gap-1 transition"
+                  >
+                    {testingProvider === 'sendbaba' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-emerald-400" />}
+                    <span>Test SendBaba</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTestConnection('smtp')}
+                    disabled={testingProvider === 'smtp'}
+                    className="px-2.5 py-1 rounded-lg bg-[#070a08] border border-[#1b3322] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-emerald-500/40 flex items-center gap-1 transition"
+                  >
+                    {testingProvider === 'smtp' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-slate-400" />}
+                    <span>Test SMTP</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Provider Selector */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Email Service Provider
+                    Active Email Service Provider
                   </label>
                   <select
                     value={formData.emailProvider}
                     onChange={(e) => setFormData({ ...formData, emailProvider: e.target.value })}
                     className="w-full rounded-lg bg-[#070a08] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
                   >
+                    <option value="sendbaba">SendBaba (Official African AI Infrastructure - Recommended)</option>
                     <option value="smtp">Local / Standard SMTP Relay</option>
                     <option value="brevo">Brevo (Sendinblue)</option>
                   </select>
                 </div>
-                {renderInputField('SMTP Host', 'smtpHost', 'smtp-relay.brevo.com')}
-                {renderInputField('SMTP Port', 'smtpPort', '587')}
-                {renderInputField('SMTP Username / Email', 'smtpUser', 'login@fundedgiants.ng')}
-                {renderInputField('SMTP Password', 'smtpPass', 'password', true, undefined, statusData?.credentialsSummary?.smtp?.passMask)}
-                {renderInputField('Sender Address (From)', 'smtpFrom', 'support@fundedgiants.ng')}
-                {renderInputField('Sender Display Name', 'smtpFromName', 'FundedGiants Operations')}
-                {renderInputField('Brevo API Key (Optional)', 'brevoApiKey', 'xkeysib-...', true, undefined, statusData?.credentialsSummary?.smtp?.brevoApiKeyMask)}
+                {renderInputField('SendBaba API Key', 'sendbabaApiKey', 'sb_live_...', true, undefined, statusData?.credentialsSummary?.smtp?.sendbabaApiKeyMask)}
+                {renderInputField('SendBaba API Base URL', 'sendbabaApiUrl', 'https://api.sendbaba.com/api/v1')}
+                {renderInputField('Sender Address (From)', 'sendbabaFromEmail', 'support@fundedgiants.ng')}
+                {renderInputField('Sender Display Name', 'sendbabaFromName', 'FundedGiants Operations')}
+                {renderInputField('Brevo API Key (Fallback)', 'brevoApiKey', 'xkeysib-...', true, undefined, statusData?.credentialsSummary?.smtp?.brevoApiKeyMask)}
+              </div>
+
+              {/* Secondary SMTP Relay Settings */}
+              <div className="pt-3 border-t border-[#1b3322]/60 space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  SMTP Relay Parameters (WordPress / WooCommerce / Nodemailer Relay)
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {renderInputField('SMTP Host', 'smtpHost', 'smtp.sendbaba.com')}
+                  {renderInputField('SMTP Port', 'smtpPort', '587')}
+                  {renderInputField('SMTP Username', 'smtpUser', 'login@fundedgiants.ng')}
+                  {renderInputField('SMTP Password', 'smtpPass', 'password', true, undefined, statusData?.credentialsSummary?.smtp?.passMask)}
+                </div>
               </div>
             </div>
           )}

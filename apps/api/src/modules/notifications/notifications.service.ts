@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import * as nodemailer from 'nodemailer';
+import { SendbabaService } from '../integrations/sendbaba/sendbaba.service';
 import {
   prisma,
   NotificationCategory,
@@ -22,14 +23,25 @@ export const NOTIFICATION_FEES = {
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  private readonly sendbabaService = new SendbabaService();
 
   /**
-   * Helper to send branded email via Brevo transactional API
+   * Helper to send branded email via SendBaba (primary), Brevo, or SMTP Relay
+   * SendBaba documentation: https://sendbaba.com/docs
    */
   async sendEmail(toEmail: string, toName: string, subject: string, bodyText: string, actionUrl?: string) {
+    const configuredProvider = (process.env.EMAIL_PROVIDER || 'sendbaba').toLowerCase().trim();
     const brevoApiKey = process.env.BREVO_API_KEY;
-    const senderEmail = process.env.BREVO_SENDER_EMAIL || 'support@fundedgiants.ng';
-    const senderName = process.env.BREVO_SENDER_NAME || 'FundedGiants Operations';
+    const senderEmail =
+      process.env.SENDBABA_FROM_EMAIL ||
+      process.env.SMTP_FROM ||
+      process.env.BREVO_SENDER_EMAIL ||
+      'support@fundedgiants.ng';
+    const senderName =
+      process.env.SENDBABA_FROM_NAME ||
+      process.env.SMTP_FROM_NAME ||
+      process.env.BREVO_SENDER_NAME ||
+      'FundedGiants Operations';
 
     const fullActionUrl = actionUrl
       ? actionUrl.startsWith('http')
@@ -74,7 +86,38 @@ export class NotificationsService {
       </html>
     `;
 
-    if (brevoApiKey) {
+    const plainText = `${subject}\n\nHello ${toName || 'Valued Trader'},\n\n${bodyText}\n\nView details: ${fullActionUrl}\n\nFundedGiants Operations`;
+
+    // 1. Primary Engine: SendBaba REST API (when configured or provider set to sendbaba)
+    if (configuredProvider === 'sendbaba' || this.sendbabaService.isConfigured()) {
+      if (this.sendbabaService.isConfigured()) {
+        try {
+          const sbRes = await this.sendbabaService.sendEmail({
+            to: toEmail,
+            from: `"${senderName}" <${senderEmail}>`,
+            subject,
+            html: htmlContent,
+            text: plainText,
+            reply_to: senderEmail,
+            tags: ['fundedgiants-transactional'],
+          });
+
+          if (sbRes.success) {
+            this.logger.log(`SendBaba email successfully delivered to ${toEmail} [ID: ${sbRes.messageId}]`);
+            return true;
+          }
+
+          this.logger.warn(`SendBaba email dispatch failed for ${toEmail}: ${sbRes.error}. Attempting fallback provider...`);
+        } catch (sbErr: any) {
+          this.logger.warn(`SendBaba dispatch error for ${toEmail}: ${sbErr.message}. Attempting fallback provider...`);
+        }
+      } else {
+        this.logger.warn(`EMAIL_PROVIDER is 'sendbaba' but SENDBABA_API_KEY is not set. Attempting fallback provider...`);
+      }
+    }
+
+    // 2. Secondary Engine: Brevo API
+    if (brevoApiKey && (configuredProvider === 'brevo' || !this.sendbabaService.isConfigured())) {
       try {
         const res = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
@@ -90,23 +133,24 @@ export class NotificationsService {
           }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          this.logger.warn(`Brevo email dispatch failed for ${toEmail}: ${errText}`);
-          return false;
+        if (res.ok) {
+          this.logger.log(`Brevo email dispatched to ${toEmail}`);
+          return true;
         }
-        return true;
+
+        const errText = await res.text();
+        this.logger.warn(`Brevo email dispatch failed for ${toEmail}: ${errText}`);
       } catch (err: any) {
         this.logger.warn(`Failed to dispatch email via Brevo: ${err.message}`);
-        return false;
       }
     }
 
-    // Standard SMTP / Site Mail via Nodemailer
-    const smtpHost = process.env.SMTP_HOST || 'localhost';
+    // 3. Fallback Engine: Standard SMTP / SendBaba SMTP Relay via Nodemailer
+    const isSendbabaSmtp = configuredProvider === 'sendbaba' || this.sendbabaService.isConfigured();
+    const smtpHost = process.env.SMTP_HOST || (isSendbabaSmtp ? 'smtp.sendbaba.com' : 'localhost');
     const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
+    const smtpUser = process.env.SMTP_USER || process.env.SENDBABA_SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS || process.env.SENDBABA_SMTP_PASS || this.sendbabaService.apiKey;
 
     try {
       const transporter = nodemailer.createTransport({
@@ -123,14 +167,14 @@ export class NotificationsService {
         from: `"${senderName}" <${senderEmail}>`,
         to: toEmail,
         subject,
-        text: `${subject}\n\nHello ${toName || 'Valued Trader'},\n\n${bodyText}\n\nView details: ${fullActionUrl}`,
+        text: plainText,
         html: htmlContent,
       });
 
-      this.logger.log(`SMTP email dispatched to ${toEmail} [MessageId: ${info.messageId}]`);
+      this.logger.log(`SMTP email dispatched to ${toEmail} [MessageId: ${info.messageId}] via ${smtpHost}`);
       return true;
     } catch (smtpErr: any) {
-      this.logger.warn(`SMTP relay connection issue for ${toEmail}: ${smtpErr.message}`);
+      this.logger.warn(`SMTP relay connection issue for ${toEmail} via ${smtpHost}: ${smtpErr.message}`);
       return false;
     }
   }

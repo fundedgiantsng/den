@@ -149,6 +149,31 @@ export class UpdateFullConfigDto {
   @IsString()
   brevoApiKey?: string;
 
+  // SendBaba Official Email Infrastructure
+  @IsOptional()
+  @IsString()
+  sendbabaApiKey?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaApiUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaFromEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaFromName?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaSmtpUser?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaSmtpPass?: string;
+
   // Admin Alerts & Robase Gateway
   @IsOptional()
   @IsString()
@@ -332,16 +357,22 @@ export class AdminConfigController {
           webhookSecretMask: this.maskValue(parseEnvVal('NINJA_KYC_WEBHOOK_SECRET')),
         },
         smtp: {
-          provider: parseEnvVal('EMAIL_PROVIDER') || 'smtp',
-          host: parseEnvVal('SMTP_HOST') || 'localhost',
+          provider: parseEnvVal('EMAIL_PROVIDER') || (parseEnvVal('SENDBABA_API_KEY') ? 'sendbaba' : 'smtp'),
+          host: parseEnvVal('SMTP_HOST') || 'smtp.sendbaba.com',
           port: parseEnvVal('SMTP_PORT') || '587',
-          user: parseEnvVal('SMTP_USER') || '',
-          hasPassword: !!parseEnvVal('SMTP_PASS'),
-          passMask: this.maskValue(parseEnvVal('SMTP_PASS')),
-          from: parseEnvVal('SMTP_FROM') || 'support@fundedgiants.ng',
-          fromName: parseEnvVal('SMTP_FROM_NAME') || 'FundedGiants Operations',
+          user: parseEnvVal('SMTP_USER') || parseEnvVal('SENDBABA_SMTP_USER') || '',
+          hasPassword: !!parseEnvVal('SMTP_PASS') || !!parseEnvVal('SENDBABA_SMTP_PASS'),
+          passMask: this.maskValue(parseEnvVal('SMTP_PASS') || parseEnvVal('SENDBABA_SMTP_PASS')),
+          from: parseEnvVal('SENDBABA_FROM_EMAIL') || parseEnvVal('SMTP_FROM') || 'support@fundedgiants.ng',
+          fromName: parseEnvVal('SENDBABA_FROM_NAME') || parseEnvVal('SMTP_FROM_NAME') || 'FundedGiants Operations',
           hasBrevoApiKey: !!parseEnvVal('BREVO_API_KEY'),
           brevoApiKeyMask: this.maskValue(parseEnvVal('BREVO_API_KEY')),
+          // SendBaba details
+          hasSendbabaApiKey: !!parseEnvVal('SENDBABA_API_KEY'),
+          sendbabaApiKeyMask: this.maskValue(parseEnvVal('SENDBABA_API_KEY')),
+          sendbabaApiUrl: parseEnvVal('SENDBABA_API_URL') || 'https://api.sendbaba.com/api/v1',
+          sendbabaFromEmail: parseEnvVal('SENDBABA_FROM_EMAIL') || 'support@fundedgiants.ng',
+          sendbabaFromName: parseEnvVal('SENDBABA_FROM_NAME') || 'FundedGiants Operations',
         },
         robase: {
           adminAlertPhone: parseEnvVal('ADMIN_ALERT_PHONE') || '',
@@ -418,7 +449,7 @@ export class AdminConfigController {
       registerUpdate('NINJA_KYC_FLOW_ID', dto.ninjaKycFlowId);
       registerUpdate('NINJA_KYC_WEBHOOK_SECRET', dto.ninjaKycWebhookSecret);
 
-      // SMTP / Email
+      // SMTP / Email / SendBaba
       registerUpdate('EMAIL_PROVIDER', dto.emailProvider);
       registerUpdate('SMTP_HOST', dto.smtpHost);
       registerUpdate('SMTP_PORT', dto.smtpPort);
@@ -427,6 +458,12 @@ export class AdminConfigController {
       registerUpdate('SMTP_FROM', dto.smtpFrom);
       registerUpdate('SMTP_FROM_NAME', dto.smtpFromName);
       registerUpdate('BREVO_API_KEY', dto.brevoApiKey);
+      registerUpdate('SENDBABA_API_KEY', dto.sendbabaApiKey);
+      registerUpdate('SENDBABA_API_URL', dto.sendbabaApiUrl || 'https://api.sendbaba.com/api/v1');
+      registerUpdate('SENDBABA_FROM_EMAIL', dto.sendbabaFromEmail || dto.smtpFrom);
+      registerUpdate('SENDBABA_FROM_NAME', dto.sendbabaFromName || dto.smtpFromName);
+      registerUpdate('SENDBABA_SMTP_USER', dto.sendbabaSmtpUser);
+      registerUpdate('SENDBABA_SMTP_PASS', dto.sendbabaSmtpPass);
 
       // Robase Admin SMS & WhatsApp
       registerUpdate('ADMIN_ALERT_PHONE', dto.adminAlertPhone);
@@ -513,6 +550,14 @@ export class AdminConfigController {
       case 'smtp':
         details = 'SMTP relay host responded to HELO handshake.';
         break;
+      case 'sendbaba': {
+        const sendbabaService = new (require('../integrations/sendbaba/sendbaba.service').SendbabaService)();
+        const testRes = await sendbabaService.testConnection();
+        status = testRes.success ? 'CONNECTED' : 'DISCONNECTED';
+        details = testRes.message;
+        latencyMs = testRes.latencyMs;
+        break;
+      }
       case 'kyc': {
         const ninjaKycService = new (require('../integrations/ninja/ninja.service').NinjaKycService)();
         const testRes = await ninjaKycService.createVerificationSession({

@@ -1544,42 +1544,19 @@ export class AdminService {
 
     for (const email of emails) {
       this.logger.log(`[DISPATCH COUPON EMAIL] To: ${email} | Coupon: ${code} (${discountPercent}% off) | URL: ${checkoutUrl}`);
-      // Brevo / SMTP HTTP dispatch
-      const brevoKey = process.env.BREVO_API_KEY;
-      if (brevoKey) {
-        try {
-          await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'api-key': brevoKey,
-            },
-            body: JSON.stringify({
-              sender: { name: 'FundedGiants', email: process.env.SMTP_FROM || 'support@fundedgiants.ng' },
-              to: [{ email }],
-              subject: discountPercent === 100 ? 'Your 100% Free FundedGiants Account Offer!' : `Exclusive ${discountPercent}% Off Your FundedGiants Challenge`,
-              htmlContent: `
-                <div style="font-family: Arial, sans-serif; background: #070a08; color: #ffffff; padding: 24px; border-radius: 12px;">
-                  <h2 style="color: #00f59b;">Exclusive Challenge Offer from FundedGiants</h2>
-                  <p>Hello,</p>
-                  <p>You have been offered a special promo coupon to launch your prop trading challenge with FundedGiants:</p>
-                  <div style="background: #0f1712; border: 1px solid #1b3322; padding: 16px; border-radius: 8px; margin: 16px 0;">
-                    <p style="font-size: 20px; font-weight: bold; color: #00f59b; margin: 0;">Code: ${code}</p>
-                    <p style="font-size: 14px; color: #a1a1aa; margin: 4px 0;">Discount: ${discountPercent}% ${discountPercent === 100 ? '(100% Free Account)' : ''}</p>
-                    ${assignedPlan ? `<p style="font-size: 14px; color: #a1a1aa; margin: 4px 0;">Program: ${assignedPlan} ${assignedSize ? `• ₦${Number(assignedSize).toLocaleString()}` : ''}</p>` : ''}
-                  </div>
-                  <p>To claim this account, please proceed directly through our checkout flow below:</p>
-                  <a href="${checkoutUrl}" style="display: inline-block; background: #00f59b; color: #000000; padding: 12px 24px; border-radius: 8px; font-weight: bold; text-decoration: none; margin-top: 12px;">
-                    Claim Your Account on FundedGiants
-                  </a>
-                  <p style="font-size: 11px; color: #71717a; margin-top: 24px;">Note: You must complete the checkout with this email address (${email}).</p>
-                </div>
-              `,
-            }),
-          });
-        } catch (err: any) {
-          this.logger.warn(`Failed to dispatch Brevo email for coupon ${code} to ${email}: ${err.message}`);
-        }
+      const subject = discountPercent === 100 ? 'Your 100% Free FundedGiants Account Offer!' : `Exclusive ${discountPercent}% Off Your FundedGiants Challenge`;
+      const bodyText = `You have been offered a special promo coupon to launch your prop trading challenge with FundedGiants:\n\n• Code: ${code}\n• Discount: ${discountPercent}% ${discountPercent === 100 ? '(100% Free Account)' : ''}\n${assignedPlan ? `• Program: ${assignedPlan} ${assignedSize ? `(₦${Number(assignedSize).toLocaleString()})` : ''}\n` : ''}\nClaim your account directly via the checkout link below:\n${checkoutUrl}\n\nNote: You must complete the checkout with this email address (${email}).`;
+
+      try {
+        await this.notificationsService.sendEmail(
+          email,
+          'Valued Trader',
+          subject,
+          bodyText,
+          `/checkout/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`
+        );
+      } catch (err: any) {
+        this.logger.warn(`Failed to dispatch coupon email for ${code} to ${email}: ${err.message}`);
       }
     }
 
