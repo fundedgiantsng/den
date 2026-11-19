@@ -1,7 +1,7 @@
-import * as dotenv from 'dotenv';
+import * as fs from 'fs';
 import * as path from 'path';
 
-// Load .env before NestJS bootstrap
+// Load .env before NestJS bootstrap without requiring external dotenv package
 const envPaths = [
   path.resolve(process.cwd(), '.env'),
   path.resolve(process.cwd(), '../../.env'),
@@ -10,7 +10,26 @@ const envPaths = [
 ];
 for (const p of envPaths) {
   try {
-    dotenv.config({ path: p, override: false });
+    if (typeof (process as any).loadEnvFile === 'function') {
+      (process as any).loadEnvFile(p);
+    } else if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const k = trimmed.substring(0, eqIdx).trim();
+          let v = trimmed.substring(eqIdx + 1).trim();
+          if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+            v = v.slice(1, -1);
+          }
+          if (process.env[k] === undefined) {
+            process.env[k] = v;
+          }
+        }
+      }
+    }
   } catch {}
 }
 
