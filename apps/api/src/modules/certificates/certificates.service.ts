@@ -273,6 +273,8 @@ export class CertificatesService {
 
       this.logger.log(`Generated Payout Certificate ${certificateId} for ${cleanName} (${formattedAmount})`);
 
+      const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
+
       // Dispatch payout record to WordPress live payout tracker & validation system
       await this.syncPayoutToWordPress({
         accountNumber: params.accountNumber,
@@ -280,7 +282,7 @@ export class CertificatesService {
         name: cleanName,
         approvedAmount: params.amountNgn,
         certificateId,
-        certificateUrl: `http://localhost:3000/certificates/generated/${fileName}`,
+        certificateUrl: `${apiBase}/certificates/generated/${fileName}`,
       });
 
       return {

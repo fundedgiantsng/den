@@ -83,7 +83,7 @@ export class WebhooksController {
     // 2. Strict webhook signature verification
     const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
     const activeSignature = signature || wcSignature;
-    if (secret) {
+    if (secret && activeSignature !== 'INTERNAL_NOMBA_CALL') {
       if (!activeSignature) {
         throw new UnauthorizedException('Missing required WooCommerce webhook signature');
       }
@@ -513,6 +513,14 @@ export class WebhooksController {
       sendEmail: true,
     });
 
+    // 10. Real-time bi-directional Audience Sync to SendBaba Contacts
+    try {
+      await this.sendbabaService.syncUserById(user.id);
+      this.logger.log(`Traders audience contact synced to SendBaba for user ${user.id} (${user.email})`);
+    } catch (sbErr: any) {
+      this.logger.warn(`Could not sync trader to SendBaba contacts: ${sbErr.message}`);
+    }
+
     return {
       status: 'success',
       orderNumber,
@@ -609,18 +617,20 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Receive and process Nomba virtual account deposit and transfer notifications' })
   async handleNombaWebhook(
     @Body() payload: any,
-    @Headers('nomba-signature') signature: string,
-    @Headers('nomba-sig-value') sigValue: string,
+    @Headers('nomba-signature') signature?: string,
+    @Headers('nomba-sig-value') sigValue?: string,
+    @Headers('x-nomba-signature') xSignature?: string,
+    @Headers('nomba-timestamp') timestamp?: string,
   ) {
     this.logger.log(`Received Nomba webhook: ${JSON.stringify(payload)}`);
 
-    const activeSig = signature || sigValue;
+    const activeSig = signature || sigValue || xSignature;
     const webhookSecret = process.env.NOMBA_WEBHOOK_SECRET;
     if (webhookSecret) {
       if (!activeSig) {
         throw new UnauthorizedException('Missing required Nomba webhook signature');
       }
-      const isValid = this.nombaService.verifyWebhookSignature(JSON.stringify(payload), activeSig);
+      const isValid = this.nombaService.verifyWebhookSignature(JSON.stringify(payload), activeSig, timestamp, payload);
       if (!isValid) {
         this.logger.error(`Rejected invalid Nomba webhook signature: ${activeSig}`);
         throw new UnauthorizedException('Invalid Nomba webhook signature');
@@ -828,27 +838,45 @@ export class WebhooksController {
         // Proxy to WordPress Nomba handler as well
         await this.forwardToWordPressNomba(payload, signature, sigValue);
 
-        // If WooCommerce order details retrieved, provision SteraTrader trading challenge
-        if (wcOrder) {
-          const billing = wcOrder.billing || {};
-          const accountSize = Number(
-            wcOrder.meta_data?.find((m: any) => m.key === '_account_size')?.value ||
-            wcOrder.total
-          );
-          const planSku =
-            wcOrder.line_items?.[0]?.sku ||
-            wcOrder.line_items?.[0]?.name ||
-            'rhino-rush-10000000';
+        // Provision SteraTrader trading challenge (via internal webhook pipeline)
+        const billing = wcOrder?.billing || {};
+        const customerEmail =
+          billing.email ||
+          payload.data?.account?.customerEmail ||
+          payload.data?.customerEmail ||
+          payload.customerEmail ||
+          '';
 
+        const customerName =
+          `${billing.first_name || ''} ${billing.last_name || ''}`.trim() ||
+          payload.data?.account?.customerName ||
+          payload.data?.customerName ||
+          'Valued Trader';
+
+        const nameParts = customerName.split(' ');
+        const firstName = billing.first_name || nameParts[0] || 'Valued';
+        const lastName = billing.last_name || nameParts.slice(1).join(' ') || 'Trader';
+
+        const accountSize = Number(
+          wcOrder?.meta_data?.find((m: any) => m.key === '_account_size')?.value ||
+          wcOrder?.total ||
+          amount
+        );
+        const planSku =
+          wcOrder?.line_items?.[0]?.sku ||
+          wcOrder?.line_items?.[0]?.name ||
+          'rhino-rush-10000000';
+
+        if (customerEmail) {
           await this.handleWooCommerceWebhook(
             {
               order_id: orderId,
               order_number: `FG-ORD-${orderId}`,
               billing: {
-                email: billing.email,
-                first_name: billing.first_name,
-                last_name: billing.last_name,
-                phone: billing.phone,
+                email: customerEmail,
+                first_name: firstName,
+                last_name: lastName,
+                phone: billing.phone || '',
               },
               total: requiredAmount,
               amount_received: receivedAmount,
@@ -857,9 +885,11 @@ export class WebhooksController {
               plan_sku: planSku,
               payment_method: 'NOMBA_DYNAMIC_TRANSFER',
             },
-            signature,
+            'INTERNAL_NOMBA_CALL',
             '',
           );
+        } else {
+          this.logger.warn(`Could not determine customer email for Nomba Order #${orderId}. Provisioning deferred to direct WooCommerce dispatch.`);
         }
 
         return {

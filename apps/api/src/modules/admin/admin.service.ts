@@ -1551,8 +1551,8 @@ export class AdminService {
 
     for (const email of emails) {
       this.logger.log(`[DISPATCH COUPON EMAIL] To: ${email} | Coupon: ${code} (${discountPercent}% off) | URL: ${checkoutUrl}`);
-      const subject = discountPercent === 100 ? 'Your 100% Free FundedGiants Account Offer!' : `Exclusive ${discountPercent}% Off Your FundedGiants Challenge`;
-      const bodyText = `You have been offered a special promo coupon to launch your prop trading challenge with FundedGiants:\n\n• Code: ${code}\n• Discount: ${discountPercent}% ${discountPercent === 100 ? '(100% Free Account)' : ''}\n${assignedPlan ? `• Program: ${assignedPlan} ${assignedSize ? `(₦${Number(assignedSize).toLocaleString()})` : ''}\n` : ''}\nClaim your account directly via the checkout link below:\n${checkoutUrl}\n\nNote: You must complete the checkout with this email address (${email}).`;
+      const subject = `FundedGiants Challenge Access Code [${code}]`;
+      const bodyText = `You have been allocated a promotional access voucher to launch your prop trading challenge with FundedGiants:\n\n• Access Code: ${code}\n• Challenge Benefit: ${discountPercent}% ${discountPercent === 100 ? '(Full Challenge Covered)' : 'Discount'}\n${assignedPlan ? `• Assigned Plan: ${assignedPlan} ${assignedSize ? `(₦${Number(assignedSize).toLocaleString()})` : ''}\n` : ''}\nClaim and activate your challenge directly at the checkout portal below:\n${checkoutUrl}\n\nPlease note: This voucher is bound to your email address (${email}).`;
 
       try {
         await this.notificationsService.sendEmail(
@@ -1560,7 +1560,7 @@ export class AdminService {
           'Valued Trader',
           subject,
           bodyText,
-          `/checkout/?coupon=${encodeURIComponent(code)}${planParam}${sizeParam}`
+          checkoutUrl
         );
       } catch (err: any) {
         this.logger.warn(`Failed to dispatch coupon email for ${code} to ${email}: ${err.message}`);

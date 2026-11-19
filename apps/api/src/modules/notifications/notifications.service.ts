@@ -43,43 +43,67 @@ export class NotificationsService {
       process.env.BREVO_SENDER_NAME ||
       'FundedGiants Operations';
 
-    const fullActionUrl = actionUrl
-      ? actionUrl.startsWith('http')
-        ? actionUrl
-        : `http://localhost:3000${actionUrl}`
-      : 'http://localhost:3000/dashboard';
+    const wpBase = (process.env.WORDPRESS_URL || process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://fundedgiants.ng').replace(/\/+$/, '');
+    const traderBase = (process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://trader.fundedgiants.ng').replace(/\/+$/, '');
+
+    let fullActionUrl: string;
+    if (actionUrl) {
+      if (actionUrl.startsWith('http://') || actionUrl.startsWith('https://')) {
+        fullActionUrl = actionUrl;
+      } else if (actionUrl.startsWith('/checkout') || actionUrl.includes('checkout')) {
+        fullActionUrl = `${wpBase}${actionUrl.startsWith('/') ? '' : '/'}${actionUrl}`;
+      } else {
+        fullActionUrl = `${traderBase}${actionUrl.startsWith('/') ? '' : '/'}${actionUrl}`;
+      }
+    } else {
+      fullActionUrl = `${traderBase}/dashboard`;
+    }
 
     const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
         <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${subject}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070a08; color: #ffffff; margin: 0; padding: 20px; }
-            .container { max-width: 600px; margin: 0 auto; background: #0c1610; border: 1px solid #1b3322; border-radius: 16px; overflow: hidden; }
-            .header { padding: 24px; border-bottom: 1px solid #1b3322; background: #070e0a; text-align: center; }
-            .content { padding: 32px 24px; }
-            .title { font-size: 20px; font-weight: 800; color: #00f59b; margin-bottom: 12px; }
-            .text { font-size: 14px; line-height: 1.6; color: #cbd5e1; margin-bottom: 24px; }
-            .btn { display: inline-block; padding: 12px 28px; background: #00f59b; color: #000000; font-weight: 700; text-decoration: none; border-radius: 10px; font-size: 13px; }
-            .footer { padding: 20px 24px; border-top: 1px solid #1b3322; background: #070e0a; text-align: center; font-size: 11px; color: #64748b; }
+            body { margin: 0; padding: 24px 12px; background-color: #070b0e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #f1f5f9; }
+            .wrapper { max-width: 580px; margin: 0 auto; background: #0e151b; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.45); }
+            .accent-bar { height: 3px; background: linear-gradient(90deg, #00f59b 0%, #00b4d8 100%); }
+            .header { padding: 32px 24px 24px; text-align: center; background: #0b1116; border-bottom: 1px solid #19232d; }
+            .content { padding: 32px 28px; }
+            .title { font-size: 19px; font-weight: 700; color: #ffffff; margin-bottom: 16px; letter-spacing: -0.3px; line-height: 1.35; }
+            .card-box { background: #070e13; border: 1px solid #1a2730; border-radius: 10px; padding: 20px; margin: 20px 0; }
+            .text { font-size: 14px; line-height: 1.65; color: #cbd5e1; }
+            .btn-wrap { text-align: center; margin: 32px 0 16px; }
+            .btn { display: inline-block; padding: 13px 32px; background: #00f59b; color: #021a0f !important; font-weight: 700; text-decoration: none; border-radius: 9px; font-size: 13.5px; letter-spacing: 0.2px; box-shadow: 0 4px 14px rgba(0, 245, 155, 0.25); }
+            .security-note { font-size: 11.5px; color: #64748b; line-height: 1.5; border-top: 1px solid #17222b; padding-top: 18px; margin-top: 24px; }
+            .footer { padding: 22px 24px; background: #080c10; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #141c24; }
           </style>
         </head>
         <body>
-          <div class="container">
+          <div class="wrapper">
+            <div class="accent-bar"></div>
             <div class="header">
-              <span style="font-size: 18px; font-weight: 900; letter-spacing: 1px; color: #ffffff;">FUNDED<span style="color: #00f59b;">GIANTS</span></span>
+              <a href="${wpBase}" target="_blank" style="text-decoration: none; display: inline-block;">
+                <img src="https://fundedgiants.ng/wp-content/plugins/fundedgiants-order-pay/assets/images/fg-logo.png" alt="FundedGiants" width="160" style="display: block; margin: 0 auto; max-width: 160px; height: auto;" border="0" />
+              </a>
             </div>
             <div class="content">
               <div class="title">${subject}</div>
-              <div class="text">Hello ${toName || 'Valued Trader'},<br><br>${bodyText.replace(/\n/g, '<br>')}</div>
-              <div style="text-align: center; margin-top: 24px;">
-                <a href="${fullActionUrl}" class="btn">View in Dashboard</a>
+              <div class="text">
+                Hello ${toName || 'Valued Trader'},<br><br>
+                ${bodyText.replace(/\n/g, '<br>')}
+              </div>
+              <div class="btn-wrap">
+                <a href="${fullActionUrl}" class="btn" target="_blank">Access Portal &rarr;</a>
+              </div>
+              <div class="security-note">
+                Security Notice: FundedGiants will never ask for your passwords or credentials over social media. Always ensure you are on the verified <code>fundedgiants.ng</code> domain.
               </div>
             </div>
             <div class="footer">
-              FundedGiants Prop Trading • High Performance Proprietary Trading Firm<br>
-              Direct Naira Denominated Accounts • SteraTrader Execution • Instant Daily Payouts
+              &copy; 2026 FundedGiants Limited. All rights reserved.
             </div>
           </div>
         </body>
