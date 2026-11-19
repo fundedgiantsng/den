@@ -80,7 +80,7 @@ function AdminLoginForm() {
           'x-admin-device-id': deviceFingerprint,
         },
         body: JSON.stringify({
-          keyphrase: keyphrase.trim(),
+          keyphrase: keyphrase.trim().replace(/^[\\"'`\s]+|[\\"'`\s]+$/g, ''),
           deviceFingerprint,
           deviceLabel,
         }),

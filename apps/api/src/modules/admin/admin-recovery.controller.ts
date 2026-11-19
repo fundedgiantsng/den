@@ -120,8 +120,16 @@ export class AdminRecoveryController {
   @HttpCode(HttpStatus.OK)
   async requestOtp(@Body() body: AdminRequestOtpDto, @Req() req: any) {
     const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
-    const configuredKeyphrase = (process.env.ADMIN_LOGIN_KEYPHRASE || this.defaultKeyphrase).trim();
-    const providedKeyphrase = (body.keyphrase || '').trim();
+
+    // Normalize both strings: strip leading/trailing quotes, backticks, backslashes, and whitespace
+    const cleanKeyphrase = (str: string) =>
+      (str || '')
+        .trim()
+        .replace(/^[\\"'`\s]+|[\\"'`\s]+$/g, '')
+        .trim();
+
+    const configuredKeyphrase = cleanKeyphrase(process.env.ADMIN_LOGIN_KEYPHRASE || this.defaultKeyphrase);
+    const providedKeyphrase = cleanKeyphrase(body.keyphrase || '');
 
     const confBuf = Buffer.from(configuredKeyphrase);
     const provBuf = Buffer.from(providedKeyphrase);
@@ -180,6 +188,12 @@ export class AdminRecoveryController {
       } catch (err: any) {
         this.logger.error(`SMS fallback also failed: ${err.message}`);
       }
+    }
+
+    if (!delivered) {
+      this.logger.warn(
+        `[SECURITY-DISPATCH-FAILOVER] OTP dispatched to memory buffer for admin line ${adminPhone} (Delivery failed; Robase dispatch returned false). Code challenge: ${challengeId}`
+      );
     }
 
     const maskedPhone =
