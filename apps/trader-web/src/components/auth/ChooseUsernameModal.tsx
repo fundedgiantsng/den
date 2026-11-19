@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState } from 'react';
 import { User, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 
@@ -35,7 +36,7 @@ export function ChooseUsernameModal({
 
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/set-username', {
+      const res = await fetch(`${API_BASE_URL}/auth/set-username`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

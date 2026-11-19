@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -49,7 +50,7 @@ export function Sidebar() {
   } | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/v1/auth/me', {
+    fetch(`${API_BASE_URL}/auth/me`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))

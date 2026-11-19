@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   LifeBuoy,
@@ -105,14 +106,14 @@ export default function SupportPage() {
 
   // Load FAQs and WhatsApp Agent Info
   useEffect(() => {
-    fetch('http://localhost:4000/api/v1/support/faqs')
+    fetch(`${API_BASE_URL}/support/faqs`)
       .then((res) => res.json())
       .then((data) => {
         if (data?.data) setFaqs(data.data);
       })
       .catch(() => {});
 
-    fetch('http://localhost:4000/api/v1/support/agent-contact', {
+    fetch(`${API_BASE_URL}/support/agent-contact`, {
       credentials: 'include',
     })
       .then((res) => res.json())
@@ -127,7 +128,7 @@ export default function SupportPage() {
   const loadTickets = async () => {
     setLoadingTickets(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/support/tickets', {
+      const res = await fetch(`${API_BASE_URL}/support/tickets`, {
         credentials: 'include',
       });
       if (res.ok) {
@@ -143,7 +144,7 @@ export default function SupportPage() {
 
   const loadTicketDetails = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/tickets/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/support/tickets/${id}`, {
         credentials: 'include',
       });
       if (res.ok) {
@@ -160,7 +161,7 @@ export default function SupportPage() {
     if (activeTab !== 'CHAT') return;
 
     const fetchChat = () => {
-      fetch('http://localhost:4000/api/v1/support/chat', {
+      fetch(`${API_BASE_URL}/support/chat`, {
         credentials: 'include',
       })
         .then((res) => res.json())
@@ -184,7 +185,7 @@ export default function SupportPage() {
 
     setSubmittingTicket(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/support/tickets', {
+      const res = await fetch(`${API_BASE_URL}/support/tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -215,7 +216,7 @@ export default function SupportPage() {
 
     setReplying(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/support/tickets/${selectedTicket.id}/reply`, {
+      const res = await fetch(`${API_BASE_URL}/support/tickets/${selectedTicket.id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -243,7 +244,7 @@ export default function SupportPage() {
     setNewChatInput('');
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/support/chat', {
+      const res = await fetch(`${API_BASE_URL}/support/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

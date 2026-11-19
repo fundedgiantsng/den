@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -70,7 +71,7 @@ export default function AffiliateProgramPage() {
   useEffect(() => {
     async function loadAffiliateData() {
       try {
-        const res = await fetch('http://localhost:4000/api/v1/affiliates/profile');
+        const res = await fetch(`${API_BASE_URL}/affiliates/profile`);
         if (res.ok) {
           const data = await res.json();
           if (data?.profile) {
@@ -133,7 +134,7 @@ export default function AffiliateProgramPage() {
 
     setCreatingCode(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/affiliates/custom-code', {
+      const res = await fetch(`${API_BASE_URL}/affiliates/custom-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,7 +169,7 @@ export default function AffiliateProgramPage() {
     setTransferring(true);
     setTransferSuccess(null);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/affiliates/transfer-to-vault', {
+      const res = await fetch(`${API_BASE_URL}/affiliates/transfer-to-vault`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amountNgn: affiliateData.availableCommissionNgn }),

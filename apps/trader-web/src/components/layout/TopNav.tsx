@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Bell, Menu, Check, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
@@ -23,7 +24,7 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchNotificationStats = () => {
-    fetch('http://localhost:4000/api/v1/notifications/unread-count', {
+    fetch(`${API_BASE_URL}/notifications/unread-count`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -38,7 +39,7 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
       })
       .catch(() => {});
 
-    fetch('http://localhost:4000/api/v1/notifications', {
+    fetch(`${API_BASE_URL}/notifications`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -51,7 +52,7 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
   };
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/v1/auth/me', {
+    fetch(`${API_BASE_URL}/auth/me`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -78,7 +79,7 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
 
   const handleMarkAllRead = async () => {
     try {
-      await fetch('http://localhost:4000/api/v1/notifications/read-all', {
+      await fetch(`${API_BASE_URL}/notifications/read-all`, {
         method: 'POST',
         credentials: 'include',
       });

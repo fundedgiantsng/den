@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
@@ -29,7 +30,7 @@ export default function CertificatesPage() {
   const [selectedPreview, setSelectedPreview] = useState<CertificateItem | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'COMPLETION' | 'PAYOUT'>('ALL');
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const apiUrl = API_BASE_URL;
 
   useEffect(() => {
     async function loadCertificates() {

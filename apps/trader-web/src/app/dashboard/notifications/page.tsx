@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
@@ -38,7 +39,7 @@ export default function NotificationsPage() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/v1/notifications', {
+      const res = await fetch(`${API_BASE_URL}/notifications`, {
         credentials: 'include',
       });
       if (res.ok) {
@@ -62,7 +63,7 @@ export default function NotificationsPage() {
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await fetch(`http://localhost:4000/api/v1/notifications/${id}/read`, {
+      await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
         method: 'PATCH',
         credentials: 'include',
       });
@@ -77,7 +78,7 @@ export default function NotificationsPage() {
   const handleMarkAllRead = async () => {
     setMarkingAll(true);
     try {
-      await fetch('http://localhost:4000/api/v1/notifications/read-all', {
+      await fetch(`${API_BASE_URL}/notifications/read-all`, {
         method: 'POST',
         credentials: 'include',
       });

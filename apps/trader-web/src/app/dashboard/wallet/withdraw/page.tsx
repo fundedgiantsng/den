@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
@@ -35,7 +36,7 @@ export default function WithdrawFundsPage() {
   const [availableBalanceNgn, setAvailableBalanceNgn] = useState<number>(0);
   const [boundAccounts, setBoundAccounts] = useState<BoundAccount[]>([]);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const apiUrl = API_BASE_URL;
 
   useEffect(() => {
     async function loadWallet() {

@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -118,8 +119,8 @@ export default function AccountAnalyticsTerminalPage() {
     try {
       setLoading(true);
       const [accRes, riskRes] = await Promise.allSettled([
-        fetch(`http://localhost:4000/api/v1/challenges/accounts/${accountId}`),
-        fetch(`http://localhost:4000/api/v1/risk/status/${accountId}`),
+        fetch(`${API_BASE_URL}/challenges/accounts/${accountId}`),
+        fetch(`${API_BASE_URL}/risk/status/${accountId}`),
       ]);
 
       let accData: any = {};
@@ -168,7 +169,7 @@ export default function AccountAnalyticsTerminalPage() {
     setRequestingPayout(true);
     setPayoutSuccessMessage(null);
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/risk/request-payout/${accountId}`, {
+      const res = await fetch(`${API_BASE_URL}/risk/request-payout/${accountId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

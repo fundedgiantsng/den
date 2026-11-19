@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
@@ -108,7 +109,7 @@ export default function InDashboardBuyChallengePage() {
 
   // Fetch live wallet balance on mount
   useEffect(() => {
-    fetch('http://localhost:4000/api/v1/wallet/overview', { credentials: 'include' })
+    fetch(`${API_BASE_URL}/wallet/overview`, { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.availableBalanceNgn === 'number') {
@@ -131,7 +132,7 @@ export default function InDashboardBuyChallengePage() {
 
       setIsValidating(true);
       try {
-        const res = await fetch('http://localhost:4000/api/v1/challenges/validate-coupons', {
+        const res = await fetch(`${API_BASE_URL}/challenges/validate-coupons`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -167,7 +168,7 @@ export default function InDashboardBuyChallengePage() {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/challenges/purchase-from-wallet', {
+      const res = await fetch(`${API_BASE_URL}/challenges/purchase-from-wallet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

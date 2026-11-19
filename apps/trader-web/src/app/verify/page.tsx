@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { API_BASE_URL } from '@/lib/api';
 import { ShieldCheck, ArrowRight, ArrowLeft, MessageSquare, Loader2, Edit3 } from 'lucide-react';
 
 function VerifyOtpContent() {
@@ -65,7 +66,7 @@ function VerifyOtpContent() {
 
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/verify-otp', {
+      const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // Receive HttpOnly session cookie
@@ -96,7 +97,7 @@ function VerifyOtpContent() {
     setWhatsappLoading(true);
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/retry-whatsapp', {
+      const res = await fetch(`${API_BASE_URL}/auth/retry-whatsapp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: identifier }),

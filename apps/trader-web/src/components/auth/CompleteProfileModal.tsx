@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState } from 'react';
 import { User, Phone, MapPin, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 
@@ -51,7 +52,7 @@ export function CompleteProfileModal({
 
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/me', {
+      const res = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

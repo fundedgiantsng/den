@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -75,7 +76,7 @@ export default function GiantsCardDashboardPage() {
   const fetchCardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/cards/my-card', { credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/cards/my-card`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setMyCardData(data);
@@ -103,7 +104,7 @@ export default function GiantsCardDashboardPage() {
     setActionError(null);
     setActionSuccess(null);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/cards/request', {
+      const res = await fetch(`${API_BASE_URL}/cards/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

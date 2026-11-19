@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import {
   User,
@@ -43,7 +44,7 @@ export default function ProfilePage() {
 
   const fetchProfile = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/me', {
+      const res = await fetch(`${API_BASE_URL}/auth/me`, {
         credentials: 'include',
       });
       if (res.ok) {
@@ -82,7 +83,7 @@ export default function ProfilePage() {
     setSuccess(null);
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/me', {
+      const res = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

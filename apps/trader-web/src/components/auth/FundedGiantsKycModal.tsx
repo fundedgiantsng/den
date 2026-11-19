@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState } from 'react';
 import { ShieldCheck, AlertCircle, Loader2, CheckCircle2, ArrowRight } from 'lucide-react';
 
@@ -33,7 +34,7 @@ export function FundedGiantsKycModal({
     setError(null);
     setLaunchingHosted(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/ninja-hosted-kyc', {
+      const res = await fetch(`${API_BASE_URL}/auth/ninja-hosted-kyc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -69,7 +70,7 @@ export function FundedGiantsKycModal({
 
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/auth/ninja-bvn-verify', {
+      const res = await fetch(`${API_BASE_URL}/auth/ninja-bvn-verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

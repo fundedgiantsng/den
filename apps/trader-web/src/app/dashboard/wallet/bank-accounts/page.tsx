@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
@@ -45,7 +46,7 @@ export default function BankAccountsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [bankSearch, setBankSearch] = useState('');
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const apiUrl = API_BASE_URL;
 
   const fetchData = async () => {
     setLoading(true);

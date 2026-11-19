@@ -22,6 +22,59 @@ import { RiskEngineService } from '../risk/risk-engine.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SendbabaService } from '../integrations/sendbaba/sendbaba.service';
 
+/**
+ * Bulletproof resolver for Trading Capital Size (e.g. ₦1,000,000, ₦2,500,000, ₦5,000,000, etc.)
+ * Strictly prevents the checkout fee/price paid (e.g. ₦1,375, ₦3,375, ₦27,500) from ever being
+ * mistaken for the trading account capital size!
+ */
+export function resolveAccountCapitalSize(input: {
+  accountSize?: any;
+  planSku?: string;
+  itemName?: string;
+  total?: any;
+  metaData?: Array<{ key: string; value: any }>;
+}): { accountSizeNgn: number; planType: 'rhino-rush' | 'phoenix-rise' } {
+  const VALID_SIZES = [1000000, 2500000, 5000000, 10000000, 25000000, 50000000];
+
+  const rawSku = (input.planSku || '').toLowerCase();
+  const rawName = (input.itemName || '').toLowerCase();
+  const combined = `${rawSku} ${rawName}`.trim();
+  const planType: 'rhino-rush' | 'phoenix-rise' = combined.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
+
+  // 1. Check explicit metadata or account_size property if already a standard tier
+  const rawSize = Number(
+    input.accountSize ??
+    input.metaData?.find((m) => m.key === '_account_size' || m.key === '_fg_account_size' || m.key === 'size')?.value ??
+    0
+  );
+
+  if (VALID_SIZES.includes(rawSize)) {
+    return { accountSizeNgn: rawSize, planType };
+  }
+
+  // 2. Check standard tier keywords in SKU or Product Name (e.g. 50m, 25m, 10m, 5m, 2.5m, 1m)
+  if (/50\s*m/i.test(combined) || combined.includes('50000000')) return { accountSizeNgn: 50000000, planType };
+  if (/25\s*m/i.test(combined) || combined.includes('25000000')) return { accountSizeNgn: 25000000, planType };
+  if (/10\s*m/i.test(combined) || combined.includes('10000000')) return { accountSizeNgn: 10000000, planType };
+  if (/5\s*m/i.test(combined) || combined.includes('5000000')) return { accountSizeNgn: 5000000, planType };
+  if (/2\.5\s*m/i.test(combined) || combined.includes('2500000') || combined.includes('2,500,000')) return { accountSizeNgn: 2500000, planType };
+  if (/1\s*m/i.test(combined) || combined.includes('1000000') || combined.includes('1,000,000')) return { accountSizeNgn: 1000000, planType };
+
+  // 3. Fallback: extract numbers >= 500,000 from string
+  const cleanStr = combined.replace(/,/g, '');
+  const match = cleanStr.match(/(\d{6,8})/);
+  if (match) {
+    const parsed = parseInt(match[1], 10);
+    const closest = VALID_SIZES.reduce((prev, curr) =>
+      Math.abs(curr - parsed) < Math.abs(prev - parsed) ? curr : prev
+    );
+    return { accountSizeNgn: closest, planType };
+  }
+
+  // 4. Guaranteed minimum fallback: ₦1,000,000 (NEVER the checkout price paid!)
+  return { accountSizeNgn: 1000000, planType };
+}
+
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhooksController {
@@ -108,18 +161,15 @@ export class WebhooksController {
     const phone = orderData.billing?.phone?.trim();
     const firstName = orderData.billing?.first_name?.trim();
     const lastName = orderData.billing?.last_name?.trim();
-    let accountSizeNgn = Number(orderData.account_size || 0);
-    const planSku = orderData.plan_sku || 'rhino-rush-5000000';
-    if (!accountSizeNgn || accountSizeNgn <= 50000) {
-      const match = planSku.match(/(\d+[\d,]*\d+)/);
-      if (match) {
-        accountSizeNgn = parseInt(match[1].replace(/,/g, ''), 10);
-      }
-      if (!accountSizeNgn || accountSizeNgn <= 50000) {
-        accountSizeNgn = 5000000;
-      }
-    }
-    const planType = planSku.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
+    const firstItem = orderData.items?.[0] || orderData.line_items?.[0] || {};
+    const { accountSizeNgn, planType } = resolveAccountCapitalSize({
+      accountSize: orderData.account_size,
+      planSku: orderData.plan_sku || firstItem.sku,
+      itemName: firstItem.name,
+      total: orderData.total,
+      metaData: orderData.meta_data,
+    });
+    const planSku = orderData.plan_sku || `${planType}-${accountSizeNgn}`;
     const totalAmount = Number(orderData.total || 0);
 
     // Overpayment extraction matching fundedgiants-ngn-checkout.php & class-backend-webhook-dispatcher.php
@@ -309,7 +359,7 @@ export class WebhooksController {
         OR: [
           { id: `prod-${planType}-${accountSizeNgn}` },
           { sku: `${planType}-${accountSizeNgn}` },
-          { skuPrefix: planType },
+          { AND: [{ skuPrefix: planType }, { accountSize: accountSizeNgn }] },
         ],
       },
     });
@@ -923,23 +973,17 @@ export class WebhooksController {
           }
         }
 
-        let accountSize = Number(
-          wcOrder?.meta_data?.find((m: any) => m.key === '_account_size' || m.key === '_fg_account_size')?.value || 0
-        );
-        const planSku =
-          wcOrder?.line_items?.[0]?.sku ||
-          wcOrder?.line_items?.[0]?.name ||
-          'rhino-rush-10000000';
+        const firstItem = wcOrder?.line_items?.[0] || {};
+        const { accountSizeNgn: resolvedSize, planType: resolvedPlanType } = resolveAccountCapitalSize({
+          accountSize: wcOrder?.meta_data?.find((m: any) => m.key === '_account_size' || m.key === '_fg_account_size')?.value,
+          planSku: firstItem.sku,
+          itemName: firstItem.name,
+          total: wcOrder?.total,
+          metaData: wcOrder?.meta_data,
+        });
 
-        if (!accountSize || accountSize <= 50000) {
-          const match = planSku.match(/(\d+[\d,]*\d+)/);
-          if (match) {
-            accountSize = parseInt(match[1].replace(/,/g, ''), 10);
-          }
-        }
-        if (!accountSize || accountSize <= 50000) {
-          accountSize = 5000000;
-        }
+        const planSku = `${resolvedPlanType}-${resolvedSize}`;
+        const accountSize = resolvedSize;
 
         if (customerEmail) {
           await this.handleWooCommerceWebhook(
@@ -957,6 +1001,8 @@ export class WebhooksController {
               overage_amount: receivedAmount > requiredAmount ? receivedAmount - requiredAmount : 0,
               account_size: accountSize,
               plan_sku: planSku,
+              items: wcOrder?.line_items || [],
+              line_items: wcOrder?.line_items || [],
               payment_method: 'NOMBA_DYNAMIC_TRANSFER',
             },
             'INTERNAL_NOMBA_CALL',

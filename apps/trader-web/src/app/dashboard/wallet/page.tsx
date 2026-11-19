@@ -1,5 +1,6 @@
 'use client';
 
+import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -121,7 +122,7 @@ export default function GiantsVaultPage() {
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
 
   const [loading, setLoading] = useState(false);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const apiUrl = API_BASE_URL;
 
   const fetchWalletData = async () => {
     setLoading(true);
@@ -205,7 +206,7 @@ export default function GiantsVaultPage() {
     setCardSuccessMsg(null);
 
     try {
-      const res = await fetch('http://localhost:4000/api/v1/cards/request', {
+      const res = await fetch(`${API_BASE_URL}/cards/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -274,7 +275,7 @@ export default function GiantsVaultPage() {
 
     setWithdrawLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/v1/wallet/withdraw', {
+      const res = await fetch(`${API_BASE_URL}/wallet/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
