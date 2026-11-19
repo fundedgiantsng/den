@@ -43,11 +43,16 @@ export class RobaseService {
   private readonly logger = new Logger(RobaseService.name);
 
   private get apiUrl(): string {
-    return (process.env.ROBASE_API_URL || 'https://api.robase.dev').replace(/\/+$/, '');
+    const raw = (process.env.ROBASE_API_URL || 'https://api.robase.dev')
+      .trim()
+      .replace(/^[\\"'`]+|[\\"'`]+$/g, '')
+      .replace(/\/+$/, '');
+    // Strip trailing /v1 if present in env so /v1/otp/... does not duplicate to /v1/v1/otp/...
+    return raw.replace(/\/v1$/, '');
   }
 
   private get apiKey(): string {
-    return (process.env.ROBASE_API_KEY || '').trim();
+    return (process.env.ROBASE_API_KEY || '').trim().replace(/^[\\"'`]+|[\\"'`]+$/g, '');
   }
 
   private get senderId(): string {
