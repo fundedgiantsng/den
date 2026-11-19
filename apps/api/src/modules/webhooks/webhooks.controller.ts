@@ -19,11 +19,13 @@ import { SteraTraderService } from '../integrations/steratrader/steratrader.serv
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 import { RiskEngineService } from '../risk/risk-engine.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SendbabaService } from '../integrations/sendbaba/sendbaba.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
+  private readonly sendbabaService = new SendbabaService();
 
   constructor(
     private readonly nombaService: NombaService,
@@ -398,6 +400,11 @@ export class WebhooksController {
             this.logger.warn(`Could not dispatch credentials email: ${mailErr.message}`);
           }
         }
+
+        // Automatically sync updated trader profile & trading account to SendBaba Audience
+        this.sendbabaService.syncUserById(user.id).catch((syncErr) => {
+          this.logger.warn(`SendBaba contact sync error for order ${orderNumber}: ${syncErr.message}`);
+        });
       }
     } catch (steraErr: any) {
       this.logger.error(`SteraTrader provisioning error for order ${orderNumber}: ${steraErr.message}`);

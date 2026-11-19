@@ -5,6 +5,7 @@ import { NombaService } from '../integrations/nomba/nomba.service';
 import { LencoService } from '../integrations/lenco/lenco.service';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SendbabaService } from '../integrations/sendbaba/sendbaba.service';
 
 export interface AdminActionContext {
   adminId?: string;
@@ -16,6 +17,7 @@ export interface AdminActionContext {
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
+  private readonly sendbabaService = new SendbabaService();
 
   constructor(
     private readonly steraTraderService: SteraTraderService,
@@ -672,6 +674,11 @@ export class AdminService {
       });
 
       return { order, challenge, tradingAccount };
+    });
+
+    // Sync newly granted trading account to SendBaba audience
+    this.sendbabaService.syncUserById(user.id).catch((syncErr) => {
+      this.logger.warn(`SendBaba contact sync error on challenge grant: ${syncErr.message}`);
     });
 
     return {

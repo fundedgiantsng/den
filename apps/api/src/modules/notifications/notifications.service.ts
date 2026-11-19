@@ -94,7 +94,7 @@ export class NotificationsService {
         try {
           const sbRes = await this.sendbabaService.sendEmail({
             to: toEmail,
-            from: `"${senderName}" <${senderEmail}>`,
+            from: senderEmail,
             subject,
             html: htmlContent,
             text: plainText,

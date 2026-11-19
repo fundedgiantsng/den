@@ -174,6 +174,14 @@ export class UpdateFullConfigDto {
   @IsString()
   sendbabaSmtpPass?: string;
 
+  @IsOptional()
+  @IsString()
+  sendbabaOrgId?: string;
+
+  @IsOptional()
+  @IsString()
+  sendbabaWebhookSecret?: string;
+
   // Admin Alerts & Robase Gateway
   @IsOptional()
   @IsString()
@@ -373,6 +381,11 @@ export class AdminConfigController {
           sendbabaApiUrl: parseEnvVal('SENDBABA_API_URL') || 'https://api.sendbaba.com/api/v1',
           sendbabaFromEmail: parseEnvVal('SENDBABA_FROM_EMAIL') || 'support@fundedgiants.ng',
           sendbabaFromName: parseEnvVal('SENDBABA_FROM_NAME') || 'FundedGiants Operations',
+          sendbabaOrgId: parseEnvVal('SENDBABA_ORG_ID') || '977fdb13-474f-4eba-8f9b-e51798df16d0',
+          sendbabaSyncWebhookUrl: `https://api.sendbaba.com/api/contacts/webhook/${parseEnvVal('SENDBABA_ORG_ID') || '977fdb13-474f-4eba-8f9b-e51798df16d0'}`,
+          sendbabaInboundWebhookUrl: 'https://api.fundedgiants.ng/api/v1/webhooks/sendbaba',
+          hasSendbabaWebhookSecret: !!parseEnvVal('SENDBABA_WEBHOOK_SECRET'),
+          sendbabaWebhookSecretMask: this.maskValue(parseEnvVal('SENDBABA_WEBHOOK_SECRET')),
         },
         robase: {
           adminAlertPhone: parseEnvVal('ADMIN_ALERT_PHONE') || '',
@@ -464,6 +477,8 @@ export class AdminConfigController {
       registerUpdate('SENDBABA_FROM_NAME', dto.sendbabaFromName || dto.smtpFromName);
       registerUpdate('SENDBABA_SMTP_USER', dto.sendbabaSmtpUser);
       registerUpdate('SENDBABA_SMTP_PASS', dto.sendbabaSmtpPass);
+      registerUpdate('SENDBABA_ORG_ID', dto.sendbabaOrgId);
+      registerUpdate('SENDBABA_WEBHOOK_SECRET', dto.sendbabaWebhookSecret);
 
       // Robase Admin SMS & WhatsApp
       registerUpdate('ADMIN_ALERT_PHONE', dto.adminAlertPhone);

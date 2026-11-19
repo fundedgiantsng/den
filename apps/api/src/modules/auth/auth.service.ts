@@ -14,12 +14,14 @@ import { RobaseService } from '../integrations/robase/robase.service';
 import { NinjaKycService } from '../integrations/ninja/ninja.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
+import { SendbabaService } from '../integrations/sendbaba/sendbaba.service';
 
 @Injectable()
 export class AuthService {
   private readonly robaseService: RobaseService;
   private readonly ninjaKycService: NinjaKycService;
   private readonly notificationsService: NotificationsService;
+  private readonly sendbabaService: SendbabaService;
   private readonly otpExpirySeconds = 300; // 5 minutes
   private readonly cooldownSeconds = 45; // 45s between resends
   private readonly logger = new Logger(AuthService.name);
@@ -28,6 +30,7 @@ export class AuthService {
     this.robaseService = new RobaseService();
     this.ninjaKycService = new NinjaKycService();
     this.notificationsService = new NotificationsService();
+    this.sendbabaService = new SendbabaService();
   }
 
   private generateSecureCode(): string {
@@ -298,6 +301,11 @@ export class AuthService {
       this.logger.warn(`Background Nomba account provisioning error on login: ${err.message}`);
     });
 
+    // Sync trader profile to SendBaba audience contacts in background
+    this.sendbabaService.syncUserById(session.user.id).catch((err) => {
+      this.logger.warn(`Background SendBaba contact sync error on login: ${err.message}`);
+    });
+
     return {
       success: true,
       sessionToken,
@@ -460,6 +468,11 @@ export class AuthService {
       '/auth/login'
     );
 
+    // Sync contact immediately to SendBaba audience
+    this.sendbabaService.syncUserById(targetUserId).catch((err) => {
+      this.logger.warn(`Background SendBaba contact sync on signup: ${err.message}`);
+    });
+
     console.log(`[SIGNUP OTP DISPATCHED] Email: ${cleanEmail} | Code: ${rawCode}`);
 
     return {
@@ -559,6 +572,11 @@ export class AuthService {
 
     // Automatically provision or ensure dedicated Nomba Virtual Account when completing/updating profile
     const wallet = await this.ensureDedicatedNombaAccount(userId);
+
+    // Sync updated contact data to SendBaba audience
+    this.sendbabaService.syncUserById(updated.id).catch((err) => {
+      this.logger.warn(`Background SendBaba contact sync on profile update: ${err.message}`);
+    });
 
     // Notify user to perform KYC if not already verified (non-compulsory notification)
     if (updated.kycStatus !== 'APPROVED') {

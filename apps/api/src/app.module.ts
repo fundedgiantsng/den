@@ -13,6 +13,7 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { SupportModule } from './modules/support/support.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SendbabaModule } from './modules/integrations/sendbaba/sendbaba.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     SupportModule,
     NotificationsModule,
     AdminModule,
+    SendbabaModule,
   ],
   controllers: [],
   providers: [

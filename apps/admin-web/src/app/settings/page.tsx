@@ -24,6 +24,8 @@ import {
   KeyRound,
   Copy,
   ExternalLink,
+  Users,
+  Send,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -75,6 +77,8 @@ export default function SettingsAndDevicePage() {
     sendbabaApiUrl: 'https://api.sendbaba.com/api/v1',
     sendbabaFromEmail: 'support@fundedgiants.ng',
     sendbabaFromName: 'FundedGiants Operations',
+    sendbabaOrgId: '977fdb13-474f-4eba-8f9b-e51798df16d0',
+    sendbabaWebhookSecret: '',
     sendbabaSmtpUser: '',
     sendbabaSmtpPass: '',
     smtpHost: 'smtp.sendbaba.com',
@@ -148,6 +152,8 @@ export default function SettingsAndDevicePage() {
           sendbabaApiUrl: s.smtp?.sendbabaApiUrl || prev.sendbabaApiUrl,
           sendbabaFromEmail: s.smtp?.sendbabaFromEmail || prev.sendbabaFromEmail,
           sendbabaFromName: s.smtp?.sendbabaFromName || prev.sendbabaFromName,
+          sendbabaOrgId: s.smtp?.sendbabaOrgId || prev.sendbabaOrgId,
+          sendbabaWebhookSecret: s.smtp?.sendbabaWebhookSecret || prev.sendbabaWebhookSecret,
           smtpHost: s.smtp?.host || prev.smtpHost,
           smtpPort: s.smtp?.port || prev.smtpPort,
           smtpUser: s.smtp?.user || prev.smtpUser,
@@ -244,6 +250,63 @@ export default function SettingsAndDevicePage() {
       });
     } finally {
       setTestingProvider(null);
+    }
+  };
+
+  const [syncingAudience, setSyncingAudience] = useState(false);
+  const [audienceSyncResult, setAudienceSyncResult] = useState<any>(null);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState('support@fundedgiants.ng');
+  const [testEmailFeedback, setTestEmailFeedback] = useState<any>(null);
+
+  const handleSyncSendbabaAudience = async () => {
+    setSyncingAudience(true);
+    setAudienceSyncResult(null);
+    try {
+      const res = await fetchAdminApi('/admin/integrations/sendbaba/sync-all', {
+        method: 'POST',
+      });
+      setAudienceSyncResult({
+        success: true,
+        message: res.message || 'Audience synced successfully to SendBaba!',
+        data: res.data,
+      });
+    } catch (err: any) {
+      setAudienceSyncResult({
+        success: false,
+        message: err.message || 'Failed to sync audience to SendBaba',
+      });
+    } finally {
+      setSyncingAudience(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailAddress || !testEmailAddress.includes('@')) {
+      alert('Please enter a valid recipient email address (e.g. support@fundedgiants.ng)');
+      return;
+    }
+    setSendingTestEmail(true);
+    setTestEmailFeedback(null);
+    try {
+      const res = await fetchAdminApi('/admin/integrations/sendbaba/test-email', {
+        method: 'POST',
+        body: JSON.stringify({
+          toEmail: testEmailAddress.trim(),
+        }),
+      });
+      setTestEmailFeedback({
+        success: res.success,
+        message: res.message || 'Test email dispatched successfully',
+        details: res.details,
+      });
+    } catch (err: any) {
+      setTestEmailFeedback({
+        success: false,
+        message: err.message || 'Failed to dispatch test email',
+      });
+    } finally {
+      setSendingTestEmail(false);
     }
   };
 
@@ -905,10 +968,152 @@ export default function SettingsAndDevicePage() {
                   </select>
                 </div>
                 {renderInputField('SendBaba API Key', 'sendbabaApiKey', 'sb_live_...', true, undefined, statusData?.credentialsSummary?.smtp?.sendbabaApiKeyMask)}
+                {renderInputField('SendBaba Organization ID', 'sendbabaOrgId', '977fdb13-474f-4eba-8f9b-e51798df16d0', false, 'Used for official Contact Sync Webhook')}
                 {renderInputField('SendBaba API Base URL', 'sendbabaApiUrl', 'https://api.sendbaba.com/api/v1')}
-                {renderInputField('Sender Address (From)', 'sendbabaFromEmail', 'support@fundedgiants.ng')}
+                {renderInputField('Sender Address (From)', 'sendbabaFromEmail', 'support@fundedgiants.ng', false, 'Strictly verified domain email')}
                 {renderInputField('Sender Display Name', 'sendbabaFromName', 'FundedGiants Operations')}
+                {renderInputField('SendBaba Webhook Secret (Optional)', 'sendbabaWebhookSecret', 'whsec_...', true, 'For verifying inbound bounce/unsub events')}
                 {renderInputField('Brevo API Key (Fallback)', 'brevoApiKey', 'xkeysib-...', true, undefined, statusData?.credentialsSummary?.smtp?.brevoApiKeyMask)}
+              </div>
+
+              {/* SendBaba Contact Sync & Audience Categorization Hub */}
+              <div className="rounded-xl bg-[#070a08] border border-[#1b3322] p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1b3322]/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        SendBaba Audience Sync & Contact Categorization
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Automatically categorizes and segments all FundedGiants traders inside SendBaba for retention & marketing campaigns
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncSendbabaAudience}
+                    disabled={syncingAudience}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-semibold text-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50 whitespace-nowrap shadow-sm shadow-emerald-500/20"
+                  >
+                    {syncingAudience ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                    <span>{syncingAudience ? 'Syncing Audience...' : 'Sync All Traders to SendBaba'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                  <div className="p-3 rounded-lg bg-[#0f1712] border border-[#1b3322] space-y-1">
+                    <div className="font-semibold text-emerald-400">Custom Contact Fields</div>
+                    <div className="text-slate-400 leading-relaxed">
+                      Synced with: <code className="text-slate-200">active_accounts_count</code>, <code className="text-slate-200">total_account_size</code>, <code className="text-slate-200">highest_stage</code>, <code className="text-slate-200">latest_plan</code>, <code className="text-slate-200">kyc_status</code>.
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#0f1712] border border-[#1b3322] space-y-1">
+                    <div className="font-semibold text-emerald-400">Segmentation Tags</div>
+                    <div className="text-slate-400 leading-relaxed">
+                      Auto-tagged: <span className="text-emerald-300">#trader</span>, <span className="text-emerald-300">#active-trader</span>, <span className="text-emerald-300">#funded-trader</span>, <span className="text-emerald-300">#tier-50m-plus</span>, <span className="text-emerald-300">#kyc-verified</span>.
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#0f1712] border border-[#1b3322] space-y-1">
+                    <div className="font-semibold text-emerald-400">Real-Time Lifecycle Hook</div>
+                    <div className="text-slate-400 leading-relaxed">
+                      Every new trader registration, WooCommerce challenge purchase, and KYC approval triggers an immediate background webhook sync to SendBaba.
+                    </div>
+                  </div>
+                </div>
+
+                {audienceSyncResult && (
+                  <div className={`p-3 rounded-lg border text-xs flex items-start gap-2 ${audienceSyncResult.success ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-red-950/40 border-red-500/40 text-red-300'}`}>
+                    {audienceSyncResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />}
+                    <div className="space-y-1">
+                      <div className="font-semibold">{audienceSyncResult.message}</div>
+                      {audienceSyncResult.data && (
+                        <div className="text-[11px] opacity-90">
+                          Total Traders in Database: <strong>{audienceSyncResult.data.total}</strong> | Successfully Synced: <strong>{audienceSyncResult.data.synced}</strong> | Skipped: <strong>{audienceSyncResult.data.skipped}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Live Email Delivery Verification */}
+              <div className="rounded-xl bg-[#070a08] border border-[#1b3322] p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <Send className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Live Email Delivery Verification
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Send a live test email directly through the SendBaba API to verify SPF/DKIM authentication and inbox placement
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <input
+                    type="email"
+                    value={testEmailAddress}
+                    onChange={(e) => setTestEmailAddress(e.target.value)}
+                    placeholder="Recipient email address (e.g. support@fundedgiants.ng)"
+                    className="flex-1 w-full rounded-lg bg-[#0f1712] border border-[#1b3322] px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendTestEmail}
+                    disabled={sendingTestEmail}
+                    className="w-full sm:w-auto px-4 py-2 rounded-lg bg-emerald-950/80 border border-emerald-500/50 hover:border-emerald-400 text-xs font-semibold text-emerald-300 hover:text-white flex items-center justify-center gap-1.5 transition disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {sendingTestEmail ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 text-emerald-400" />}
+                    <span>{sendingTestEmail ? 'Sending Test...' : 'Send Live Test Email'}</span>
+                  </button>
+                </div>
+
+                {testEmailFeedback && (
+                  <div className={`p-3 rounded-lg border text-xs flex items-start gap-2 ${testEmailFeedback.success ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-red-950/40 border-red-500/40 text-red-300'}`}>
+                    {testEmailFeedback.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />}
+                    <div>
+                      <div className="font-semibold">{testEmailFeedback.message}</div>
+                      {testEmailFeedback.details?.messageId && (
+                        <div className="text-[11px] opacity-80 font-mono mt-0.5">
+                          SendBaba Message ID: {testEmailFeedback.details.messageId}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SendBaba Webhook & Feed Endpoints */}
+              <div className="rounded-xl bg-[#070a08] border border-[#1b3322] p-4 space-y-3">
+                <div className="text-xs font-bold text-white uppercase tracking-wider">
+                  SendBaba Infrastructure Integration URLs
+                </div>
+                <div className="space-y-2 text-[11px]">
+                  <div>
+                    <div className="text-slate-400 mb-1">SendBaba Official Contact Sync Webhook:</div>
+                    <code className="block px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono select-all">
+                      https://api.sendbaba.com/api/contacts/webhook/{formData.sendbabaOrgId || '977fdb13-474f-4eba-8f9b-e51798df16d0'}
+                    </code>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 mb-1">FundedGiants Inbound Events Webhook (Bounces, Unsubscribes):</div>
+                    <code className="block px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono select-all">
+                      https://api.fundedgiants.ng/api/v1/webhooks/sendbaba
+                    </code>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 mb-1">Universal REST Contacts Pull Feed (SendBaba Data Sync "api_url" method):</div>
+                    <code className="block px-2.5 py-1.5 rounded-lg bg-black/60 border border-white/5 text-emerald-400 font-mono select-all">
+                      https://api.fundedgiants.ng/api/v1/integrations/sendbaba/feed
+                    </code>
+                  </div>
+                </div>
               </div>
 
               {/* Secondary SMTP Relay Settings */}
