@@ -1,3 +1,19 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load .env before NestJS bootstrap
+const envPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '../../.env'),
+  '/var/www/fundedgiants/.env',
+  '/var/www/fundedgiants/apps/api/.env',
+];
+for (const p of envPaths) {
+  try {
+    dotenv.config({ path: p, override: false });
+  } catch {}
+}
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';

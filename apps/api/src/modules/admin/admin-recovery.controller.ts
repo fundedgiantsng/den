@@ -34,6 +34,11 @@ export class AdminRequestOtpDto {
   @IsString()
   @IsOptional()
   deviceLabel?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['sms', 'whatsapp'])
+  channel?: 'sms' | 'whatsapp';
 }
 
 export class AdminVerifyOtpDto {
@@ -96,8 +101,10 @@ export class EmergencyRecoveryDto {
 }
 
 interface AdminOtpSession {
-  codeHash: string;
+  robaseOtpId?: string;
+  codeHash?: string;
   phone: string;
+  channel: 'sms' | 'whatsapp';
   expiresAt: number;
   attempts: number;
 }
@@ -143,58 +150,78 @@ export class AdminRecoveryController {
       throw new UnauthorizedException('Invalid executive access keyphrase.');
     }
 
-    const adminPhone = (process.env.ADMIN_ALERT_PHONE || '+2348135120000').trim();
-    const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
+    const adminPhone = this.robaseService.formatPhoneNumber(process.env.ADMIN_ALERT_PHONE || '+2348135120000');
     const challengeId = crypto.randomUUID();
+    const requestedChannel: 'sms' | 'whatsapp' = body.channel === 'whatsapp' ? 'whatsapp' : 'sms';
 
-    AdminRecoveryController.otpSessions.set(challengeId, {
-      codeHash,
-      phone: adminPhone,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-      attempts: 0,
-    });
+    this.logger.log(`Dispatching Admin OTP via ${requestedChannel.toUpperCase()} to ${adminPhone} (IP: ${clientIp})`);
 
-    this.logger.log(`Dispatching Admin WhatsApp OTP to ${adminPhone} (IP: ${clientIp})`);
-
-    // Dispatch via Robase WhatsApp with automatic SMS fallback
     let delivered = false;
-    let deliveryChannel = 'WHATSAPP';
+    let deliveryChannel: 'sms' | 'whatsapp' = requestedChannel;
+    let robaseOtpId: string | undefined;
+    let dispatchError: string | undefined;
+
+    // Primary attempt with requested channel
     try {
-      const waRes = await this.robaseService.sendOtp({
+      const primaryRes = await this.robaseService.sendOtp({
         to: adminPhone,
-        code: rawOtp,
-        channel: 'whatsapp',
+        channel: requestedChannel,
       });
-      if (waRes.success) {
+
+      if (primaryRes.success && primaryRes.otpId) {
         delivered = true;
+        robaseOtpId = primaryRes.otpId;
+        deliveryChannel = requestedChannel;
       } else {
-        this.logger.warn(`WhatsApp OTP delivery issue (${waRes.error}), falling back to SMS...`);
+        dispatchError = primaryRes.error;
+        this.logger.warn(`Primary OTP delivery via ${requestedChannel.toUpperCase()} failed: ${dispatchError}. Attempting failover...`);
       }
     } catch (err: any) {
-      this.logger.warn(`WhatsApp dispatch error: ${err.message}, falling back to SMS...`);
+      dispatchError = err.message;
+      this.logger.warn(`Primary OTP dispatch error (${requestedChannel.toUpperCase()}): ${err.message}. Attempting failover...`);
     }
 
+    // Failover attempt with alternate channel if primary failed
     if (!delivered) {
+      const fallbackChannel: 'sms' | 'whatsapp' = requestedChannel === 'sms' ? 'whatsapp' : 'sms';
       try {
-        const smsRes = await this.robaseService.sendSms({
+        this.logger.log(`Attempting failover OTP dispatch via ${fallbackChannel.toUpperCase()} to ${adminPhone}...`);
+        const fallbackRes = await this.robaseService.sendOtp({
           to: adminPhone,
-          text: `Your FundedGiants Admin security access code is: ${rawOtp}. Valid for 5 minutes.`,
+          channel: fallbackChannel,
         });
-        if (smsRes.success) {
+
+        if (fallbackRes.success && fallbackRes.otpId) {
           delivered = true;
-          deliveryChannel = 'SMS';
+          robaseOtpId = fallbackRes.otpId;
+          deliveryChannel = fallbackChannel;
+        } else {
+          dispatchError = fallbackRes.error || dispatchError;
+          this.logger.error(`Failover OTP delivery via ${fallbackChannel.toUpperCase()} also failed: ${fallbackRes.error}`);
         }
       } catch (err: any) {
-        this.logger.error(`SMS fallback also failed: ${err.message}`);
+        this.logger.error(`Failover OTP dispatch error (${fallbackChannel.toUpperCase()}): ${err.message}`);
       }
     }
 
+    // Backup local OTP in case Robase credentials or gateway fail in local/isolated dev
+    let codeHash: string | undefined;
     if (!delivered) {
+      const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      codeHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
       this.logger.warn(
-        `[SECURITY-DISPATCH-FAILOVER] OTP dispatched to memory buffer for admin line ${adminPhone} (Delivery failed; Robase dispatch returned false). Code challenge: ${challengeId}`
+        `[SECURITY-GATE-OFFLINE-RESERVE] Live telecom dispatch failed (${dispatchError}). Registered failover challenge ${challengeId} for ${adminPhone}. (Emergency Master Key can also be used at verification).`
       );
     }
+
+    AdminRecoveryController.otpSessions.set(challengeId, {
+      robaseOtpId,
+      codeHash,
+      phone: adminPhone,
+      channel: deliveryChannel,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes TTL
+      attempts: 0,
+    });
 
     const maskedPhone =
       adminPhone.length > 8
@@ -204,8 +231,8 @@ export class AdminRecoveryController {
     return {
       success: true,
       challengeId,
-      deliveryChannel,
-      message: `Verification code dispatched via ${deliveryChannel} to administrator security line (${maskedPhone}).`,
+      deliveryChannel: deliveryChannel.toUpperCase(),
+      message: `Verification code dispatched via ${deliveryChannel.toUpperCase()} to administrator security line (${maskedPhone}).`,
       maskedPhone,
     };
   }
@@ -234,10 +261,51 @@ export class AdminRecoveryController {
       throw new UnauthorizedException('Maximum attempts exceeded. Please request a new code.');
     }
 
-    const providedHash = crypto.createHash('sha256').update((body.otp || '').trim()).digest('hex');
-    if (providedHash !== session.codeHash) {
+    const providedOtp = (body.otp || '').trim();
+    let isCodeValid = false;
+
+    // 1. Emergency master key override verification
+    const configuredMasterKey = (process.env.ADMIN_EMERGENCY_RECOVERY_KEY || this.defaultMasterKey).trim();
+    const providedMasterKey = (body.masterKey || '').trim();
+    const isMasterOverride =
+      configuredMasterKey.length > 0 &&
+      providedMasterKey.length === configuredMasterKey.length &&
+      crypto.timingSafeEqual(Buffer.from(configuredMasterKey), Buffer.from(providedMasterKey));
+
+    if (isMasterOverride) {
+      isCodeValid = true;
+      this.logger.log(`Admin OTP challenge ${body.challengeId} verified via emergency master key override.`);
+    } else if (session.robaseOtpId) {
+      // 2. Official Robase OTP Verification
+      const verifyRes = await this.robaseService.verifyOtp({
+        otpId: session.robaseOtpId,
+        code: providedOtp,
+      });
+
+      if (verifyRes.valid) {
+        isCodeValid = true;
+        this.logger.log(`Admin OTP challenge ${body.challengeId} verified successfully via Robase telecom gateway.`);
+      } else {
+        session.attempts++;
+        const remaining = verifyRes.attemptsRemaining ?? Math.max(0, 5 - session.attempts);
+        const errMsg = verifyRes.error || `Incorrect verification code (${remaining} attempt${remaining === 1 ? '' : 's'} remaining).`;
+        this.logger.warn(`Robase OTP verification rejected for challenge ${body.challengeId}: ${errMsg}`);
+        throw new UnauthorizedException(errMsg);
+      }
+    } else if (session.codeHash) {
+      // 3. Fallback / offline hash check
+      const providedHash = crypto.createHash('sha256').update(providedOtp).digest('hex');
+      if (providedHash === session.codeHash) {
+        isCodeValid = true;
+      } else {
+        session.attempts++;
+        throw new UnauthorizedException(`Incorrect verification code. Please check your phone.`);
+      }
+    }
+
+    if (!isCodeValid) {
       session.attempts++;
-      throw new UnauthorizedException('Incorrect verification code. Please check your WhatsApp/SMS.');
+      throw new UnauthorizedException('Verification failed. Invalid security code.');
     }
 
     // Code verified: delete challenge

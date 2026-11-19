@@ -24,15 +24,16 @@ function AdminLoginForm() {
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/';
 
-  // Step 1: Keyphrase, Step 2: WhatsApp OTP
+  // Step 1: Keyphrase, Step 2: SMS/WhatsApp OTP
   const [step, setStep] = useState<'KEYPHRASE' | 'OTP'>('KEYPHRASE');
+  const [channel, setChannel] = useState<'sms' | 'whatsapp'>('sms');
 
   const [keyphrase, setKeyphrase] = useState('');
   const [showKeyphrase, setShowKeyphrase] = useState(false);
   const [otp, setOtp] = useState('');
   const [challengeId, setChallengeId] = useState('');
   const [maskedPhone, setMaskedPhone] = useState('');
-  const [deliveryChannel, setDeliveryChannel] = useState('WHATSAPP');
+  const [deliveryChannel, setDeliveryChannel] = useState('SMS');
 
   const [masterKey, setMasterKey] = useState('');
   const [showMasterKey, setShowMasterKey] = useState(false);
@@ -61,11 +62,16 @@ function AdminLoginForm() {
   }, [resendCooldown]);
 
   // Step 1: Request OTP with Secret Keyphrase
-  const handleRequestOtp = async (e?: React.FormEvent) => {
+  const handleRequestOtp = async (overrideChannel?: 'sms' | 'whatsapp', e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!keyphrase.trim()) {
       setError('Please enter the executive access keyphrase.');
       return;
+    }
+
+    const activeChannel = overrideChannel || channel;
+    if (overrideChannel) {
+      setChannel(overrideChannel);
     }
 
     setError(null);
@@ -81,6 +87,7 @@ function AdminLoginForm() {
         },
         body: JSON.stringify({
           keyphrase: keyphrase.trim().replace(/^[\\"'`\s]+|[\\"'`\s]+$/g, ''),
+          channel: activeChannel,
           deviceFingerprint,
           deviceLabel,
         }),
@@ -94,7 +101,7 @@ function AdminLoginForm() {
 
       setChallengeId(data.challengeId);
       setMaskedPhone(data.maskedPhone || 'Security Line');
-      setDeliveryChannel(data.deliveryChannel || 'WHATSAPP');
+      setDeliveryChannel(data.deliveryChannel || activeChannel.toUpperCase());
       setStep('OTP');
       setResendCooldown(60);
       setOtp('');
@@ -177,7 +184,7 @@ function AdminLoginForm() {
           <span>ADMIN EXECUTIVE GATEWAY</span>
         </div>
         <p className="text-xs text-slate-400 font-medium">
-          Tier-5 Executive Access • Two-Factor WhatsApp Security Gate
+          Tier-5 Executive Access • Two-Factor SMS & WhatsApp Security Gate
         </p>
       </div>
 
@@ -185,7 +192,7 @@ function AdminLoginForm() {
       <div className="rounded-xl bg-[#0f1712] border border-[#1b3322] p-3 text-[11px] text-slate-300 flex items-start gap-2.5">
         <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
         <div>
-          <span className="font-semibold text-white">Dual-Lock Protection Active:</span> Access requires executive keyphrase authorization followed by WhatsApp OTP dispatch and cryptographic terminal device mapping.
+          <span className="font-semibold text-white">Dual-Lock Protection Active:</span> Access requires executive keyphrase authorization followed by carrier SMS / WhatsApp OTP dispatch and cryptographic terminal device mapping.
         </div>
       </div>
 
@@ -207,7 +214,7 @@ function AdminLoginForm() {
 
         {step === 'KEYPHRASE' ? (
           /* STEP 1: Enter Secret Keyphrase */
-          <form onSubmit={handleRequestOtp} className="space-y-4">
+          <form onSubmit={(e) => handleRequestOtp(channel, e)} className="space-y-4">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Executive Access Keyphrase
@@ -234,8 +241,40 @@ function AdminLoginForm() {
                 </button>
               </div>
               <p className="text-[10px] text-slate-500">
-                Upon verification, a one-time security pass will be sent via WhatsApp to the registered administrator line.
+                Upon verification, a one-time security pass will be dispatched to the registered administrator security line.
               </p>
+            </div>
+
+            {/* Delivery Channel Selector */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                OTP Delivery Channel
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setChannel('sms')}
+                  className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    channel === 'sms'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                      : 'bg-[#070a08] border-[#1b3322] text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span>📱 SMS (Carrier Default)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChannel('whatsapp')}
+                  className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    channel === 'whatsapp'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                      : 'bg-[#070a08] border-[#1b3322] text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>WhatsApp</span>
+                </button>
+              </div>
             </div>
 
             {/* Hardware Terminal Display */}
@@ -268,21 +307,21 @@ function AdminLoginForm() {
               ) : (
                 <>
                   <MessageSquare className="w-4 h-4" />
-                  <span>Request WhatsApp Access Code</span>
+                  <span>Request {channel === 'sms' ? 'SMS' : 'WhatsApp'} Access Code</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
         ) : (
-          /* STEP 2: Enter WhatsApp OTP */
+          /* STEP 2: Enter OTP */
           <form onSubmit={handleVerifyOtp} className="space-y-4">
             <div className="rounded-xl bg-emerald-950/40 border border-emerald-500/30 p-3 text-xs text-emerald-300 flex items-start gap-2.5">
               <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold text-white">Code Dispatched via {deliveryChannel}:</span>
                 <p className="mt-0.5 text-emerald-300/90 text-[11px]">
-                  Check WhatsApp on administrator line <span className="font-mono font-bold text-emerald-200">{maskedPhone}</span> for your 6-digit access OTP.
+                  Check {deliveryChannel === 'SMS' ? 'text messages (SMS)' : 'WhatsApp'} on administrator line <span className="font-mono font-bold text-emerald-200">{maskedPhone}</span> for your 6-digit access OTP.
                 </p>
               </div>
             </div>
@@ -371,30 +410,47 @@ function AdminLoginForm() {
             </button>
 
             {/* Resend & Back Actions */}
-            <div className="flex items-center justify-between text-xs pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('KEYPHRASE');
-                  setError(null);
-                }}
-                className="text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Change Keyphrase</span>
-              </button>
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('KEYPHRASE');
+                    setError(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Change Keyphrase</span>
+                </button>
 
-              <button
-                type="button"
-                disabled={resendCooldown > 0 || loading}
-                onClick={() => handleRequestOtp()}
-                className="text-emerald-400 hover:text-emerald-300 disabled:text-slate-600 disabled:cursor-not-allowed flex items-center gap-1 transition-colors font-medium"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                <span>
-                  {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend WhatsApp Code'}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  disabled={resendCooldown > 0 || loading}
+                  onClick={() => handleRequestOtp(channel)}
+                  className="text-emerald-400 hover:text-emerald-300 disabled:text-slate-600 disabled:cursor-not-allowed flex items-center gap-1 transition-colors font-medium"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>
+                    {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : `Resend ${deliveryChannel} Code`}
+                  </span>
+                </button>
+              </div>
+
+              {/* Alternate delivery channel switch */}
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    const altChannel = deliveryChannel === 'SMS' ? 'whatsapp' : 'sms';
+                    handleRequestOtp(altChannel);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-emerald-400 underline underline-offset-4 transition-colors"
+                >
+                  Didn&apos;t receive code? Send via {deliveryChannel === 'SMS' ? 'WhatsApp' : 'SMS'} instead
+                </button>
+              </div>
             </div>
           </form>
         )}
