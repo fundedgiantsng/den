@@ -253,6 +253,7 @@ export class SteraTraderService {
         body: JSON.stringify({
           kind,
           amount: amountKobo,
+          currency: 'NGN',
           external_transaction_id: `TX-${accountNumber}-${Date.now()}`,
           reason: comment,
         }),
