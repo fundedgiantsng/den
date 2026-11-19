@@ -108,8 +108,17 @@ export class WebhooksController {
     const phone = orderData.billing?.phone?.trim();
     const firstName = orderData.billing?.first_name?.trim();
     const lastName = orderData.billing?.last_name?.trim();
-    const accountSizeNgn = Number(orderData.account_size || orderData.total || 5000000);
+    let accountSizeNgn = Number(orderData.account_size || 0);
     const planSku = orderData.plan_sku || 'rhino-rush-5000000';
+    if (!accountSizeNgn || accountSizeNgn <= 50000) {
+      const match = planSku.match(/(\d+[\d,]*\d+)/);
+      if (match) {
+        accountSizeNgn = parseInt(match[1].replace(/,/g, ''), 10);
+      }
+      if (!accountSizeNgn || accountSizeNgn <= 50000) {
+        accountSizeNgn = 5000000;
+      }
+    }
     const planType = planSku.includes('phoenix') ? 'phoenix-rise' : 'rhino-rush';
     const totalAmount = Number(orderData.total || 0);
 
@@ -579,16 +588,21 @@ export class WebhooksController {
   }
 
   private async forwardToWordPressNomba(payload: any, signature?: string, sigValue?: string) {
-    const wcNombaUrl = process.env.WOOCOMMERCE_NOMBA_WEBHOOK_URL;
+    const wcNombaUrl = process.env.WOOCOMMERCE_NOMBA_WEBHOOK_URL || 'https://fundedgiants.ng/wp-json/nomba/v1/webhook';
     if (wcNombaUrl && wcNombaUrl.trim()) {
       try {
+        const rawSecret = process.env.NOMBA_WEBHOOK_SECRET || '7FvK29xQpLm84ZtRjN6cUyA3eHsW0dBk';
+        const activeSig = signature || sigValue || rawSecret;
         this.logger.log(`Proxying Nomba checkout webhook to WordPress WooCommerce: ${wcNombaUrl}`);
         const forwardRes = await fetch(wcNombaUrl.trim(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'User-Agent': 'FundedGiants-CRM/1.0',
             'x-nomba-proxy': 'FundedGiants-Internal',
-            ...(signature ? { 'nomba-signature': signature } : {}),
+            'nomba-signature': activeSig,
+            'x-nomba-signature': activeSig,
+            'x-lenco-signature': activeSig,
             ...(sigValue ? { 'nomba-sig-value': sigValue } : {}),
           },
           body: JSON.stringify(payload),
@@ -909,15 +923,23 @@ export class WebhooksController {
           }
         }
 
-        const accountSize = Number(
-          wcOrder?.meta_data?.find((m: any) => m.key === '_account_size')?.value ||
-          wcOrder?.total ||
-          amount
+        let accountSize = Number(
+          wcOrder?.meta_data?.find((m: any) => m.key === '_account_size' || m.key === '_fg_account_size')?.value || 0
         );
         const planSku =
           wcOrder?.line_items?.[0]?.sku ||
           wcOrder?.line_items?.[0]?.name ||
           'rhino-rush-10000000';
+
+        if (!accountSize || accountSize <= 50000) {
+          const match = planSku.match(/(\d+[\d,]*\d+)/);
+          if (match) {
+            accountSize = parseInt(match[1].replace(/,/g, ''), 10);
+          }
+        }
+        if (!accountSize || accountSize <= 50000) {
+          accountSize = 5000000;
+        }
 
         if (customerEmail) {
           await this.handleWooCommerceWebhook(

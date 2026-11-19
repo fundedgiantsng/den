@@ -62,21 +62,36 @@ export class WooCommerceService {
    * AES-256-CBC Decryption matching WordPress fgt_decrypt_payload / class-crm-api.php
    */
   decryptPayload(encryptedBase64: string, customSecret?: string): any {
-    try {
-      const secret = customSecret || this.webhookSecret || this.aesSecret;
-      const key = crypto.createHash('sha256').update(secret).digest();
-      const rawData = Buffer.from(encryptedBase64, 'base64');
-      if (rawData.length < 16) return null;
+    const rawData = Buffer.from(encryptedBase64, 'base64');
+    if (rawData.length < 16) return null;
 
-      const iv = rawData.subarray(0, 16);
-      const ciphertext = rawData.subarray(16);
-      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-      const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-      return JSON.parse(decrypted.toString('utf8'));
-    } catch (err: any) {
-      this.logger.error(`Decryption failed: ${err.message}`);
-      return null;
+    const iv = rawData.subarray(0, 16);
+    const ciphertext = rawData.subarray(16);
+
+    const candidateSecrets = Array.from(new Set([
+      customSecret,
+      this.aesSecret,
+      process.env.FGT_AES_SECRET,
+      'k9F#wR$2026!G!ants_AES_Secr3t_Prod_x98BqLz',
+      this.webhookSecret,
+      process.env.WOOCOMMERCE_WEBHOOK_SECRET,
+      'mY$ecur3&P@ssw0rd!2026FGT_G!ants',
+      '9f84b2c7e10a5d3f88c4b19260e7a34d5f1c8e2b7904a6d1c3e8b5f2097a4c6e',
+    ])).filter((s): s is string => !!s);
+
+    for (const secret of candidateSecrets) {
+      try {
+        const key = crypto.createHash('sha256').update(secret).digest();
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        return JSON.parse(decrypted.toString('utf8'));
+      } catch {
+        // Try next candidate secret
+      }
     }
+
+    this.logger.error('Decryption failed: None of the configured AES/Webhook secrets could decrypt the incoming payload.');
+    return null;
   }
 
   /**

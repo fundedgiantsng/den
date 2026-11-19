@@ -149,6 +149,9 @@ export class SendbabaService {
     const cleanTo = to.map(t => this.extractCleanEmail(t));
     const displayName = (options.fromName || this.fromName || 'FundedGiants').replace(/<[^>]+>/g, '').replace(/[<>"'`]/g, '').trim() || 'FundedGiants';
 
+    // SendBaba requires a strict RFC 5321 email in 'from' (e.g. 'support@fundedgiants.ng').
+    // Passing a display name inside 'from' causes Google/destination MX to hard bounce with 553 5.1.7.
+    // Display name is supplied via 'from_name' / 'sender_name'.
     const payload: Record<string, any> = {
       from: cleanFrom,
       from_name: displayName,
@@ -180,11 +183,8 @@ export class SendbabaService {
     if (options.tags && options.tags.length > 0) payload.tags = options.tags;
     if (options.metadata) payload.metadata = options.metadata;
 
-    // Transactional deliverability headers to enforce exact display identity and prevent spam/promotions filtering
+    // Transactional deliverability headers to prevent spam/promotions filtering without overriding clean sender identity
     payload.headers = {
-      'From': `"${displayName}" <${cleanFrom}>`,
-      'Sender': `"${displayName}" <${cleanFrom}>`,
-      'Reply-To': `"${displayName}" <${cleanFrom}>`,
       'X-Priority': '1',
       'X-MSMail-Priority': 'High',
       'Importance': 'High',
