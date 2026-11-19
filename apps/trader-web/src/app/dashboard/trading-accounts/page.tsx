@@ -85,7 +85,7 @@ export default function TradingAccountsPage() {
     const fetchAccounts = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${apiUrl}/api/v1/challenges/my-accounts`, {
+        const res = await fetch(`${API_BASE_URL}/challenges/my-accounts`, {
           credentials: 'include',
         });
         if (res.ok) {

@@ -42,7 +42,7 @@ export default function WithdrawFundsPage() {
     async function loadWallet() {
       setFetchingData(true);
       try {
-        const res = await fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE_URL}/wallet/overview`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           setAvailableBalanceNgn(data.availableBalanceNgn ?? 0);
@@ -82,7 +82,7 @@ export default function WithdrawFundsPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/api/v1/wallet/withdraw`, {
+      const res = await fetch(`${API_BASE_URL}/wallet/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

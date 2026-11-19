@@ -82,8 +82,8 @@ export default function NotificationSettingsPage() {
       setLoading(true);
       try {
         const [resPrefs, resAccrued] = await Promise.all([
-          fetch(`${apiUrl}/api/v1/notifications/preferences`, { credentials: 'include' }),
-          fetch(`${apiUrl}/api/v1/notifications/accrued-fees`, { credentials: 'include' }),
+          fetch(`${API_BASE_URL}/notifications/preferences`, { credentials: 'include' }),
+          fetch(`${API_BASE_URL}/notifications/accrued-fees`, { credentials: 'include' }),
         ]);
 
         if (resPrefs.ok) {
@@ -125,7 +125,7 @@ export default function NotificationSettingsPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch(`${apiUrl}/api/v1/notifications/preferences`, {
+      const res = await fetch(`${API_BASE_URL}/notifications/preferences`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

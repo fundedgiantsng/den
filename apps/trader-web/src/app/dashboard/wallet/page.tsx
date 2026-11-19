@@ -128,8 +128,8 @@ export default function GiantsVaultPage() {
     setLoading(true);
     try {
       const [resOverview, resTx] = await Promise.all([
-        fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' }),
-        fetch(`${apiUrl}/api/v1/wallet/transactions`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/wallet/overview`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/wallet/transactions`, { credentials: 'include' }),
       ]);
 
       if (resOverview.ok) {
@@ -182,7 +182,7 @@ export default function GiantsVaultPage() {
 
   const fetchCardInfo = async () => {
     try {
-      const res = await fetch(`${apiUrl}/api/v1/cards/my-card`, { credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/cards/my-card`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setMyCardData(data);

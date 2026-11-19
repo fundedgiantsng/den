@@ -42,7 +42,7 @@ export default function AdminEmergencyRecoveryPage() {
     setError(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.fundedgiants.ng/api/v1';
       const res = await fetch(`${apiUrl}/admin/auth/emergency-recovery`, {
         method: 'POST',
         headers: {

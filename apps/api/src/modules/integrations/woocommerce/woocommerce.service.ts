@@ -40,7 +40,7 @@ export class WooCommerceService {
     this.wpBaseUrl =
       process.env.WOOCOMMERCE_API_URL?.replace(/\/wp-json\/wc\/v3\/?$/, '') ||
       process.env.WORDPRESS_URL ||
-      'http://localhost:10005';
+      'https://fundedgiants.ng';
     this.webhookSecret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
     this.aesSecret = process.env.FGT_AES_SECRET || 'mY$ecur3&P@ssw0rd!2026FGT_G!ants';
   }

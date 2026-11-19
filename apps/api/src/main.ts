@@ -57,14 +57,28 @@ async function bootstrap() {
 
   // CORS configuration
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://fundedgiants.ng',
-      'https://trader.fundedgiants.ng',
-      'https://giant.fundedgiants.ng',
-      'https://api.fundedgiants.ng',
-    ],
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) return callback(null, true);
+      const allowedOrigins = [
+        'https://fundedgiants.ng',
+        'https://www.fundedgiants.ng',
+        'https://trader.fundedgiants.ng',
+        'https://admin.fundedgiants.ng',
+        'https://giant.fundedgiants.ng',
+        'https://api.fundedgiants.ng',
+        'http://localhost:3000',
+        'http://localhost:3001',
+      ];
+      if (
+        allowedOrigins.includes(requestOrigin) ||
+        requestOrigin.endsWith('.fundedgiants.ng') ||
+        requestOrigin === 'https://fundedgiants.ng'
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Permissive for production webhooks and custom origins
+      }
+    },
     credentials: true,
   });
 

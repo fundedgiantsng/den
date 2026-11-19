@@ -104,7 +104,7 @@ export default function DashboardOverviewPage() {
     const interval = setInterval(updateBanner, 60000);
 
     // 1. Fetch current user session
-    fetch(`${apiUrl}/api/v1/auth/me`, {
+    fetch(`${API_BASE_URL}/auth/me`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -122,7 +122,7 @@ export default function DashboardOverviewPage() {
       .catch(() => {});
 
     // 2. Fetch live wallet overview
-    fetch(`${apiUrl}/api/v1/wallet/overview`, {
+    fetch(`${API_BASE_URL}/wallet/overview`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -138,7 +138,7 @@ export default function DashboardOverviewPage() {
       .catch(() => {});
 
     // 3. Fetch live active trading accounts
-    fetch(`${apiUrl}/api/v1/challenges/my-accounts`, {
+    fetch(`${API_BASE_URL}/challenges/my-accounts`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -162,7 +162,7 @@ export default function DashboardOverviewPage() {
       .catch(() => {});
 
     // 4. Fetch live transactions
-    fetch(`${apiUrl}/api/v1/wallet/transactions`, {
+    fetch(`${API_BASE_URL}/wallet/transactions`, {
       credentials: 'include',
     })
       .then((res) => (res.ok ? res.json() : null))

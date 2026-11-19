@@ -52,8 +52,8 @@ export default function BankAccountsPage() {
     setLoading(true);
     try {
       const [resOverview, resBanks] = await Promise.all([
-        fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' }),
-        fetch(`${apiUrl}/api/v1/wallet/banks`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/wallet/overview`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/wallet/banks`, { credentials: 'include' }),
       ]);
 
       if (resOverview.ok) {
@@ -99,7 +99,7 @@ export default function BankAccountsPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${apiUrl}/api/v1/wallet/bind-bank-account`, {
+      const res = await fetch(`${API_BASE_URL}/wallet/bind-bank-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

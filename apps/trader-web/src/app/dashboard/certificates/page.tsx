@@ -35,7 +35,7 @@ export default function CertificatesPage() {
   useEffect(() => {
     async function loadCertificates() {
       try {
-        const res = await fetch(`${apiUrl}/api/v1/certificates`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE_URL}/certificates`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {

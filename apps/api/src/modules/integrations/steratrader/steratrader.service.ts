@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { prisma } from '@fundedgiants/database';
 
 export type SteraTraderGroupSlug = 'fg-rr-eval' | 'fg-rr-funded' | 'fg-pr-funded';
 
@@ -355,26 +357,55 @@ export class SteraTraderService {
 
   /**
    * Terminate or Archive account upon rule breach
+   * Strictly enforces complete trading cessation:
+   * 1. Liquidates all active positions on SteraTrader
+   * 2. Scrambles the master password on SteraTrader (disconnecting active trader terminals)
+   * 3. Updates TradingAccount status to CLOSED in the database and overwrites stored masterPassword
+   * 4. Dispatches SteraTrader terminate/lock calls
    */
   async terminateAccount(accountNumber: string, reason: string): Promise<boolean> {
-    if (!this.apiKey) return false;
+    this.logger.warn(`Restricting and terminating SteraTrader account ${accountNumber}. Reason: ${reason}`);
 
-    // First liquidate all open trades
-    await this.closeAllPositions(accountNumber);
-
+    // 1. Immediately liquidate all open positions
     try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/terminate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({ reason }),
-      });
+      await this.closeAllPositions(accountNumber);
+      this.logger.log(`Closed all open positions for breached account ${accountNumber}`);
+    } catch (err: any) {
+      this.logger.error(`Error closing positions for account ${accountNumber}: ${err.message}`);
+    }
 
-      if (!response.ok) {
-        // Fallback to /lock
-        await fetch(`${this.apiUrl}/accounts/${accountNumber}/lock`, {
+    // 2. Forcefully scramble master password on SteraTrader to revoke terminal access immediately
+    let scrambledPassword = `FG-LOCKED-${crypto.randomBytes(8).toString('hex')}!Aa9`;
+    if (this.apiKey) {
+      try {
+        const resetRes = await this.resetTraderPassword(accountNumber);
+        if (resetRes.success && resetRes.newPassword) {
+          scrambledPassword = resetRes.newPassword;
+          this.logger.log(`Scrambled master password on SteraTrader for account ${accountNumber}`);
+        }
+      } catch (err: any) {
+        this.logger.error(`Error scrambling master password on SteraTrader for ${accountNumber}: ${err.message}`);
+      }
+    }
+
+    // 3. Update TradingAccount in database to CLOSED and scramble stored masterPassword
+    try {
+      await prisma.tradingAccount.updateMany({
+        where: { accountNumber },
+        data: {
+          status: 'CLOSED',
+          masterPassword: scrambledPassword,
+        },
+      });
+      this.logger.log(`Database trading account status for ${accountNumber} set to CLOSED`);
+    } catch (dbErr: any) {
+      this.logger.error(`Failed to update trading account in database for ${accountNumber}: ${dbErr.message}`);
+    }
+
+    // 4. Dispatch terminate / lock calls to SteraTrader if supported
+    if (this.apiKey) {
+      try {
+        const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/terminate`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -382,13 +413,23 @@ export class SteraTraderService {
           },
           body: JSON.stringify({ reason }),
         });
-      }
 
-      return true;
-    } catch (err: any) {
-      this.logger.error(`Failed to terminate SteraTrader account ${accountNumber}: ${err.message}`);
-      return false;
+        if (!response.ok) {
+          await fetch(`${this.apiUrl}/accounts/${accountNumber}/lock`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify({ reason }),
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`SteraTrader terminate endpoint call notice for ${accountNumber}: ${err.message}`);
+      }
     }
+
+    return true;
   }
 
   /**

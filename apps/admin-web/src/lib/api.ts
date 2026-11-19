@@ -1,10 +1,5 @@
 ﻿export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== 'undefined' &&
-  window.location.hostname !== 'localhost' &&
-  window.location.hostname !== '127.0.0.1'
-    ? 'https://api.fundedgiants.ng/api/v1'
-    : 'http://localhost:4000/api/v1');
+  (process.env.NEXT_PUBLIC_API_URL || 'https://api.fundedgiants.ng/api/v1').replace(/\/+$/, '');
 
 export function getAdminDeviceFingerprint(): string {
   if (typeof window === 'undefined') {

@@ -38,7 +38,7 @@ export default function FundWalletPage() {
     async function loadAccount() {
       setLoading(true);
       try {
-        const res = await fetch(`${apiUrl}/api/v1/wallet/overview`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE_URL}/wallet/overview`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (data.dedicatedAccount && data.dedicatedAccount.accountNumber) {

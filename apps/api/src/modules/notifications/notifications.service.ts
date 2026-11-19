@@ -123,37 +123,62 @@ export class NotificationsService {
 
     const plainText = `${subject}\n\nHello ${toName || 'Valued Trader'},\n\n${bodyText}\n\nView details: ${fullActionUrl}\n\nFundedGiants Operations`;
 
-    // 1. Primary Engine: SendBaba REST API (when configured or provider set to sendbaba)
-    if (configuredProvider === 'sendbaba' || this.sendbabaService.isConfigured()) {
-      if (this.sendbabaService.isConfigured()) {
-        try {
-          const sbRes = await this.sendbabaService.sendEmail({
-            to: toEmail,
-            from: senderEmail,
-            fromName: senderName,
-            subject,
-            html: htmlContent,
-            text: plainText,
-            reply_to: senderEmail,
-            tags: ['fundedgiants-transactional'],
-          });
+    // 1. Primary Engine: SendBaba SMTP Relay (Official SendBaba relay that enforces RFC 5322 clean display name "FundedGiants")
+    const isSendbabaConfigured = configuredProvider === 'sendbaba' || this.sendbabaService.isConfigured();
+    if (isSendbabaConfigured && this.sendbabaService.apiKey) {
+      try {
+        const smtpUser = process.env.SMTP_USER || process.env.SENDBABA_SMTP_USER || senderEmail;
+        const smtpPass = process.env.SMTP_PASS || process.env.SENDBABA_SMTP_PASS || this.sendbabaService.apiKey;
+        const transporter = nodemailer.createTransport({
+          host: 'smtp.sendbaba.com',
+          port: 587,
+          secure: false,
+          auth: { user: smtpUser, pass: smtpPass },
+          tls: { rejectUnauthorized: false },
+        });
 
-          if (sbRes.success) {
-            this.logger.log(`SendBaba email successfully delivered to ${toEmail} [ID: ${sbRes.messageId}]`);
-            return true;
-          }
+        const info = await transporter.sendMail({
+          from: {
+            name: senderName,
+            address: senderEmail,
+          },
+          to: toEmail,
+          subject,
+          text: plainText,
+          html: htmlContent,
+        });
 
-          this.logger.warn(`SendBaba email dispatch failed for ${toEmail}: ${sbRes.error}. Attempting fallback provider...`);
-        } catch (sbErr: any) {
-          this.logger.warn(`SendBaba dispatch error for ${toEmail}: ${sbErr.message}. Attempting fallback provider...`);
+        this.logger.log(`SendBaba email dispatched to ${toEmail} [MessageId: ${info.messageId}] with sender "${senderName}"`);
+        return true;
+      } catch (smtpErr: any) {
+        this.logger.warn(`SendBaba SMTP relay error for ${toEmail}: ${smtpErr.message}. Falling back to SendBaba REST API...`);
+      }
+
+      // SendBaba REST API Failover
+      try {
+        const sbRes = await this.sendbabaService.sendEmail({
+          to: toEmail,
+          from: senderEmail,
+          fromName: senderName,
+          subject,
+          html: htmlContent,
+          text: plainText,
+          reply_to: senderEmail,
+          tags: ['fundedgiants-transactional'],
+        });
+
+        if (sbRes.success) {
+          this.logger.log(`SendBaba REST email successfully delivered to ${toEmail} [ID: ${sbRes.messageId}]`);
+          return true;
         }
-      } else {
-        this.logger.warn(`EMAIL_PROVIDER is 'sendbaba' but SENDBABA_API_KEY is not set. Attempting fallback provider...`);
+        this.logger.warn(`SendBaba REST dispatch failed for ${toEmail}: ${sbRes.error}. Attempting secondary fallback...`);
+      } catch (sbErr: any) {
+        this.logger.warn(`SendBaba REST dispatch error for ${toEmail}: ${sbErr.message}. Attempting secondary fallback...`);
       }
     }
 
     // 2. Secondary Engine: Brevo API
-    if (brevoApiKey && (configuredProvider === 'brevo' || !this.sendbabaService.isConfigured())) {
+    if (brevoApiKey && (configuredProvider === 'brevo' || !isSendbabaConfigured)) {
       try {
         const res = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
@@ -181,22 +206,19 @@ export class NotificationsService {
       }
     }
 
-    // 3. Fallback Engine: Standard SMTP / SendBaba SMTP Relay via Nodemailer
-    const isSendbabaSmtp = configuredProvider === 'sendbaba' || this.sendbabaService.isConfigured();
-    const smtpHost = process.env.SMTP_HOST || (isSendbabaSmtp ? 'smtp.sendbaba.com' : 'localhost');
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-    const smtpUser = process.env.SMTP_USER || process.env.SENDBABA_SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS || process.env.SENDBABA_SMTP_PASS || this.sendbabaService.apiKey;
+    // 3. Fallback Engine: Generic Local / Configured SMTP
+    const genericSmtpHost = process.env.SMTP_HOST || 'smtp.sendbaba.com';
+    const genericSmtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+    const genericSmtpUser = process.env.SMTP_USER || process.env.SENDBABA_SMTP_USER || senderEmail;
+    const genericSmtpPass = process.env.SMTP_PASS || process.env.SENDBABA_SMTP_PASS || this.sendbabaService.apiKey;
 
     try {
       const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
-        tls: {
-          rejectUnauthorized: false, // Permit self-signed internal relay on local VPS
-        },
+        host: genericSmtpHost,
+        port: genericSmtpPort,
+        secure: genericSmtpPort === 465,
+        auth: genericSmtpUser && genericSmtpPass ? { user: genericSmtpUser, pass: genericSmtpPass } : undefined,
+        tls: { rejectUnauthorized: false },
       });
 
       const info = await transporter.sendMail({
@@ -210,10 +232,10 @@ export class NotificationsService {
         html: htmlContent,
       });
 
-      this.logger.log(`SMTP email dispatched to ${toEmail} [MessageId: ${info.messageId}] via ${smtpHost}`);
+      this.logger.log(`Generic SMTP email dispatched to ${toEmail} [MessageId: ${info.messageId}] via ${genericSmtpHost}`);
       return true;
     } catch (smtpErr: any) {
-      this.logger.warn(`SMTP relay connection issue for ${toEmail} via ${smtpHost}: ${smtpErr.message}`);
+      this.logger.warn(`Generic SMTP relay error for ${toEmail} via ${genericSmtpHost}: ${smtpErr.message}`);
       return false;
     }
   }
