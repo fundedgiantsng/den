@@ -377,43 +377,46 @@ export class NombaService {
    * Verify incoming Nomba Webhook signature using HMAC SHA256 (supports rawBody, composite payload, hex, and base64)
    */
   verifyWebhookSignature(rawBody: string, signature: string, timestamp?: string, payloadObj?: any): boolean {
-    if (!this.webhookSecret) return true;
+    const secrets = [this.webhookSecret, this.clientSecret].filter(Boolean);
+    if (secrets.length === 0) return true;
     if (!signature) return false;
 
     const cleanSig = signature.trim();
 
-    // 1. Direct secret token match
-    if (cleanSig === this.webhookSecret) return true;
+    for (const secret of secrets) {
+      // 1. Direct secret token match
+      if (cleanSig === secret) return true;
 
-    // 2. Raw Body HMAC-SHA256 in hex and base64
-    const computedHex = crypto.createHmac('sha256', this.webhookSecret).update(rawBody).digest('hex');
-    const computedBase64 = crypto.createHmac('sha256', this.webhookSecret).update(rawBody).digest('base64');
-    if (cleanSig === computedHex || cleanSig === computedBase64) return true;
+      // 2. Raw Body HMAC-SHA256 in hex and base64
+      const computedHex = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+      const computedBase64 = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
+      if (cleanSig === computedHex || cleanSig === computedBase64) return true;
 
-    // 3. Composite header payload as defined in Nomba Webhook Specification
-    try {
-      const data = payloadObj || JSON.parse(rawBody);
-      const event_type = data.event_type || data.event || '';
-      const request_id = data.requestId || '';
-      const user_id = data.data?.merchant?.userId || '';
-      const wallet_id = data.data?.merchant?.walletId || '';
-      const transaction_id = data.data?.transaction?.transactionId || '';
-      const type = data.data?.transaction?.type || '';
-      const time = data.data?.transaction?.time || '';
-      let response_code = data.data?.transaction?.responseCode;
-      if (response_code === undefined || response_code === null || response_code === 'null') {
-        response_code = '';
+      // 3. Composite header payload as defined in Nomba Webhook Specification
+      try {
+        const data = payloadObj || JSON.parse(rawBody);
+        const event_type = data.event_type || data.event || '';
+        const request_id = data.requestId || '';
+        const user_id = data.data?.merchant?.userId || '';
+        const wallet_id = data.data?.merchant?.walletId || '';
+        const transaction_id = data.data?.transaction?.transactionId || '';
+        const type = data.data?.transaction?.type || '';
+        const time = data.data?.transaction?.time || '';
+        let response_code = data.data?.transaction?.responseCode;
+        if (response_code === undefined || response_code === null || response_code === 'null') {
+          response_code = '';
+        }
+
+        const ts = timestamp || '';
+        const hashingPayload = `${event_type}:${request_id}:${user_id}:${wallet_id}:${transaction_id}:${type}:${time}:${response_code}:${ts}`;
+
+        const compositeHex = crypto.createHmac('sha256', secret).update(hashingPayload).digest('hex');
+        const compositeBase64 = crypto.createHmac('sha256', secret).update(hashingPayload).digest('base64');
+
+        if (cleanSig === compositeHex || cleanSig === compositeBase64) return true;
+      } catch (e) {
+        // JSON parse fallback failed
       }
-
-      const ts = timestamp || '';
-      const hashingPayload = `${event_type}:${request_id}:${user_id}:${wallet_id}:${transaction_id}:${type}:${time}:${response_code}:${ts}`;
-
-      const compositeHex = crypto.createHmac('sha256', this.webhookSecret).update(hashingPayload).digest('hex');
-      const compositeBase64 = crypto.createHmac('sha256', this.webhookSecret).update(hashingPayload).digest('base64');
-
-      if (cleanSig === compositeHex || cleanSig === compositeBase64) return true;
-    } catch (e) {
-      // JSON parse fallback failed
     }
 
     return false;

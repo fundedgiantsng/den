@@ -587,6 +587,7 @@ export class WebhooksController {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'x-nomba-proxy': 'FundedGiants-Internal',
             ...(signature ? { 'nomba-signature': signature } : {}),
             ...(sigValue ? { 'nomba-sig-value': sigValue } : {}),
           },
@@ -771,13 +772,17 @@ export class WebhooksController {
     }
 
     const accountNumber =
+      payload.data?.transaction?.aliasAccountNumber ||
       payload.data?.account?.bankAccountNumber ||
       payload.data?.bankAccountNumber ||
-      payload.data?.accountNumber;
+      payload.data?.accountNumber ||
+      payload.accountNumber;
 
     const accountRef =
+      payload.data?.transaction?.aliasAccountReference ||
       payload.data?.account?.accountRef ||
-      payload.data?.accountRef;
+      payload.data?.accountRef ||
+      payload.accountRef;
 
     const amount = Number(
       payload.data?.transaction?.transactionAmount ||
@@ -859,13 +864,18 @@ export class WebhooksController {
           `Full payment confirmed via Nomba (Received ₦${receivedAmount.toLocaleString()}). SteraTrader account provisioning initiated.`
         );
 
-        // Proxy to WordPress Nomba handler as well
-        await this.forwardToWordPressNomba(payload, signature, sigValue);
+        // Proxy to WordPress Nomba handler as well (non-blocking)
+        try {
+          await this.forwardToWordPressNomba(payload, signature, sigValue);
+        } catch (fwdErr: any) {
+          this.logger.warn(`Non-blocking proxy to WordPress Nomba handler failed: ${fwdErr.message}`);
+        }
 
         // Provision SteraTrader trading challenge (via internal webhook pipeline)
         const billing = wcOrder?.billing || {};
-        const customerEmail =
+        let customerEmail =
           billing.email ||
+          payload.data?.customer?.email ||
           payload.data?.account?.customerEmail ||
           payload.data?.customerEmail ||
           payload.customerEmail ||
@@ -873,13 +883,31 @@ export class WebhooksController {
 
         const customerName =
           `${billing.first_name || ''} ${billing.last_name || ''}`.trim() ||
+          payload.data?.customer?.senderName ||
           payload.data?.account?.customerName ||
           payload.data?.customerName ||
+          payload.data?.transaction?.aliasAccountName?.replace(/^FUNDEDGIANTS\//i, '') ||
           'Valued Trader';
 
         const nameParts = customerName.split(' ');
         const firstName = billing.first_name || nameParts[0] || 'Valued';
         const lastName = billing.last_name || nameParts.slice(1).join(' ') || 'Trader';
+
+        // Fallback user lookup if email missing from WooCommerce response
+        if (!customerEmail) {
+          const matchedUser = await prisma.user.findFirst({
+            where: {
+              OR: [
+                { firstName: { equals: firstName, mode: 'insensitive' } },
+                { lastName: { equals: lastName, mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (matchedUser?.email) {
+            customerEmail = matchedUser.email;
+            this.logger.log(`Resolved customer email "${customerEmail}" via database user profile match for "${customerName}"`);
+          }
+        }
 
         const accountSize = Number(
           wcOrder?.meta_data?.find((m: any) => m.key === '_account_size')?.value ||

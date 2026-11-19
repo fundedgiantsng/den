@@ -154,6 +154,10 @@ export class SendbabaService {
       from_name: displayName,
       name: displayName,
       sender_name: displayName,
+      sender: {
+        name: displayName,
+        email: cleanFrom,
+      },
       to: cleanTo.length === 1 ? cleanTo[0] : cleanTo,
       subject: options.subject,
     };
@@ -176,8 +180,11 @@ export class SendbabaService {
     if (options.tags && options.tags.length > 0) payload.tags = options.tags;
     if (options.metadata) payload.metadata = options.metadata;
 
-    // Transactional deliverability headers to prevent landing in Gmail Promotions tab
+    // Transactional deliverability headers to enforce exact display identity and prevent spam/promotions filtering
     payload.headers = {
+      'From': `"${displayName}" <${cleanFrom}>`,
+      'Sender': `"${displayName}" <${cleanFrom}>`,
+      'Reply-To': `"${displayName}" <${cleanFrom}>`,
       'X-Priority': '1',
       'X-MSMail-Priority': 'High',
       'Importance': 'High',
