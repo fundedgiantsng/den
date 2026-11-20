@@ -72,8 +72,7 @@ export class NinjaKycService {
     firstName?: string;
     lastName?: string;
   }): Promise<NinjaVerificationSessionResponse> {
-    const primaryKey = this.secretKey || this.publicKey;
-    const fallbackKey = this.publicKey && this.publicKey !== primaryKey ? this.publicKey : null;
+    const primaryKey = this.secretKey;
 
     if (!primaryKey) {
       throw new Error('NINJA_KYC_SECRET_KEY is not configured in live environment.');
@@ -106,26 +105,14 @@ export class NinjaKycService {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${key}`,
-          'x-api-key': key,
         },
         body: JSON.stringify(payload),
       });
     };
 
     try {
-      let response = await executeRequest(primaryKey);
-      let data = await response.json().catch(() => ({}));
-
-      // If unauthorized with secret key and public key is available, retry with public key
-      if ((response.status === 401 || data.message?.toLowerCase().includes('secret key')) && fallbackKey) {
-        this.logger.warn(`Ninja KYC returned 401 with primary key. Retrying with public key / client ID...`);
-        const retryRes = await executeRequest(fallbackKey);
-        const retryData = await retryRes.json().catch(() => ({}));
-        if (retryRes.ok && retryData.url) {
-          response = retryRes;
-          data = retryData;
-        }
-      }
+      const response = await executeRequest(primaryKey);
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.url) {
         const errorMsg = data.message || data.error || `Ninja KYC error: HTTP ${response.status}`;

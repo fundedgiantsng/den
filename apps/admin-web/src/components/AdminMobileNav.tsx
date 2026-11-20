@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ShieldCheck,
   RefreshCw,
+  ArrowLeftRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -42,6 +43,7 @@ export function AdminMobileNav() {
     { label: 'Challenge Plans', href: '/challenges', icon: Trophy, color: 'text-amber-400', bg: 'bg-amber-500/15' },
     { label: 'Trading Accounts', href: '/trading-accounts', icon: Activity, color: 'text-cyan-400', bg: 'bg-cyan-500/15' },
     { label: 'Risk & Breach Engine', href: '/risk', icon: ShieldAlert, color: 'text-red-400', bg: 'bg-red-500/15' },
+    { label: 'A-Book Trade Router', href: '/abook', icon: ArrowLeftRight, color: 'text-indigo-400', bg: 'bg-indigo-500/15' },
     { label: 'Financial Ledger', href: '/finance/ledger', icon: Wallet, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
     { label: 'Withdrawal Approvals', href: '/finance/withdrawals', icon: ArrowDownLeft, color: 'text-rose-400', bg: 'bg-rose-500/15' },
     { label: 'Affiliates Network', href: '/affiliates', icon: Share2, color: 'text-purple-400', bg: 'bg-purple-500/15' },

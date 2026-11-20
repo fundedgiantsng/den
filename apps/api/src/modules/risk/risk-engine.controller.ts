@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { RiskEngineService } from './risk-engine.service';
 import { TradeRouterService } from './trade-router.service';
+import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { DeviceBindingGuard } from '../admin/device-binding.guard';
 
 @ApiTags('Risk Engine')
@@ -23,6 +24,7 @@ export class RiskEngineController {
   constructor(
     private readonly riskEngineService: RiskEngineService,
     private readonly tradeRouterService: TradeRouterService,
+    private readonly steraTraderService: SteraTraderService,
   ) {}
 
   /**
@@ -124,6 +126,49 @@ export class RiskEngineController {
       copyRatio: copyRatio !== undefined ? Number(copyRatio) : undefined,
       notes,
     });
+  }
+
+  /**
+   * Admin endpoint: Fetch A-Book overview telemetry, 12 pools status, and MT5 bridge state
+   */
+  @Get('admin/abook/overview')
+  @UseGuards(DeviceBindingGuard)
+  @ApiOperation({ summary: 'Fetch A-Book router telemetry, active pools, and MT5 bridge state' })
+  async getAbookOverview() {
+    return this.tradeRouterService.getAbookOverview();
+  }
+
+  /**
+   * Admin endpoint: Fetch all active funded traders with their A-Book status
+   */
+  @Get('admin/abook/traders')
+  @UseGuards(DeviceBindingGuard)
+  @ApiOperation({ summary: 'Fetch funded traders with their A-Book connection and copy ratio settings' })
+  async getAbookTraders() {
+    return this.tradeRouterService.getFundedTradersList();
+  }
+
+  /**
+   * Admin endpoint: Fetch symbol mapping configuration
+   */
+  @Get('admin/abook/symbols')
+  @UseGuards(DeviceBindingGuard)
+  @ApiOperation({ summary: 'Fetch symbol mapping table and MT5 broker suffix configuration' })
+  async getAbookSymbols() {
+    return this.tradeRouterService.getSymbolMapConfig();
+  }
+
+  /**
+   * Admin endpoint: Apply 4.0 Pip (40 points) spread markup on SteraTrader partner group
+   */
+  @Post('admin/steratrader/apply-spread-markup')
+  @UseGuards(DeviceBindingGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Apply 4.0 pip spread markup across instruments in a SteraTrader group' })
+  async applySpreadMarkup(@Req() req: Request) {
+    const { group } = req.body;
+    const targetGroup = group || 'fg-rr-funded';
+    return this.steraTraderService.apply4PipSpreadMarkup(targetGroup);
   }
 
   private async resolveUserId(req: Request): Promise<string> {

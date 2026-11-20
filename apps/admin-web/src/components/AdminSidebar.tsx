@@ -19,6 +19,7 @@ import {
   ExternalLink,
   LifeBuoy,
   Radio,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { label: 'Challenges', href: '/challenges', icon: Trophy },
   { label: 'Trading Accounts', href: '/trading-accounts', icon: Activity },
   { label: 'Risk Monitor', href: '/risk', icon: ShieldAlert },
+  { label: 'A-Book Router', href: '/abook', icon: ArrowLeftRight },
   { label: 'General Ledger', href: '/finance/ledger', icon: Wallet },
   { label: 'Withdrawals Log', href: '/finance/withdrawals', icon: ArrowDownLeft },
   { label: 'Affiliates', href: '/affiliates', icon: Share2 },

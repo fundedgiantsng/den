@@ -1077,7 +1077,7 @@ export class RiskEngineService {
       accountNumber: account.accountNumber,
       platform: account.platform,
       planType: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
-      stage: isPhoenix ? 'Instant Funding' : isFunded ? 'Funded' : 'Phase 1 Evaluation',
+      stage: isPhoenix ? 'Funded' : isFunded ? 'Funded' : 'Evaluation',
       status: account.status,
       initialBalanceNgn: initialBal,
       currentBalanceNgn: currentBalance,

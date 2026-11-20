@@ -127,6 +127,60 @@ export class TradeRouterService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Default symbol mapping dictionary (SteraTrader Symbol -> MT5 Broker Symbol)
+   * Supports standard raw symbols, indices aliases, and optional broker suffixes (e.g. .raw, .ecn)
+   */
+  private readonly defaultSymbolMap: Record<string, string> = {
+    // Forex Majors
+    EURUSD: 'EURUSD',
+    GBPUSD: 'GBPUSD',
+    USDJPY: 'USDJPY',
+    USDCHF: 'USDCHF',
+    AUDUSD: 'AUDUSD',
+    USDCAD: 'USDCAD',
+    NZDUSD: 'NZDUSD',
+    // Forex Minors & Crosses
+    EURGBP: 'EURGBP',
+    EURJPY: 'EURJPY',
+    GBPJPY: 'GBPJPY',
+    EURCAD: 'EURCAD',
+    EURAUD: 'EURAUD',
+    AUDJPY: 'AUDJPY',
+    CADJPY: 'CADJPY',
+    // Metals
+    XAUUSD: 'XAUUSD',
+    GOLD: 'XAUUSD',
+    XAGUSD: 'XAGUSD',
+    // Indices
+    US30: 'US30',
+    DJ30: 'US30',
+    NAS100: 'NAS100',
+    USTEC: 'NAS100',
+    SPX500: 'US500',
+    GER40: 'GER40',
+    DAX40: 'GER40',
+    UK100: 'UK100',
+    // Commodities
+    USOIL: 'USOIL',
+    UKOIL: 'UKOIL',
+    // Crypto
+    BTCUSD: 'BTCUSD',
+    ETHUSD: 'ETHUSD',
+    SOLUSD: 'SOLUSD',
+  };
+
+  /**
+   * Map SteraTrader symbol to destination MT5 broker symbol (e.g. adding .raw, .pro suffix)
+   */
+  public mapSymbolToBroker(steraSymbol: string): string {
+    const cleanSym = steraSymbol.trim().toUpperCase();
+    const mapped = this.defaultSymbolMap[cleanSym] || cleanSym;
+    const suffix = process.env.MT5_SYMBOL_SUFFIX || '';
+    const prefix = process.env.MT5_SYMBOL_PREFIX || '';
+    return `${prefix}${mapped}${suffix}`;
+  }
+
+  /**
    * Calculate Replicated Broker Volume:
    * Rule: If 0.01 lot -> honor 0.01 as-is (1:1).
    *       If >= 0.02 lot -> round(volume * copyRatio) to 2 decimals (min 0.01).
@@ -175,12 +229,14 @@ export class TradeRouterService implements OnModuleInit, OnModuleDestroy {
     // Convert accountNumber to numeric magic number for MT5
     const numericMagic = parseInt(account.accountNumber.replace(/\D/g, ''), 10) || 100000;
 
+    const brokerSymbol = this.mapSymbolToBroker(tradePayload.symbol);
+
     const instruction: RouteTradeInstruction = {
       action: tradePayload.event === 'TRADE_OPEN' ? 'OPEN' : tradePayload.event === 'TRADE_CLOSE' ? 'CLOSE' : 'MODIFY',
       targetAccount,
       steraTradeId: tradePayload.tradeId,
       accountNumber: account.accountNumber,
-      symbol: tradePayload.symbol,
+      symbol: brokerSymbol,
       direction: tradePayload.direction,
       volume: brokerVol,
       openPrice: tradePayload.openPrice,
@@ -349,5 +405,124 @@ export class TradeRouterService implements OnModuleInit, OnModuleDestroy {
     );
 
     return updated;
+  }
+
+  /**
+   * Get complete overview of A-Book router, pools, and bridge telemetry
+   */
+  public async getAbookOverview() {
+    const totalEnabledTraders = await prisma.tradingAccount.count({
+      where: { abookEnabled: true },
+    });
+
+    const totalActiveFunded = await prisma.tradingAccount.count({
+      where: { status: 'ACTIVE' },
+    });
+
+    const totalHedgedOrders = await prisma.hedgeTradeRecord.count();
+    const openHedges = await prisma.hedgeTradeRecord.findMany({
+      where: { status: 'OPEN' },
+      select: { brokerVolume: true, targetAccount: true },
+    });
+
+    const openVolumeLots = openHedges.reduce((sum, h) => sum + Number(h.brokerVolume), 0);
+
+    // Pool counts
+    const POOLS = [
+      'PR-1M', 'PR-2.5M', 'PR-5M', 'PR-10M', 'PR-25M', 'PR-50M',
+      'RR-1M', 'RR-2.5M', 'RR-5M', 'RR-10M', 'RR-25M', 'RR-50M'
+    ];
+
+    const poolStats = await Promise.all(
+      POOLS.map(async (pool) => {
+        const tradersCount = await prisma.tradingAccount.count({
+          where: { abookEnabled: true, abookTargetAccount: pool },
+        });
+        const poolHedges = openHedges.filter((h) => h.targetAccount === pool);
+        const openLots = poolHedges.reduce((s, h) => s + Number(h.brokerVolume), 0);
+
+        return {
+          pool,
+          plan: pool.startsWith('PR') ? 'Phoenix Rise' : 'Rhino Rush',
+          tier: pool.split('-')[1],
+          connectedTraders: tradersCount,
+          openPositions: poolHedges.length,
+          openLots: Math.round(openLots * 100) / 100,
+          status: 'READY',
+        };
+      })
+    );
+
+    return {
+      bridge: {
+        host: this.bridgeHost,
+        port: this.bridgePort,
+        connected: this.isConnected,
+        targetSpreadPoints: 40,
+        targetSpreadPips: 4.0,
+      },
+      stats: {
+        totalActiveFunded,
+        totalEnabledTraders,
+        totalHedgedOrders,
+        openHedgesCount: openHedges.length,
+        openVolumeLots: Math.round(openVolumeLots * 100) / 100,
+      },
+      pools: poolStats,
+    };
+  }
+
+  /**
+   * Get list of all funded trading accounts for Admin A-Book Management
+   */
+  public async getFundedTradersList() {
+    const accounts = await prisma.tradingAccount.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        challenge: {
+          include: {
+            product: { select: { name: true, skuPrefix: true, accountSize: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return accounts.map((acc) => {
+      const defaultTarget = this.resolveDefaultTargetAccount(
+        acc.challenge?.product?.skuPrefix || 'rhino-rush',
+        Number(acc.initialBalance)
+      );
+
+      return {
+        id: acc.id,
+        accountNumber: acc.accountNumber,
+        traderName: `${acc.user.firstName || ''} ${acc.user.lastName || ''}`.trim() || 'Trader',
+        email: acc.user.email,
+        planName: acc.challenge?.product?.name || 'Funded Account',
+        skuPrefix: acc.challenge?.product?.skuPrefix || 'rhino-rush',
+        balance: Number(acc.currentBalance),
+        equity: Number(acc.currentEquity),
+        initialBalance: Number(acc.initialBalance),
+        abookEnabled: acc.abookEnabled,
+        abookTargetAccount: acc.abookTargetAccount || defaultTarget,
+        abookCopyRatio: Number(acc.abookCopyRatio || 1.0),
+        abookNotes: acc.abookNotes,
+        abookEnabledAt: acc.abookEnabledAt,
+      };
+    });
+  }
+
+  /**
+   * Get Symbol Mappings and broker suffix configuration
+   */
+  public getSymbolMapConfig() {
+    return {
+      defaultMap: this.defaultSymbolMap,
+      prefix: process.env.MT5_SYMBOL_PREFIX || '',
+      suffix: process.env.MT5_SYMBOL_SUFFIX || '',
+    };
   }
 }

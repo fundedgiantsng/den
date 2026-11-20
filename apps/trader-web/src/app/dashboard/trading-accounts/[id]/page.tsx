@@ -29,7 +29,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatSignedNaira } from '@/lib/format';
 
 interface TradeItem {
   ticketId: string;
@@ -114,9 +114,9 @@ export default function AccountAnalyticsTerminalPage() {
     trades: [] as TradeItem[],
   });
 
-  const fetchDetails = async () => {
+  const fetchDetails = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       const [accRes, riskRes] = await Promise.allSettled([
         fetch(`${API_BASE_URL}/challenges/accounts/${accountId}`, { credentials: 'include' }),
         fetch(`${API_BASE_URL}/risk/status/${accountId}`, { credentials: 'include' }),
@@ -129,24 +129,35 @@ export default function AccountAnalyticsTerminalPage() {
 
       if (riskRes.status === 'fulfilled' && riskRes.value.ok) {
         const riskData = await riskRes.value.json();
-        setAccount((prev) => ({
-          ...prev,
-          ...accData,
-          currentBalanceNgn: riskData.currentBalanceNgn ?? prev.currentBalanceNgn,
-          currentEquityNgn: riskData.currentEquityNgn ?? prev.currentEquityNgn,
-          dailyDrawdownNgn: riskData.dailyDrawdown?.currentLossNgn ?? prev.dailyDrawdownNgn,
-          dailyDrawdownLimitNgn: riskData.dailyDrawdown?.dailyLimitNgn ?? prev.dailyDrawdownLimitNgn,
-          dailyHeadroomNgn: riskData.dailyDrawdown?.headroomRemainingNgn ?? prev.dailyHeadroomNgn,
-          maxDrawdownNgn: riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn,
-          maxDrawdownLimitNgn: riskData.maximumDrawdown?.limitNgn ?? prev.maxDrawdownLimitNgn,
-          maxLossHeadroomNgn: riskData.maximumDrawdown?.headroomRemainingNgn ?? prev.maxLossHeadroomNgn,
-          targetEvaluation: riskData.targetEvaluation ?? prev.targetEvaluation,
-          isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
-          payoutIneligibilityReason: riskData.payoutEligibility?.reason,
-          traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? prev.traderSplitPercent,
-          traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplit ?? prev.traderProfitSplitNgn,
-          firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplit ?? prev.firmProfitSplitNgn,
-        }));
+        setAccount((prev) => {
+          const sizeNgn = accData.sizeNgn || prev.sizeNgn;
+          const dailyLimit = riskData.dailyDrawdown?.dailyLimitNgn ?? (sizeNgn * 0.04) ?? prev.dailyDrawdownLimitNgn;
+          const maxLimit = riskData.maximumDrawdown?.limitNgn ?? (prev.planType === 'PHOENIX_RISE' ? sizeNgn * 0.07 : sizeNgn * 0.10) ?? prev.maxDrawdownLimitNgn;
+          const dailyLoss = riskData.dailyDrawdown?.currentLossNgn ?? prev.dailyDrawdownNgn;
+          const dailyHeadroom = riskData.dailyDrawdown?.headroomRemainingNgn ?? Math.max(0, dailyLimit - dailyLoss);
+          const maxLoss = riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn;
+          const maxHeadroom = riskData.maximumDrawdown?.headroomRemainingNgn ?? Math.max(0, maxLimit - maxLoss);
+
+          return {
+            ...prev,
+            ...accData,
+            currentBalanceNgn: riskData.currentBalanceNgn ?? prev.currentBalanceNgn,
+            currentEquityNgn: riskData.currentEquityNgn ?? prev.currentEquityNgn,
+            profitNgn: (riskData.currentEquityNgn != null && sizeNgn > 0) ? (riskData.currentEquityNgn - sizeNgn) : (accData.profitNgn ?? prev.profitNgn),
+            dailyDrawdownNgn: dailyLoss,
+            dailyDrawdownLimitNgn: dailyLimit,
+            dailyHeadroomNgn: dailyHeadroom,
+            maxDrawdownNgn: maxLoss,
+            maxDrawdownLimitNgn: maxLimit,
+            maxLossHeadroomNgn: maxHeadroom,
+            targetEvaluation: riskData.targetEvaluation ?? prev.targetEvaluation,
+            isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
+            payoutIneligibilityReason: riskData.payoutEligibility?.reason,
+            traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? prev.traderSplitPercent,
+            traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplit ?? prev.traderProfitSplitNgn,
+            firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplit ?? prev.firmProfitSplitNgn,
+          };
+        });
       } else if (Object.keys(accData).length > 0) {
         setAccount((prev) => ({
           ...prev,
@@ -156,12 +167,17 @@ export default function AccountAnalyticsTerminalPage() {
     } catch (err: any) {
       console.warn('Could not fetch trading account analytics', err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDetails();
+    fetchDetails(false);
+    // Real-time metrics streaming: automatically updates equity and daily drawdown every 3 seconds
+    const liveStream = setInterval(() => {
+      fetchDetails(true);
+    }, 3000);
+    return () => clearInterval(liveStream);
   }, [accountId]);
 
   const handleRequestPayout = async () => {
@@ -223,6 +239,10 @@ export default function AccountAnalyticsTerminalPage() {
                   }`}
                 >
                   {account.currentPhase}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-400 font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  LIVE STREAM
                 </span>
                 <span className="text-xs text-fgText-secondary font-mono">
                   {account.platform} &bull; Leverage {account.leverage}
@@ -392,8 +412,8 @@ export default function AccountAnalyticsTerminalPage() {
           <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
             Total Net Profit
           </span>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-[#00f59b] tracking-tight">
-            +{formatNaira(account.profitNgn)}
+          <div className={`text-xl sm:text-2xl font-bold font-mono tracking-tight ${account.profitNgn >= 0 ? 'text-[#00f59b]' : 'text-rose-400'}`}>
+            {formatSignedNaira(account.profitNgn)}
           </div>
           <span className="text-[11px] text-emerald-400 font-mono font-semibold block">
             {account.profitPercent} Gain on Capital
@@ -534,9 +554,9 @@ export default function AccountAnalyticsTerminalPage() {
           </div>
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
-            <span>Used: {formatNaira(account.dailyDrawdownNgn)} ({dailyDdPercent}%)</span>
+            <span>Used: <strong className={account.dailyDrawdownNgn > 0 ? 'text-amber-400' : 'text-white'}>{formatNaira(account.dailyDrawdownNgn)}</strong> ({dailyDdPercent}%)</span>
             <span>Headroom: <strong className="text-emerald-400">{formatNaira(account.dailyHeadroomNgn)}</strong></span>
-            <span>Limit: {formatNaira(account.dailyDrawdownLimitNgn)}</span>
+            <span>Limit: <strong className="text-white">{formatNaira(account.dailyDrawdownLimitNgn || (account.sizeNgn * 0.04))}</strong></span>
           </div>
         </div>
 
@@ -562,9 +582,9 @@ export default function AccountAnalyticsTerminalPage() {
           </div>
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
-            <span>Used: {formatNaira(account.maxDrawdownNgn)} ({maxDdPercent}%)</span>
+            <span>Used: <strong className={account.maxDrawdownNgn > 0 ? 'text-amber-400' : 'text-white'}>{formatNaira(account.maxDrawdownNgn)}</strong> ({maxDdPercent}%)</span>
             <span>Headroom: <strong className="text-amber-400">{formatNaira(account.maxLossHeadroomNgn)}</strong></span>
-            <span>Limit: {formatNaira(account.maxDrawdownLimitNgn)}</span>
+            <span>Limit: <strong className="text-white">{formatNaira(account.maxDrawdownLimitNgn || (account.sizeNgn * (isPhoenix ? 0.07 : 0.10)))}</strong></span>
           </div>
         </div>
       </div>
@@ -618,8 +638,8 @@ export default function AccountAnalyticsTerminalPage() {
                   <td className="py-3 px-3 text-fgText-secondary">{t.volume}</td>
                   <td className="py-3 px-3 text-fgText-secondary">{t.openPrice}</td>
                   <td className="py-3 px-3 text-fgText-secondary">{t.closePrice ?? 'OPEN'}</td>
-                  <td className="py-3 pr-1 text-right font-bold text-[#00f59b]">
-                    +{formatNaira(t.profitNgn)}
+                  <td className={`py-3 pr-1 text-right font-bold font-mono ${t.profitNgn >= 0 ? 'text-[#00f59b]' : 'text-rose-400'}`}>
+                    {formatSignedNaira(t.profitNgn)}
                   </td>
                 </tr>
               ))

@@ -25,13 +25,13 @@ import {
   EyeOff,
   Terminal,
 } from 'lucide-react';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatSignedNaira } from '@/lib/format';
 
 interface AccountItem {
   id: string;
   loginNumber: string;
   planName: 'Rhino Rush' | 'Phoenix Rise';
-  stage: 'Funded' | 'Challenge';
+  stage: 'Funded' | 'Evaluation';
   status: 'Active' | 'Passed' | 'Failed' | 'Suspended';
   sizeNgn: number;
   balanceNgn: number;
@@ -47,7 +47,7 @@ interface AccountItem {
 }
 
 export default function TradingAccountsPage() {
-  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'CHALLENGE' | 'PASSED' | 'FAILED' | 'SUSPENDED'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'EVALUATION' | 'FUNDED' | 'FAILED' | 'SUSPENDED'>('ALL');
 
   // Marketing banners rotated every hour (matching main dashboard sidebar)
   const marketingBanners = [
@@ -92,28 +92,32 @@ export default function TradingAccountsPage() {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
             setAccounts(
-              data.map((item: any) => ({
-                id: item.loginNumber || item.id,
-                loginNumber: item.loginNumber || item.id,
-                server: item.server || 'Velton-Demo',
-                groupSlug: item.groupSlug || 'fg-rr-eval',
-                masterPassword: item.masterPassword || null,
-                investorPassword: item.investorPassword || null,
-                planName: item.planName || 'Rhino Rush',
-                stage: item.currentPhase || 'Challenge',
-                status: item.status === 'Breached' ? 'Failed' : 'Active',
-                sizeNgn: item.sizeNgn || 10000000,
-                balanceNgn: item.currentBalanceNgn || item.sizeNgn,
-                equityNgn: item.currentEquityNgn || item.sizeNgn,
-                profitNgn: item.profitNgn || 0,
-                profitPercent: item.profitPercent || '+0.00%',
-                dailyLossNgn: item.dailyDrawdownNgn || 0,
-                dailyLossLimitNgn: item.dailyDrawdownLimitNgn || (item.sizeNgn * 0.04),
-                maxLossNgn: 0,
-                maxLossLimitNgn: item.maxDrawdownLimitNgn || (item.sizeNgn * 0.10),
-                platform: 'SteraTrader',
-                leverage: item.leverage || '1:100',
-              }))
+              data.map((item: any) => {
+                const isPhoenix = item.planName === 'Phoenix Rise' || item.planType === 'PHOENIX_RISE';
+                const isFunded = isPhoenix || item.currentPhase === 'Funded' || item.currentPhase === 'Instant Funding';
+                return {
+                  id: item.loginNumber || item.id,
+                  loginNumber: item.loginNumber || item.id,
+                  server: item.server || 'Velton-Demo',
+                  groupSlug: item.groupSlug || (isPhoenix ? 'fg-pr-funded' : 'fg-rr-eval'),
+                  masterPassword: item.masterPassword || null,
+                  investorPassword: item.investorPassword || null,
+                  planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
+                  stage: isFunded ? 'Funded' : 'Evaluation',
+                  status: item.status === 'Breached' ? 'Failed' : 'Active',
+                  sizeNgn: item.sizeNgn || 10000000,
+                  balanceNgn: item.currentBalanceNgn || item.sizeNgn,
+                  equityNgn: item.currentEquityNgn || item.sizeNgn,
+                  profitNgn: item.profitNgn || 0,
+                  profitPercent: item.profitPercent || '+0.00%',
+                  dailyLossNgn: item.dailyDrawdownNgn || 0,
+                  dailyLossLimitNgn: item.dailyDrawdownLimitNgn || (item.sizeNgn * 0.04),
+                  maxLossNgn: 0,
+                  maxLossLimitNgn: item.maxDrawdownLimitNgn || (item.sizeNgn * (isPhoenix ? 0.07 : 0.10)),
+                  platform: 'SteraTrader',
+                  leverage: item.leverage || (isPhoenix ? '1:30' : '1:100'),
+                };
+              })
             );
             return;
           }
@@ -126,11 +130,14 @@ export default function TradingAccountsPage() {
       }
     };
     fetchAccounts();
+    const accountsStream = setInterval(fetchAccounts, 5000);
+    return () => clearInterval(accountsStream);
   }, [apiUrl]);
 
   const filtered = accounts.filter((a) => {
     if (filter === 'ACTIVE') return a.status === 'Active';
-    if (filter === 'CHALLENGE') return a.stage === 'Challenge';
+    if (filter === 'EVALUATION') return a.stage === 'Evaluation';
+    if (filter === 'FUNDED') return a.stage === 'Funded';
     if (filter === 'PASSED') return a.status === 'Passed';
     if (filter === 'FAILED') return a.status === 'Failed';
     if (filter === 'SUSPENDED') return a.status === 'Suspended';
@@ -206,9 +213,9 @@ export default function TradingAccountsPage() {
         </div>
       </div>
 
-      {/* 3. Filter Tabs (All, Active, Challenge, Passed, Failed, Suspended) */}
+      {/* 3. Filter Tabs (All, Active, Evaluation, Funded, Passed, Failed, Suspended) */}
       <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/40 border border-white/[0.06] text-xs font-semibold overflow-x-auto w-fit">
-        {(['ALL', 'ACTIVE', 'CHALLENGE', 'PASSED', 'FAILED', 'SUSPENDED'] as const).map((tab) => (
+        {(['ALL', 'ACTIVE', 'EVALUATION', 'FUNDED', 'PASSED', 'FAILED', 'SUSPENDED'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -274,7 +281,7 @@ export default function TradingAccountsPage() {
 
                   <div>
                     <div className="text-lg sm:text-xl font-mono font-bold text-[#00f59b] tracking-tight">
-                      +{formatNaira(acc.profitNgn)}
+                      {formatSignedNaira(acc.profitNgn)}
                     </div>
                     <span className="text-[10px] text-fgText-secondary uppercase tracking-wider">
                       Total Profit

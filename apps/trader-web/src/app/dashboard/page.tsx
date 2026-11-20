@@ -23,7 +23,7 @@ import {
   Sparkles,
   ArrowRight,
 } from 'lucide-react';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatSignedNaira } from '@/lib/format';
 import { FundedGiantsKycModal } from '@/components/auth/FundedGiantsKycModal';
 import { ChooseUsernameModal } from '@/components/auth/ChooseUsernameModal';
 import { CompleteProfileModal } from '@/components/auth/CompleteProfileModal';
@@ -32,7 +32,7 @@ interface AccountItem {
   id: string;
   loginId: string;
   planName: 'Rhino Rush' | 'Phoenix Rise';
-  stage: 'Challenge' | 'Funded';
+  stage: 'Funded' | 'Evaluation';
   sizeNgn: number;
   status: 'Active' | 'Suspended' | 'Closed';
   platform: string;
@@ -137,29 +137,38 @@ export default function DashboardOverviewPage() {
       })
       .catch(() => {});
 
-    // 3. Fetch live active trading accounts
-    fetch(`${API_BASE_URL}/challenges/my-accounts`, {
-      credentials: 'include',
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((accData) => {
-        if (Array.isArray(accData)) {
-          const mapped: AccountItem[] = accData.map((a: any) => ({
-            id: a.loginNumber || a.id,
-            loginId: `#${a.loginNumber || a.id}`,
-            planName: a.planName || 'Rhino Rush',
-            stage: a.currentPhase === 'Funded' ? 'Funded' : 'Challenge',
-            sizeNgn: a.sizeNgn || 0,
-            status: a.status === 'Breached' ? 'Closed' : 'Active',
-            platform: a.platform || 'SteraTrader',
-            leverage: a.leverage || '1:100',
-          }));
-          setActiveAccounts(mapped);
-          const totalCap = accData.reduce((sum: number, item: any) => sum + (item.sizeNgn || 0), 0);
-          setWallet((prev) => ({ ...prev, totalCapitalNgn: totalCap }));
-        }
+    // 3. Fetch live active trading accounts & stream updates
+    const fetchTradingAccounts = () => {
+      fetch(`${API_BASE_URL}/challenges/my-accounts`, {
+        credentials: 'include',
       })
-      .catch(() => {});
+        .then((res) => (res.ok ? res.json() : null))
+        .then((accData) => {
+          if (Array.isArray(accData)) {
+            const mapped: AccountItem[] = accData.map((a: any) => {
+              const isPhoenix = a.planName === 'Phoenix Rise' || a.planType === 'PHOENIX_RISE';
+              const isFunded = isPhoenix || a.currentPhase === 'Funded' || a.currentPhase === 'Instant Funding';
+              return {
+                id: a.loginNumber || a.id,
+                loginId: `#${a.loginNumber || a.id}`,
+                planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
+                stage: isFunded ? 'Funded' : 'Evaluation',
+                sizeNgn: a.sizeNgn || 0,
+                status: a.status === 'Breached' ? 'Closed' : 'Active',
+                platform: a.platform || 'SteraTrader',
+                leverage: a.leverage || (isPhoenix ? '1:30' : '1:100'),
+              };
+            });
+            setActiveAccounts(mapped);
+            const totalCap = accData.reduce((sum: number, item: any) => sum + (item.sizeNgn || 0), 0);
+            setWallet((prev) => ({ ...prev, totalCapitalNgn: totalCap }));
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchTradingAccounts();
+    const liveAccountsStream = setInterval(fetchTradingAccounts, 6000);
 
     // 4. Fetch live transactions
     fetch(`${API_BASE_URL}/wallet/transactions`, {
@@ -183,7 +192,10 @@ export default function DashboardOverviewPage() {
       })
       .catch(() => {});
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearInterval(liveAccountsStream);
+    };
   }, [apiUrl]);
 
   const handleCopyLink = () => {

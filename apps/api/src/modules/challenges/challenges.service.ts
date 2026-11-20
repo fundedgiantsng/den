@@ -399,8 +399,14 @@ export class ChallengesService implements OnModuleInit {
         const baseCpaRate = Number(referringAffiliateProfile.cpaCommissionRate || 10.0);
         const effectiveCpaRate = Math.max(0, baseCpaRate - sharedDiscount);
 
-        // Commission is calculated on original subtotal (or net sale price)
-        affiliateCommissionAmount = Math.round((originalPriceNgn * effectiveCpaRate) / 100);
+        // CRITICAL: Commission MUST be calculated on actual fee paid by user (netPriceNgn), NOT original price.
+        // If a discount reduced the price, commission is calculated on the discounted net fee paid.
+        // If account was given for free (netPriceNgn <= 0), affiliate commission is 0.
+        if (netPriceNgn <= 0) {
+          affiliateCommissionAmount = 0;
+        } else {
+          affiliateCommissionAmount = Math.round((netPriceNgn * effectiveCpaRate) / 100);
+        }
       }
     }
 
@@ -666,12 +672,12 @@ export class ChallengesService implements OnModuleInit {
       const dailyDrawdownLimitNgn = sizeNgn * 0.04;
       const maxDrawdownLimitNgn = isPhoenix ? sizeNgn * 0.07 : sizeNgn * 0.10;
 
-      // Current Phase determination
-      let currentPhase = 'Challenge';
+      // Current Phase determination (Phoenix Rise = Funded, Rhino Rush = Evaluation or Funded)
+      let currentPhase = 'Evaluation';
       if (isPhoenix) {
-        currentPhase = 'Instant Funding';
+        currentPhase = 'Funded';
       } else if (isRhino) {
-        currentPhase = ch.status === 'PASSED' || ch.status === 'FUNDED' ? 'Funded' : 'Challenge';
+        currentPhase = ch.status === 'PASSED' || ch.status === 'FUNDED' ? 'Funded' : 'Evaluation';
       }
 
       return {
@@ -796,7 +802,7 @@ export class ChallengesService implements OnModuleInit {
         investorPassword: acc.investorPassword || null,
         planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
         planType: isPhoenix ? 'PHOENIX_RISE' : 'RHINO_RUSH',
-        currentPhase: isPhoenix ? 'Instant Funding' : isFundedPhase ? 'Funded' : 'Challenge',
+        currentPhase: isPhoenix ? 'Funded' : isFundedPhase ? 'Funded' : 'Evaluation',
         sizeNgn: initialSize,
         currentBalanceNgn: balance,
         currentEquityNgn: equity,
@@ -853,7 +859,7 @@ export class ChallengesService implements OnModuleInit {
       platform: 'SteraTrader',
       planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
       planType: isPhoenix ? 'PHOENIX_RISE' : 'RHINO_RUSH',
-      currentPhase: isPhoenix ? 'Instant Funding' : 'Funded',
+      currentPhase: isPhoenix ? 'Funded' : 'Evaluation',
       sizeNgn,
       currentBalanceNgn: balanceNgn,
       currentEquityNgn: balanceNgn,

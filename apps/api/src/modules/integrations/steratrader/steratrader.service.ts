@@ -479,4 +479,136 @@ export class SteraTraderService {
       };
     }
   }
+
+  /**
+   * Fetch all instruments configured for a specific partner group
+   * Returns symbol, digits, contract_size, markup_bid, markup_ask, min_spread_points, trade_mode
+   * Endpoint: GET /crm/v1/groups/{group_id}/instruments
+   */
+  async fetchGroupInstruments(groupId: string | number): Promise<any[]> {
+    if (!this.apiKey) {
+      throw new Error('STERATRADER_API_KEY is not configured');
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/groups/${groupId}/instruments`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        this.logger.error(`Failed to fetch instruments for group ${groupId}: HTTP ${response.status}`);
+        return [];
+      }
+
+      const resData = await response.json();
+      return resData.data || (Array.isArray(resData) ? resData : []);
+    } catch (err: any) {
+      this.logger.error(`Error querying instruments for group ${groupId}: ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Update spread markups and trading terms for an instrument in a group
+   * Endpoint: PATCH /crm/v1/groups/{group_id}/instruments/{instrument_id}
+   *
+   * @param groupId Group slug or ID (e.g. 'fg-rr-eval', 'fg-rr-funded', 'fg-pr-funded')
+   * @param instrumentId Instrument ID from GET /groups/{group_id}/instruments
+   * @param params Markup in points and spread floors
+   */
+  async updateInstrumentSpread(
+    groupId: string | number,
+    instrumentId: string | number,
+    params: {
+      markupBidPoints: number;
+      markupAskPoints: number;
+      minSpreadPoints?: number;
+      commissionPerLot?: number;
+      tradeMode?: 'full' | 'close_only' | 'disabled';
+    }
+  ): Promise<boolean> {
+    if (!this.apiKey) {
+      throw new Error('STERATRADER_API_KEY is not configured');
+    }
+
+    const payload: any = {
+      markup_bid: params.markupBidPoints,
+      markup_ask: params.markupAskPoints,
+    };
+
+    if (params.minSpreadPoints !== undefined) {
+      payload.min_spread_points = params.minSpreadPoints;
+    }
+    if (params.commissionPerLot !== undefined) {
+      payload.commission_per_lot = params.commissionPerLot;
+    }
+    if (params.tradeMode !== undefined) {
+      payload.trade_mode = params.tradeMode;
+    }
+
+    this.logger.log(
+      `Updating SteraTrader Spread on Group ${groupId} Instrument ${instrumentId}: BidMarkup=+${params.markupBidPoints}pts, AskMarkup=+${params.markupAskPoints}pts, MinFloor=${params.minSpreadPoints || 0}pts`
+    );
+
+    try {
+      const response = await fetch(`${this.apiUrl}/groups/${groupId}/instruments/${instrumentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        this.logger.error(`Failed to update SteraTrader instrument spread (HTTP ${response.status}): ${JSON.stringify(err)}`);
+        return false;
+      }
+
+      return true;
+    } catch (err: any) {
+      this.logger.error(`Network error updating instrument spread for ${instrumentId}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Apply a standardized 40-point (4.0 pip) markup across all instruments in a partner group
+   * Splits 20 points to Bid and 20 points to Ask (total spread expansion: 40 points / 4.0 pips)
+   * Also sets min_spread_points floor to 40 points.
+   */
+  async apply4PipSpreadMarkup(groupId: string | number): Promise<{ total: number; updated: number; failed: number }> {
+    const instruments = await this.fetchGroupInstruments(groupId);
+    if (!instruments || instruments.length === 0) {
+      return { total: 0, updated: 0, failed: 0 };
+    }
+
+    let updated = 0;
+    let failed = 0;
+
+    for (const inst of instruments) {
+      const id = inst.id || inst.instrument_id;
+      if (!id) continue;
+
+      // For standard 5-digit/3-digit pairs: 40 points = 4.0 pips
+      // markup_bid = 20, markup_ask = 20 (Total spread added: 40 points)
+      const success = await this.updateInstrumentSpread(groupId, id, {
+        markupBidPoints: 20,
+        markupAskPoints: 20,
+        minSpreadPoints: 40,
+        tradeMode: 'full',
+      });
+
+      if (success) updated++;
+      else failed++;
+    }
+
+    this.logger.log(`Completed 4-pip spread markup for group ${groupId}: ${updated}/${instruments.length} updated successfully.`);
+    return { total: instruments.length, updated, failed };
+  }
 }
