@@ -131,8 +131,8 @@ export default function AccountAnalyticsTerminalPage() {
         const riskData = await riskRes.value.json();
         setAccount((prev) => {
           const sizeNgn = accData.sizeNgn || prev.sizeNgn;
-          const dailyLimit = riskData.dailyDrawdown?.dailyLimitNgn ?? (sizeNgn * 0.04) ?? prev.dailyDrawdownLimitNgn;
-          const maxLimit = riskData.maximumDrawdown?.limitNgn ?? (prev.planType === 'PHOENIX_RISE' ? sizeNgn * 0.07 : sizeNgn * 0.10) ?? prev.maxDrawdownLimitNgn;
+          const dailyLimit = riskData.dailyDrawdown?.dailyLimitNgn ?? (sizeNgn ? sizeNgn * 0.04 : prev.dailyDrawdownLimitNgn);
+          const maxLimit = riskData.maximumDrawdown?.limitNgn ?? (sizeNgn ? (prev.planType === 'PHOENIX_RISE' ? sizeNgn * 0.07 : sizeNgn * 0.10) : prev.maxDrawdownLimitNgn);
           const dailyLoss = riskData.dailyDrawdown?.currentLossNgn ?? prev.dailyDrawdownNgn;
           const dailyHeadroom = riskData.dailyDrawdown?.headroomRemainingNgn ?? Math.max(0, dailyLimit - dailyLoss);
           const maxLoss = riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn;

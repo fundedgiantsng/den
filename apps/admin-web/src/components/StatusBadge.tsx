@@ -5,8 +5,10 @@ export type BadgeVariant =
   | 'APPROVED'
   | 'ACTIVE'
   | 'PASSED'
+  | 'FUNDED'
   | 'PAID'
   | 'SUCCESSFUL'
+  | 'EVALUATION'
   | 'PENDING'
   | 'PENDING_REVIEW'
   | 'REQUESTED'
@@ -32,9 +34,11 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       case 'APPROVED':
       case 'ACTIVE':
       case 'PASSED':
+      case 'FUNDED':
       case 'PAID':
       case 'SUCCESSFUL':
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+      case 'EVALUATION':
       case 'PENDING':
       case 'PENDING_REVIEW':
       case 'REQUESTED':
