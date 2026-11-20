@@ -46,7 +46,7 @@ export class SteraTraderService {
   private get apiKey(): string {
     return process.env.STERATRADER_API_KEY || '';
   }
-  private readonly defaultServer: string = 'Velton-Demo';
+  private readonly defaultServer: string = 'FundedGiants';
 
   constructor() {}
 
@@ -121,7 +121,7 @@ export class SteraTraderService {
       const login = String(resData.login || resData.account_number || resData.id || '');
       const masterPassword = resData.password || resData.master_password || '';
       const investorPassword = resData.investor_password || '';
-      const server = resData.server || 'Velton Markets Demo';
+      const server = 'FundedGiants';
 
       this.logger.log(`SteraTrader account created: login=${login}, server=${server}, group=${groupSlug}`);
 
@@ -304,6 +304,7 @@ export class SteraTraderService {
 
   /**
    * Reset trader master password
+   * NOTE: SteraTrader requires an HTTP body ({}) to trigger random password generation
    */
   async resetTraderPassword(accountNumber: string): Promise<{ success: boolean; newPassword?: string; error?: string }> {
     if (!this.apiKey) {
@@ -317,6 +318,7 @@ export class SteraTraderService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
+        body: JSON.stringify({}),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -335,7 +337,63 @@ export class SteraTraderService {
   }
 
   /**
+   * Update account status on SteraTrader
+   * States: 'disabled' (stops new orders), 'archived' (full deactivation), 'active'
+   */
+  async updateAccountStatus(accountNumber: string, status: 'disabled' | 'archived' | 'active', reason: string): Promise<boolean> {
+    if (!this.apiKey) return false;
+    try {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({ status, reason }),
+      });
+      return response.ok;
+    } catch (err: any) {
+      this.logger.error(`Failed to update status to ${status} for ${accountNumber}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Close a specific position on SteraTrader
+   * Route: POST /crm/v1/accounts/{login}/positions/{id}/close
+   */
+  async closePosition(accountNumber: string, positionId: number | string, lots?: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.apiKey) return { success: false, error: 'STERATRADER_API_KEY is not configured' };
+    try {
+      const payload: any = { external_id: `close-${positionId}-${Date.now()}` };
+      if (lots !== undefined && lots > 0) payload.lots = lots;
+
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions/${positionId}/close`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data?.detail === 'already_closed' || data?.message === 'already_closed') {
+          return { success: true };
+        }
+        return { success: false, error: JSON.stringify(data) };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Close all active positions (Kill-Switch on breach or before withdrawal)
+   * Fetches open positions via GET /accounts/{login}/positions?status=open
+   * and closes each position via POST /accounts/{login}/positions/{id}/close
    */
   async closeAllPositions(accountNumber: string): Promise<boolean> {
     if (!this.apiKey) return false;
@@ -343,15 +401,42 @@ export class SteraTraderService {
     this.logger.log(`Executing position liquidation kill-switch on SteraTrader account ${accountNumber}`);
 
     try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions/close-all`, {
-        method: 'POST',
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions?status=open`, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
       });
 
-      return response.ok;
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        this.logger.error(`Failed to fetch open positions for ${accountNumber}: ${JSON.stringify(errData)}`);
+        return false;
+      }
+
+      const resData = await response.json();
+      const positions = Array.isArray(resData?.data) ? resData.data : Array.isArray(resData) ? resData : [];
+
+      if (positions.length === 0) {
+        this.logger.log(`No open positions found on account ${accountNumber}`);
+        return true;
+      }
+
+      this.logger.log(`Found ${positions.length} open position(s) to liquidate on account ${accountNumber}`);
+
+      let allSucceeded = true;
+      for (const pos of positions) {
+        const closeRes = await this.closePosition(accountNumber, pos.id, pos.lots);
+        if (!closeRes.success) {
+          allSucceeded = false;
+          this.logger.error(`Failed to close position #${pos.id} on account ${accountNumber}: ${closeRes.error}`);
+        } else {
+          this.logger.log(`Successfully liquidated position #${pos.id} on account ${accountNumber}`);
+        }
+      }
+
+      return allSucceeded;
     } catch (err: any) {
       this.logger.error(`Error closing positions on ${accountNumber}: ${err.message}`);
       return false;
@@ -361,15 +446,23 @@ export class SteraTraderService {
   /**
    * Terminate or Archive account upon rule breach
    * Strictly enforces complete trading cessation:
-   * 1. Liquidates all active positions on SteraTrader
-   * 2. Scrambles the master password on SteraTrader (disconnecting active trader terminals)
-   * 3. Updates TradingAccount status to CLOSED in the database and overwrites stored masterPassword
-   * 4. Dispatches SteraTrader terminate/lock calls
+   * 1. Sets account status to 'disabled' (prevents opening new trades)
+   * 2. Liquidates all active positions on SteraTrader
+   * 3. Scrambles the master password on SteraTrader (immediately disconnecting active trader terminals)
+   * 4. Updates TradingAccount status to CLOSED in the database and overwrites stored masterPassword
+   * 5. Sets account status to 'archived' on SteraTrader
    */
   async terminateAccount(accountNumber: string, reason: string): Promise<boolean> {
     this.logger.warn(`Restricting and terminating SteraTrader account ${accountNumber}. Reason: ${reason}`);
 
-    // 1. Immediately liquidate all open positions
+    // 1. Immediately disable account to block new orders
+    try {
+      await this.updateAccountStatus(accountNumber, 'disabled', reason);
+    } catch (err: any) {
+      this.logger.warn(`Could not set status to disabled on SteraTrader: ${err.message}`);
+    }
+
+    // 2. Immediately liquidate all open positions
     try {
       await this.closeAllPositions(accountNumber);
       this.logger.log(`Closed all open positions for breached account ${accountNumber}`);
@@ -377,7 +470,7 @@ export class SteraTraderService {
       this.logger.error(`Error closing positions for account ${accountNumber}: ${err.message}`);
     }
 
-    // 2. Forcefully scramble master password on SteraTrader to revoke terminal access immediately
+    // 3. Forcefully scramble master password on SteraTrader to revoke terminal access immediately
     let scrambledPassword = `FG-LOCKED-${crypto.randomBytes(8).toString('hex')}!Aa9`;
     if (this.apiKey) {
       try {
@@ -391,7 +484,7 @@ export class SteraTraderService {
       }
     }
 
-    // 3. Update TradingAccount in database to CLOSED and scramble stored masterPassword
+    // 4. Update TradingAccount in database to CLOSED and scramble stored masterPassword
     try {
       await prisma.tradingAccount.updateMany({
         where: { accountNumber },
@@ -405,31 +498,11 @@ export class SteraTraderService {
       this.logger.error(`Failed to update trading account in database for ${accountNumber}: ${dbErr.message}`);
     }
 
-    // 4. Dispatch terminate / lock calls to SteraTrader if supported
-    if (this.apiKey) {
-      try {
-        const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/terminate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({ reason }),
-        });
-
-        if (!response.ok) {
-          await fetch(`${this.apiUrl}/accounts/${accountNumber}/lock`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.apiKey}`,
-            },
-            body: JSON.stringify({ reason }),
-          });
-        }
-      } catch (err: any) {
-        this.logger.warn(`SteraTrader terminate endpoint call notice for ${accountNumber}: ${err.message}`);
-      }
+    // 5. Finally set status to 'archived' on SteraTrader
+    try {
+      await this.updateAccountStatus(accountNumber, 'archived', reason);
+    } catch (err: any) {
+      this.logger.warn(`Could not archive account on SteraTrader: ${err.message}`);
     }
 
     return true;

@@ -65,7 +65,7 @@ export default function AccountAnalyticsTerminalPage() {
   const [account, setAccount] = useState({
     id: accountId,
     loginNumber: '',
-    server: 'Velton-Demo',
+    server: 'FundedGiants',
     groupSlug: '',
     masterPassword: null as string | null,
     investorPassword: null as string | null,
@@ -325,10 +325,10 @@ export default function AccountAnalyticsTerminalPage() {
           <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
             <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
             <div className="flex items-center justify-between">
-              <span className="text-emerald-400 font-bold truncate">{account.server || 'Velton-Demo'}</span>
+              <span className="text-emerald-400 font-bold truncate">{account.server || 'FundedGiants'}</span>
               <button
                 type="button"
-                onClick={() => handleCopy(account.server || 'Velton-Demo', 'srv')}
+                onClick={() => handleCopy(account.server || 'FundedGiants', 'srv')}
                 className="text-slate-500 hover:text-white"
               >
                 {copiedField === 'srv' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}

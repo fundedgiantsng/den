@@ -318,7 +318,7 @@ export class AdminConfigController {
           clientId: parseEnvVal('STERATRADER_CLIENT_ID') || '',
           hasClientSecret: !!parseEnvVal('STERATRADER_CLIENT_SECRET'),
           clientSecretMask: this.maskValue(parseEnvVal('STERATRADER_CLIENT_SECRET')),
-          serverName: parseEnvVal('STERATRADER_SERVER_NAME') || 'Velton-Demo',
+          serverName: parseEnvVal('STERATRADER_SERVER_NAME') || 'FundedGiants',
           accountGroup: parseEnvVal('STERATRADER_ACCOUNT_GROUP') || 'fg-rr-eval',
           managerLogin: parseEnvVal('STERATRADER_MANAGER_LOGIN') || '',
           hasManagerPassword: !!parseEnvVal('STERATRADER_MANAGER_PASSWORD'),

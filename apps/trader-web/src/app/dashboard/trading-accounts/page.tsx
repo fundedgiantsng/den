@@ -98,7 +98,7 @@ export default function TradingAccountsPage() {
                 return {
                   id: item.loginNumber || item.id,
                   loginNumber: item.loginNumber || item.id,
-                  server: item.server || 'Velton-Demo',
+                  server: item.server || 'FundedGiants',
                   groupSlug: item.groupSlug || (isPhoenix ? 'fg-pr-funded' : 'fg-rr-eval'),
                   masterPassword: item.masterPassword || null,
                   investorPassword: item.investorPassword || null,
@@ -293,7 +293,7 @@ export default function TradingAccountsPage() {
                 <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
                   <div>
                     <span className="text-[10px] text-fgText-muted uppercase block">Server</span>
-                    <span className="text-emerald-400 font-bold text-[11px] truncate block">{acc.server || 'Velton-Demo'}</span>
+                    <span className="text-emerald-400 font-bold text-[11px] truncate block">{acc.server || 'FundedGiants'}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-fgText-muted uppercase block">Login ID</span>

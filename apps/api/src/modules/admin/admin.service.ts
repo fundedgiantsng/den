@@ -604,8 +604,34 @@ export class AdminService {
     const discount = dto.discountPercent !== undefined ? dto.discountPercent : 100;
     const effectivePrice = discount === 100 ? 0 : Number(product.priceNgn) * (1 - discount / 100);
 
+    const isPhoenix = product.type === ChallengeType.PHOENIX_RISE_INSTANT;
+    const planType = isPhoenix ? 'phoenix-rise' : 'rhino-rush';
+    const leverage = isPhoenix ? '1:30' : '1:100';
+    const accountSizeNgn = Number(product.accountSize);
+
+    // 1. Provision Live SteraTrader Account directly
+    const steraRes = await this.steraTraderService.provisionAccount({
+      userEmail: user.email || 'trader@fundedgiants.ng',
+      userFullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Trader',
+      userPhone: user.phone || undefined,
+      accountSizeNgn,
+      planType,
+      leverage,
+      reference: challengeNumber,
+    });
+
+    if (!steraRes.success || !steraRes.login) {
+      throw new BadRequestException(`Failed to provision live SteraTrader account: ${steraRes.error || 'Unknown error'}`);
+    }
+
+    const steraLogin = steraRes.login;
+    const dailyDrawdownLimit = accountSizeNgn * (Number(product.dailyDrawdownPercent) / 100);
+    const maxDrawdownLimit = accountSizeNgn * (Number(product.maxDrawdownPercent) / 100);
+    const groupSlug = steraRes.group || (isPhoenix ? 'fg-pr-funded' : 'fg-rr-eval');
+    const server = 'FundedGiants';
+
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create Internal Order
+      // 2. Create Internal Order
       const order = await tx.internalOrder.create({
         data: {
           orderNumber,
@@ -618,7 +644,7 @@ export class AdminService {
         },
       });
 
-      // 2. Create CustomerChallenge
+      // 3. Create CustomerChallenge
       const challenge = await tx.customerChallenge.create({
         data: {
           challengeNumber,
@@ -631,17 +657,17 @@ export class AdminService {
         },
       });
 
-      // 3. Provision SteraTrader Account
-      const steraAccountNum = `ST-${Math.floor(700000 + Math.random() * 200000)}`;
-      const dailyDrawdownLimit = Number(product.accountSize) * (Number(product.dailyDrawdownPercent) / 100);
-      const maxDrawdownLimit = Number(product.accountSize) * (Number(product.maxDrawdownPercent) / 100);
-
+      // 4. Create TradingAccount with live SteraTrader credentials
       const tradingAccount = await tx.tradingAccount.create({
         data: {
-          accountNumber: steraAccountNum,
+          accountNumber: steraLogin,
           userId: user.id,
           challengeId: challenge.id,
           platform: 'SteraTrader',
+          server,
+          groupSlug,
+          masterPassword: steraRes.password || null,
+          investorPassword: steraRes.investorPassword || null,
           initialBalance: product.accountSize,
           currentBalance: product.accountSize,
           currentEquity: product.accountSize,
@@ -651,7 +677,7 @@ export class AdminService {
         },
       });
 
-      // 4. Audit Log
+      // 5. Audit Log
       await tx.auditEvent.create({
         data: {
           adminId: context.adminId,
@@ -663,9 +689,10 @@ export class AdminService {
             userEmail: user.email,
             productId: product.id,
             productName: product.name,
-            accountSize: Number(product.accountSize),
+            accountSize: accountSizeNgn,
             grantReason: dto.grantReason,
-            steraAccountNumber: steraAccountNum,
+            steraAccountNumber: steraLogin,
+            server,
             discountPercent: discount,
           },
           ipAddress: context.ipAddress,
@@ -675,6 +702,24 @@ export class AdminService {
 
       return { order, challenge, tradingAccount };
     });
+
+    // Send credentials email to the trader
+    if (user.email && steraLogin) {
+      this.notificationsService.sendTradingAccountCredentialsEmail({
+        toEmail: user.email,
+        toName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Trader',
+        accountNumber: steraLogin,
+        masterPassword: steraRes.password,
+        investorPassword: steraRes.investorPassword,
+        planTitle: product.name,
+        initialBalanceNgn: accountSizeNgn,
+        leverage,
+        groupSlug,
+        server,
+      }).catch((emailErr) => {
+        this.logger.warn(`Failed to dispatch credentials email for admin grant: ${emailErr.message}`);
+      });
+    }
 
     // Sync newly granted trading account to SendBaba audience
     this.sendbabaService.syncUserById(user.id).catch((syncErr) => {

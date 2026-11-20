@@ -261,7 +261,7 @@ export class NotificationsService {
       accountNumber,
       masterPassword,
       investorPassword,
-      server = 'Velton-Demo',
+      server = 'FundedGiants',
       groupSlug = 'fg-rr-eval',
       planTitle,
       initialBalanceNgn,
@@ -433,7 +433,7 @@ You can review your trading history in your dashboard or choose to start a fresh
     newPassword: string;
     server?: string;
   }) {
-    const { toEmail, toName, accountNumber, newPassword, server = 'Velton-Demo' } = params;
+    const { toEmail, toName, accountNumber, newPassword, server = 'FundedGiants' } = params;
     const subject = `Your New SteraTrader Credentials for Account #${accountNumber}`;
 
     const bodyText = `

@@ -415,7 +415,7 @@ export class WebhooksController {
         const maxLimit = planType === 'phoenix-rise' ? accountSizeNgn * 0.07 : accountSizeNgn * 0.10;
 
         const groupSlug = steraRes.group || (planType === 'phoenix-rise' ? 'fg-pr-funded' : 'fg-rr-eval');
-        const server = steraRes.server || 'Velton-Demo';
+        const server = 'FundedGiants';
 
         await prisma.tradingAccount.create({
           data: {

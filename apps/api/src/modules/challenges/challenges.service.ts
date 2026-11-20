@@ -541,7 +541,7 @@ export class ChallengesService implements OnModuleInit {
         const dailyLimit = dto.accountSizeNgn * 0.04;
         const maxLimit = dto.planType === 'phoenix-rise' ? dto.accountSizeNgn * 0.07 : dto.accountSizeNgn * 0.10;
         const groupSlug = steraRes.group || (dto.planType === 'phoenix-rise' ? 'fg-pr-funded' : 'fg-rr-eval');
-        const server = steraRes.server || 'Velton-Demo';
+        const server = 'FundedGiants';
 
         steraAccount = await prisma.tradingAccount.create({
           data: {
@@ -702,7 +702,7 @@ export class ChallengesService implements OnModuleInit {
         maxDrawdownLimitNgn,
         status: ch.status === 'FAILED' ? 'Breached' : 'Active',
         platform: 'SteraTrader',
-        server: tradingAcc?.server || 'Velton-Demo',
+        server: tradingAcc?.server || 'FundedGiants',
         groupSlug: tradingAcc?.groupSlug || (isPhoenix ? 'fg-pr-funded' : (ch.status === 'PASSED' ? 'fg-rr-funded' : 'fg-rr-eval')),
         masterPassword: tradingAcc?.masterPassword || null,
         investorPassword: tradingAcc?.investorPassword || null,
@@ -828,7 +828,7 @@ export class ChallengesService implements OnModuleInit {
       return {
         id: acc.accountNumber,
         loginNumber: acc.accountNumber,
-        server: acc.server || 'Velton-Demo',
+        server: acc.server || 'FundedGiants',
         platform: 'SteraTrader',
         groupSlug: acc.groupSlug || (isPhoenix ? 'fg-pr-funded' : isFundedPhase ? 'fg-rr-funded' : 'fg-rr-eval'),
         masterPassword: acc.masterPassword || null,
