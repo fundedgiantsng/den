@@ -47,7 +47,7 @@ interface AccountItem {
 }
 
 export default function TradingAccountsPage() {
-  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'EVALUATION' | 'FUNDED' | 'FAILED' | 'SUSPENDED'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'EVALUATION' | 'FUNDED' | 'PASSED' | 'FAILED' | 'SUSPENDED'>('ALL');
 
   // Marketing banners rotated every hour (matching main dashboard sidebar)
   const marketingBanners = [
