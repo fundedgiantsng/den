@@ -55,7 +55,6 @@ export default function AccountAnalyticsTerminalPage() {
   const [payoutErrorMessage, setPayoutErrorMessage] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showMasterPass, setShowMasterPass] = useState(false);
-  const [showInvestorPass, setShowInvestorPass] = useState(false);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -119,8 +118,8 @@ export default function AccountAnalyticsTerminalPage() {
     try {
       setLoading(true);
       const [accRes, riskRes] = await Promise.allSettled([
-        fetch(`${API_BASE_URL}/challenges/accounts/${accountId}`),
-        fetch(`${API_BASE_URL}/risk/status/${accountId}`),
+        fetch(`${API_BASE_URL}/challenges/accounts/${accountId}`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/risk/status/${accountId}`, { credentials: 'include' }),
       ]);
 
       let accData: any = {};
@@ -190,6 +189,7 @@ export default function AccountAnalyticsTerminalPage() {
   };
 
   const isPhoenix = account.planType === 'PHOENIX_RISE';
+  const isFundedAccount = isPhoenix || account.currentPhase === 'Funded' || account.currentPhase === 'Instant Funding';
   const dailyDdPercent = account.dailyDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.dailyDrawdownNgn / account.dailyDrawdownLimitNgn) * 100)) : 0;
   const maxDdPercent = account.maxDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.maxDrawdownNgn / account.maxDrawdownLimitNgn) * 100)) : 0;
 
@@ -249,26 +249,26 @@ export default function AccountAnalyticsTerminalPage() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
               </button>
 
-              <div className="flex flex-col items-start sm:items-end gap-1">
-                <button
-                  type="button"
-                  onClick={handleRequestPayout}
-                  disabled={requestingPayout || !account.isPayoutEligible}
-                  className="px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
-                >
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>
-                    {account.isPayoutEligible
-                      ? `Request Payout (${formatNaira(account.traderProfitSplitNgn)})`
-                      : 'Payout Locked'}
-                  </span>
-                </button>
-                {!account.isPayoutEligible && account.payoutIneligibilityReason && (
-                  <span className="text-[10px] text-amber-400/90 font-mono">
-                    {account.payoutIneligibilityReason}
-                  </span>
-                )}
-              </div>
+              {isFundedAccount && (
+                <div className="flex flex-col items-start sm:items-end gap-1">
+                  <button
+                    type="button"
+                    onClick={handleRequestPayout}
+                    disabled={requestingPayout || !account.isPayoutEligible}
+                    className="px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>
+                      Request Payout ({formatNaira(account.traderProfitSplitNgn)})
+                    </span>
+                  </button>
+                  {!account.isPayoutEligible && account.payoutIneligibilityReason && (
+                    <span className="text-[10px] text-amber-400/90 font-mono">
+                      {account.payoutIneligibilityReason}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -320,11 +320,12 @@ export default function AccountAnalyticsTerminalPage() {
           <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
             <span className="text-[10px] text-fgText-muted uppercase block">Account Login</span>
             <div className="flex items-center justify-between">
-              <span className="text-white font-bold">{account.loginNumber}</span>
+              <span className="text-white font-bold tracking-wide">{account.loginNumber || account.id || accountId}</span>
               <button
                 type="button"
-                onClick={() => handleCopy(account.loginNumber, 'lgn')}
-                className="text-slate-500 hover:text-white"
+                onClick={() => handleCopy(account.loginNumber || account.id || accountId, 'lgn')}
+                className="p-1 rounded text-slate-400 hover:text-white transition"
+                title="Copy Login"
               >
                 {copiedField === 'lgn' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
@@ -333,9 +334,9 @@ export default function AccountAnalyticsTerminalPage() {
 
           {/* Master Password */}
           <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
-            <span className="text-[10px] text-fgText-muted uppercase block">Master Password</span>
+            <span className="text-[10px] text-fgText-muted uppercase block">Trading Password (Master)</span>
             <div className="flex items-center justify-between">
-              <span className="text-white font-bold">
+              <span className="text-white font-bold tracking-wider font-mono">
                 {account.masterPassword
                   ? showMasterPass
                     ? account.masterPassword
@@ -343,23 +344,27 @@ export default function AccountAnalyticsTerminalPage() {
                   : '••••••••'}
               </span>
               <div className="flex items-center gap-1.5">
-                {account.masterPassword && (
+                {account.masterPassword ? (
                   <>
                     <button
                       type="button"
                       onClick={() => setShowMasterPass(!showMasterPass)}
-                      className="text-slate-500 hover:text-white"
+                      className="p-1 rounded text-slate-400 hover:text-white transition"
+                      title={showMasterPass ? 'Hide Password' : 'Show Password'}
                     >
                       {showMasterPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleCopy(account.masterPassword || '', 'pwd')}
-                      className="text-slate-500 hover:text-white"
+                      className="p-1 rounded text-slate-400 hover:text-white transition"
+                      title="Copy Password"
                     >
                       {copiedField === 'pwd' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </>
+                ) : (
+                  <span className="text-[10px] text-fgText-muted font-sans">Synced on login</span>
                 )}
               </div>
             </div>

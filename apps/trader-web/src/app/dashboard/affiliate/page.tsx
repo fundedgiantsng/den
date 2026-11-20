@@ -36,6 +36,15 @@ interface CustomCoupon {
   createdAt: string;
 }
 
+interface CommissionItem {
+  id: string;
+  type: string;
+  title: string;
+  ref: string;
+  date: string;
+  amountNgn: number;
+}
+
 export default function AffiliateProgramPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
@@ -65,20 +74,25 @@ export default function AffiliateProgramPage() {
   // Active custom discount codes list
   const [myCoupons, setMyCoupons] = useState<CustomCoupon[]>([]);
 
+  // Real-time affiliate ledger commissions list (zero mock data)
+  const [recentCommissions, setRecentCommissions] = useState<CommissionItem[]>([]);
+
   const netCpa = Math.max(0, affiliateData.cpaRatePercent - discountPercent);
 
   // Fetch real profile and custom coupons on mount
   useEffect(() => {
     async function loadAffiliateData() {
       try {
-        const res = await fetch(`${API_BASE_URL}/affiliates/profile`);
+        const res = await fetch(`${API_BASE_URL}/affiliates/profile`, {
+          credentials: 'include',
+        });
         if (res.ok) {
           const data = await res.json();
           if (data?.profile) {
-            const userHandle = data.profile.username || data.profile.referralCode || 'giantstrader';
+            const userHandle = data.profile.username || data.profile.referralCode || '';
             setAffiliateData({
               username: userHandle,
-              referralLink: `https://fundedgiants.ng/?ref=${userHandle}`,
+              referralLink: data.profile.referralLink || (userHandle ? `https://fundedgiants.ng/?ref=${userHandle}` : 'https://fundedgiants.ng/'),
               cpaRatePercent: data.profile.cpaRatePercent || 10,
               payoutRatePercent: data.profile.payoutRatePercent || 3,
               totalReferrals: data.profile.totalReferrals || 0,
@@ -87,12 +101,28 @@ export default function AffiliateProgramPage() {
               availableCommissionNgn: data.profile.availableCommissionNgn || 0,
             });
           }
-          if (data?.coupons && Array.isArray(data.coupons) && data.coupons.length > 0) {
+          if (data?.coupons && Array.isArray(data.coupons)) {
             setMyCoupons(data.coupons);
           }
+          if (data?.recentCommissions && Array.isArray(data.recentCommissions)) {
+            setRecentCommissions(
+              data.recentCommissions.map((c: any) => ({
+                id: c.id,
+                type: '10% CPA SALE',
+                title: c.orderNumber ? `Challenge Order #${c.orderNumber}` : 'Referral Challenge Sale',
+                ref: `Status: ${c.status || 'CONFIRMED'}`,
+                date: new Date(c.date).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                }),
+                amountNgn: Number(c.amountNgn) || 0,
+              }))
+            );
+          }
         }
-      } catch {
-        // Fallback to local initialized state in development
+      } catch (err) {
+        console.warn('Could not load affiliate profile', err);
       }
     }
     loadAffiliateData();
@@ -137,6 +167,7 @@ export default function AffiliateProgramPage() {
       const res = await fetch(`${API_BASE_URL}/affiliates/custom-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           code: cleanCode,
           discountPercent,
@@ -172,9 +203,13 @@ export default function AffiliateProgramPage() {
       const res = await fetch(`${API_BASE_URL}/affiliates/transfer-to-vault`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ amountNgn: affiliateData.availableCommissionNgn }),
       });
       const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to transfer commissions.');
+      }
       setTransferSuccess(
         `Successfully transferred ${formatNaira(affiliateData.availableCommissionNgn)} into your Giants Vault balance!`
       );
@@ -183,27 +218,13 @@ export default function AffiliateProgramPage() {
         withdrawnCommissionsNgn: prev.withdrawnCommissionsNgn + prev.availableCommissionNgn,
         availableCommissionNgn: 0,
       }));
-    } catch (e) {
-      setTransferSuccess(
-        `Successfully transferred ${formatNaira(affiliateData.availableCommissionNgn)} into your Giants Vault balance!`
-      );
-      setAffiliateData((prev) => ({
-        ...prev,
-        withdrawnCommissionsNgn: prev.withdrawnCommissionsNgn + prev.availableCommissionNgn,
-        availableCommissionNgn: 0,
-      }));
+    } catch (e: any) {
+      setCreateCodeError(e.message || 'Failed to transfer to Giants Vault.');
     } finally {
       setTransferring(false);
       setTimeout(() => setTransferSuccess(null), 4000);
     }
   };
-
-  const recentCommissions = [
-    { id: 'com-1', type: '10% CPA SALE', title: 'Rhino Rush ₦10M Purchase', ref: 'user: alex_fx', date: 'Today, 11:20 AM', amountNgn: 24750 },
-    { id: 'com-2', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: samuel_t', date: 'Yesterday, 3:45 PM', amountNgn: 15000 },
-    { id: 'com-3', type: '10% CPA SALE', title: 'Phoenix Rise ₦5M Instant', ref: 'user: grace_trades', date: 'Nov 12, 2026', amountNgn: 20900 },
-    { id: 'com-4', type: '3% PAYOUT SHARE', title: 'Referral Trading Payout', ref: 'user: alex_fx', date: 'Nov 10, 2026', amountNgn: 9000 },
-  ];
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
@@ -661,37 +682,47 @@ export default function AffiliateProgramPage() {
         </div>
 
         <div className="space-y-3">
-          {recentCommissions.map((c) => (
-            <div
-              key={c.id}
-              className="p-3.5 rounded-xl bg-bg-card border border-fgBorder-subtle flex items-center justify-between text-xs gap-3"
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-white">{c.title}</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                      c.type.includes('CPA')
-                        ? 'bg-emerald-500/15 text-emerald-400'
-                        : 'bg-amber-500/15 text-amber-300'
-                    }`}
-                  >
-                    {c.type}
-                  </span>
-                </div>
-                <p className="text-[10px] text-fgText-muted mt-0.5">
-                  {c.ref} &bull; {c.date}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <span className="font-heading font-bold text-emerald-400 block">
-                  +{formatNaira(c.amountNgn)}
-                </span>
-                <span className="text-[10px] text-emerald-300 font-semibold">Credited</span>
-              </div>
+          {recentCommissions.length === 0 ? (
+            <div className="p-8 rounded-xl bg-bg-card border border-fgBorder-subtle text-center space-y-2">
+              <Users className="w-8 h-8 text-emerald-400/40 mx-auto" />
+              <p className="text-xs text-white font-semibold">No referral commissions earned yet</p>
+              <p className="text-[11px] text-fgText-secondary max-w-sm mx-auto">
+                Share your unique referral link to start earning a flat 10% CPA on challenge purchases plus a 3% lifetime share on profit payouts.
+              </p>
             </div>
-          ))}
+          ) : (
+            recentCommissions.map((c) => (
+              <div
+                key={c.id}
+                className="p-3.5 rounded-xl bg-bg-card border border-fgBorder-subtle flex items-center justify-between text-xs gap-3"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white">{c.title}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        c.type.includes('CPA')
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'bg-amber-500/15 text-amber-300'
+                      }`}
+                    >
+                      {c.type}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-fgText-muted mt-0.5">
+                    {c.ref} &bull; {c.date}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <span className="font-heading font-bold text-emerald-400 block">
+                    +{formatNaira(c.amountNgn)}
+                  </span>
+                  <span className="text-[10px] text-emerald-300 font-semibold">Credited</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

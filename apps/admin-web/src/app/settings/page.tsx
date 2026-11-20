@@ -146,6 +146,7 @@ export default function SettingsAndDevicePage() {
 
           ninjaKycPublicKey: s.kyc?.publicKey || prev.ninjaKycPublicKey,
           ninjaKycFlowId: s.kyc?.flowId || prev.ninjaKycFlowId,
+          ninjaKycWebhookSecret: s.kyc?.webhookSecret || prev.ninjaKycWebhookSecret,
 
           emailProvider: s.smtp?.provider || prev.emailProvider,
           sendbabaApiKey: s.smtp?.sendbabaApiKey || prev.sendbabaApiKey,
@@ -906,9 +907,10 @@ export default function SettingsAndDevicePage() {
               </div>
 
               {/* Ninja KYC Credentials */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {renderInputField('Ninja Secret Key', 'ninjaKycSecretKey', 'sk_live_...', true, 'Secret key from Ninja dashboard (sk_...)', statusData?.credentialsSummary?.kyc?.secretKeyMask)}
                 {renderInputField('Hosted KYC Flow ID', 'ninjaKycFlowId', 'vf_...', false, 'Flow ID created on Ninja (vf_...)', statusData?.credentialsSummary?.kyc?.flowId)}
+                {renderInputField('Ninja Webhook Signing Secret', 'ninjaKycWebhookSecret', 'whsec_...', true, 'Webhook signing secret from Ninja Webhooks (whsec_...)', statusData?.credentialsSummary?.kyc?.webhookSecretMask)}
                 {renderInputField('Ninja Public Key / Client ID (Optional)', 'ninjaKycPublicKey', 'pk_live_...', false, 'Public key from Ninja dashboard (pk_...)', statusData?.credentialsSummary?.kyc?.publicKeyMask)}
               </div>
             </div>

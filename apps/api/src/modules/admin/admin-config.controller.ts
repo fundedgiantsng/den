@@ -362,6 +362,7 @@ export class AdminConfigController {
           hasSecretKey: !!parseEnvVal('NINJA_KYC_SECRET_KEY'),
           secretKeyMask: this.maskValue(parseEnvVal('NINJA_KYC_SECRET_KEY')),
           flowId: parseEnvVal('NINJA_KYC_FLOW_ID') || '',
+          webhookSecret: parseEnvVal('NINJA_KYC_WEBHOOK_SECRET') || '',
           hasWebhookSecret: !!parseEnvVal('NINJA_KYC_WEBHOOK_SECRET'),
           webhookSecretMask: this.maskValue(parseEnvVal('NINJA_KYC_WEBHOOK_SECRET')),
         },

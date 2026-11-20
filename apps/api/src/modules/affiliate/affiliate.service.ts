@@ -101,7 +101,7 @@ export class AffiliateService {
         id: profile.id,
         username: profile.referralCode,
         referralCode: profile.referralCode,
-        referralLink: `https://fundedgiants.ng/ref/${profile.referralCode}`,
+        referralLink: `https://fundedgiants.ng/?ref=${profile.referralCode}`,
         cpaRatePercent: AffiliateService.BASE_CPA_RATE,
         netCpaRatePercent: netCpaRate > 0 ? netCpaRate : 0,
         payoutRatePercent: AffiliateService.PAYOUT_COMMISSION_RATE,
