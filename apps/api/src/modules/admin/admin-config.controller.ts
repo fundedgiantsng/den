@@ -253,15 +253,10 @@ export class AdminConfigController {
    */
   private getEnvFilePaths(): string[] {
     const candidates = [
-      '/var/www/fundedgiants/.env',
-      path.resolve(process.cwd(), '.env'),
-      path.resolve(process.cwd(), '../../.env'),
-      path.resolve(process.cwd(), '../.env'),
       '/var/www/fundedgiants/apps/api/.env',
+      '/var/www/fundedgiants/.env',
       path.resolve(process.cwd(), 'apps/api/.env'),
-      path.resolve(__dirname, '../../../../.env'),
-      path.resolve(__dirname, '../../../../../.env'),
-      path.resolve(__dirname, '../../../.env'),
+      path.resolve(process.cwd(), '.env'),
     ];
 
     const existing: string[] = [];
@@ -281,18 +276,17 @@ export class AdminConfigController {
 
   private readAllEnv(): string {
     const paths = this.getEnvFilePaths();
-    let combined = '';
     for (const p of paths) {
       try {
         if (fs.existsSync(p)) {
           const content = fs.readFileSync(p, 'utf8');
-          if (content) {
-            combined += '\n' + content;
+          if (content && content.trim().length > 0) {
+            return content;
           }
         }
       } catch {}
     }
-    return combined;
+    return '';
   }
 
   private maskValue(val?: string): string | null {
@@ -501,15 +495,28 @@ export class AdminConfigController {
       registerUpdate('CRYPTO_WALLET_USDT_TRC20', dto.cryptoWalletUsdtTrc20);
       registerUpdate('CRYPTO_WALLET_USDT_ERC20', dto.cryptoWalletUsdtErc20);
 
-      // Apply updates to .env content
-      for (const [key, cleanVal] of Object.entries(updates)) {
-        const regex = new RegExp(`^${key}=.*$`, 'm');
-        if (regex.test(currentEnv)) {
-          currentEnv = currentEnv.replace(regex, `${key}="${cleanVal}"`);
-        } else {
-          currentEnv += `\n${key}="${cleanVal}"`;
+      // Clean, deduplicate and apply updates to .env content
+      const envLines = currentEnv.split(/\r?\n/);
+      const envMap = new Map<string, string>();
+      for (const line of envLines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const k = trimmed.substring(0, eqIdx).trim();
+          let v = trimmed.substring(eqIdx + 1).trim();
+          v = v.replace(/^['"]+|['"]+$/g, '');
+          envMap.set(k, v);
         }
       }
+
+      for (const [key, cleanVal] of Object.entries(updates)) {
+        envMap.set(key, cleanVal);
+      }
+
+      const cleanEnvOutput = Array.from(envMap.entries())
+        .map(([k, v]) => `${k}="${v}"`)
+        .join('\n') + '\n';
 
       // Write to all detected .env files
       const writtenPaths: string[] = [];
@@ -519,7 +526,7 @@ export class AdminConfigController {
           if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
           }
-          fs.writeFileSync(targetPath, currentEnv.trim() + '\n', 'utf8');
+          fs.writeFileSync(targetPath, cleanEnvOutput, 'utf8');
           writtenPaths.push(targetPath);
         } catch (err: any) {
           this.logger.warn(`Could not write to env path ${targetPath}: ${err.message}`);

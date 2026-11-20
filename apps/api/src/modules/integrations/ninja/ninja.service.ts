@@ -19,9 +19,12 @@ export class NinjaKycService {
   public static readonly PRODUCTION_BASE_URL = 'https://api.ninja.boucloud.io';
 
   public get baseUrl(): string {
-    let rawBase = process.env.NINJA_KYC_BASE_URL || NinjaKycService.PRODUCTION_BASE_URL;
-    if (rawBase.includes('api.ninja.ng')) {
-      rawBase = NinjaKycService.PRODUCTION_BASE_URL;
+    let rawBase = process.env.NINJA_KYC_BASE_URL || '';
+    if (this.secretKey.includes('sandbox')) {
+      return 'https://api.sandbox.ninja.boucloud.io';
+    }
+    if (!rawBase || rawBase.includes('api.ninja.ng')) {
+      return NinjaKycService.PRODUCTION_BASE_URL;
     }
     return rawBase.replace(/\/+$/, '').trim().replace(/^['"]+|['"]+$/g, '');
   }
@@ -111,11 +114,38 @@ export class NinjaKycService {
     };
 
     try {
-      const response = await executeRequest(primaryKey);
-      const data = await response.json().catch(() => ({}));
+      let response = await executeRequest(primaryKey);
+      let data = await response.json().catch(() => ({}));
+
+      // If unauthorized with secret key, exchange key pair for a session token via POST /auth/session per Ninja documentation
+      if ((response.status === 401 || data.message?.toLowerCase().includes('secret key')) && this.publicKey) {
+        this.logger.warn(`Ninja KYC link generation returned 401. Attempting /auth/session exchange...`);
+        try {
+          const authRes = await fetch(`${this.baseUrl}/auth/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ public_key: this.publicKey, secret_key: this.secretKey }),
+          });
+          const authData = await authRes.json().catch(() => ({}));
+          if (authRes.ok && authData.token) {
+            this.logger.log(`Session token minted successfully from Ninja. Retrying link generation...`);
+            const retryRes = await executeRequest(authData.token);
+            const retryData = await retryRes.json().catch(() => ({}));
+            if (retryRes.ok && retryData.url) {
+              response = retryRes;
+              data = retryData;
+            }
+          }
+        } catch (authErr: any) {
+          this.logger.warn(`Auth session exchange failed: ${authErr.message}`);
+        }
+      }
 
       if (!response.ok || !data.url) {
-        const errorMsg = data.message || data.error || `Ninja KYC error: HTTP ${response.status}`;
+        let errorMsg = data.message || data.error || `Ninja KYC error: HTTP ${response.status}`;
+        if (response.status === 401 && errorMsg.toLowerCase().includes('invalid secret key')) {
+          errorMsg = 'Invalid Ninja KYC Secret Key. Please generate a fresh Secret Key on the Ninja Dashboard (https://www.ninja.ng/user/api/keys/) and update it in Admin Settings.';
+        }
         this.logger.error(`Ninja KYC hosted session creation failed (HTTP ${response.status}): ${JSON.stringify(data)}`);
         return {
           status: false,
