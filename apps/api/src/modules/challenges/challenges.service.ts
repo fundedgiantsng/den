@@ -666,11 +666,15 @@ export class ChallengesService implements OnModuleInit {
       const sizeNgn = sizeMatch ? parseInt(sizeMatch[1], 10) : Number(tradingAcc?.initialBalance || 10000000);
 
       const balance = Number(tradingAcc?.currentBalance || sizeNgn);
+      const initialSize = Number(tradingAcc?.initialBalance || sizeNgn);
       const profitNgn = balance - sizeNgn;
       const profitPercent = ((profitNgn / sizeNgn) * 100).toFixed(2);
 
       const dailyDrawdownLimitNgn = sizeNgn * 0.04;
       const maxDrawdownLimitNgn = isPhoenix ? sizeNgn * 0.07 : sizeNgn * 0.10;
+      const equity = Number(tradingAcc?.currentEquity || balance);
+      const maxDrawdownNgn = Math.max(0, initialSize - equity);
+      const dailyDrawdownNgn = Math.max(0, initialSize - equity);
 
       // Current Phase determination (Phoenix Rise = Funded, Rhino Rush = Evaluation or Funded)
       let currentPhase = 'Evaluation';
@@ -689,11 +693,12 @@ export class ChallengesService implements OnModuleInit {
         currentPhase,
         sizeNgn,
         currentBalanceNgn: balance,
-        currentEquityNgn: Number(tradingAcc?.currentEquity || balance),
+        currentEquityNgn: equity,
         profitNgn,
         profitPercent: `${profitNgn >= 0 ? '+' : ''}${profitPercent}%`,
-        dailyDrawdownNgn: 0,
+        dailyDrawdownNgn,
         dailyDrawdownLimitNgn,
+        maxDrawdownNgn,
         maxDrawdownLimitNgn,
         status: ch.status === 'FAILED' ? 'Breached' : 'Active',
         platform: 'SteraTrader',
@@ -792,6 +797,34 @@ export class ChallengesService implements OnModuleInit {
       const traderProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * (traderSplitPercent / 100)) : 0;
       const firmProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)) : 0;
 
+      // Calculate Daily Session Start (22:00 UTC = 23:00 GMT+1)
+      const now = new Date();
+      const sessionStart = new Date(now);
+      if (now.getUTCHours() < 22) {
+        sessionStart.setUTCDate(sessionStart.getUTCDate() - 1);
+      }
+      sessionStart.setUTCHours(22, 0, 0, 0);
+
+      const todaySnapshot = acc.riskEvents.find(
+        (e) => e.eventType === 'DAILY_RESET_SNAPSHOT' && new Date(e.createdAt) >= sessionStart
+      );
+      let startingDayBaseline = initialSize;
+      if (todaySnapshot) {
+        const snapBal = Number(todaySnapshot.snapshotBalance || initialSize);
+        const snapEq = Number(todaySnapshot.snapshotEquity || snapBal);
+        startingDayBaseline = Math.max(snapBal, snapEq);
+      } else if (new Date(acc.createdAt) < sessionStart) {
+        const netProfitToday = acc.tradeRecords
+          .filter((t) => t.closedAt && new Date(t.closedAt) >= sessionStart)
+          .reduce((sum, t) => sum + Number(t.profit || 0), 0);
+        startingDayBaseline = Math.max(initialSize, balance - netProfitToday);
+      }
+
+      const dailyDrawdownNgn = Math.max(0, startingDayBaseline - equity);
+      const dailyHeadroomNgn = Math.max(0, dailyDrawdownLimitNgn - dailyDrawdownNgn);
+      const maxDrawdownNgn = Math.max(0, initialSize - equity);
+      const maxLossHeadroomNgn = Math.max(0, maxDrawdownLimitNgn - maxDrawdownNgn);
+
       return {
         id: acc.accountNumber,
         loginNumber: acc.accountNumber,
@@ -810,12 +843,12 @@ export class ChallengesService implements OnModuleInit {
         marginLevelPercent: 999.0,
         profitNgn,
         profitPercent: `${profitNgn >= 0 ? '+' : ''}${profitPercent.toFixed(2)}%`,
-        dailyDrawdownNgn: 0,
+        dailyDrawdownNgn,
         dailyDrawdownLimitNgn,
-        maxDrawdownNgn: 0,
+        maxDrawdownNgn,
         maxDrawdownLimitNgn,
-        dailyHeadroomNgn: dailyDrawdownLimitNgn,
-        maxLossHeadroomNgn: maxDrawdownLimitNgn,
+        dailyHeadroomNgn,
+        maxLossHeadroomNgn,
         isPayoutEligible,
         minPayoutPercent,
         payoutNumber,

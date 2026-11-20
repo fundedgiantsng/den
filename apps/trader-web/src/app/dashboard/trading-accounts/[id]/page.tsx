@@ -133,10 +133,10 @@ export default function AccountAnalyticsTerminalPage() {
           const sizeNgn = accData.sizeNgn || prev.sizeNgn;
           const dailyLimit = riskData.dailyDrawdown?.dailyLimitNgn ?? (sizeNgn ? sizeNgn * 0.04 : prev.dailyDrawdownLimitNgn);
           const maxLimit = riskData.maximumDrawdown?.limitNgn ?? (sizeNgn ? (prev.planType === 'PHOENIX_RISE' ? sizeNgn * 0.07 : sizeNgn * 0.10) : prev.maxDrawdownLimitNgn);
-          const dailyLoss = riskData.dailyDrawdown?.currentLossNgn ?? prev.dailyDrawdownNgn;
-          const dailyHeadroom = riskData.dailyDrawdown?.headroomRemainingNgn ?? Math.max(0, dailyLimit - dailyLoss);
-          const maxLoss = riskData.maximumDrawdown?.currentLossNgn ?? prev.maxDrawdownNgn;
-          const maxHeadroom = riskData.maximumDrawdown?.headroomRemainingNgn ?? Math.max(0, maxLimit - maxLoss);
+          const dailyLoss = riskData.dailyDrawdown?.currentLossNgn ?? accData.dailyDrawdownNgn ?? prev.dailyDrawdownNgn;
+          const dailyHeadroom = riskData.dailyDrawdown?.headroomRemainingNgn ?? accData.dailyHeadroomNgn ?? Math.max(0, dailyLimit - dailyLoss);
+          const maxLoss = riskData.maximumDrawdown?.currentLossNgn ?? accData.maxDrawdownNgn ?? prev.maxDrawdownNgn;
+          const maxHeadroom = riskData.maximumDrawdown?.headroomRemainingNgn ?? accData.maxLossHeadroomNgn ?? Math.max(0, maxLimit - maxLoss);
 
           return {
             ...prev,
@@ -547,16 +547,29 @@ export default function AccountAnalyticsTerminalPage() {
           <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">
             <div
               className={`h-full transition-all duration-500 rounded-full ${
-                dailyDdPercent > 75 ? 'bg-rose-500' : 'bg-emerald-400'
+                dailyDdPercent > 75 ? 'bg-rose-500' : dailyDdPercent > 50 ? 'bg-amber-400' : 'bg-emerald-400'
               }`}
               style={{ width: `${dailyDdPercent}%` }}
             />
           </div>
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
-            <span>Used: <strong className={account.dailyDrawdownNgn > 0 ? 'text-amber-400' : 'text-white'}>{formatNaira(account.dailyDrawdownNgn)}</strong> ({dailyDdPercent}%)</span>
-            <span>Headroom: <strong className="text-emerald-400">{formatNaira(account.dailyHeadroomNgn)}</strong></span>
-            <span>Limit: <strong className="text-white">{formatNaira(account.dailyDrawdownLimitNgn || (account.sizeNgn * 0.04))}</strong></span>
+            <span>
+              Used:{' '}
+              <strong className={account.dailyDrawdownNgn > 0 ? (dailyDdPercent > 75 ? 'text-rose-400 font-bold' : 'text-amber-400') : 'text-white'}>
+                {formatNaira(account.dailyDrawdownNgn)}
+              </strong>{' '}
+              ({dailyDdPercent}% of limit &bull; {((account.dailyDrawdownNgn / (account.sizeNgn || 1)) * 100).toFixed(1)}% of capital)
+            </span>
+            <span>
+              Headroom:{' '}
+              <strong className={account.dailyHeadroomNgn < (account.dailyDrawdownLimitNgn * 0.25) ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                {formatNaira(account.dailyHeadroomNgn)}
+              </strong>
+            </span>
+            <span>
+              Limit: <strong className="text-white">{formatNaira(account.dailyDrawdownLimitNgn || (account.sizeNgn * 0.04))}</strong>
+            </span>
           </div>
         </div>
 
@@ -575,16 +588,29 @@ export default function AccountAnalyticsTerminalPage() {
           <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">
             <div
               className={`h-full transition-all duration-500 rounded-full ${
-                maxDdPercent > 75 ? 'bg-rose-500' : 'bg-emerald-400'
+                maxDdPercent > 75 ? 'bg-rose-500' : maxDdPercent > 50 ? 'bg-amber-400' : 'bg-emerald-400'
               }`}
               style={{ width: `${maxDdPercent}%` }}
             />
           </div>
 
           <div className="flex items-center justify-between text-[11px] font-mono text-fgText-secondary">
-            <span>Used: <strong className={account.maxDrawdownNgn > 0 ? 'text-amber-400' : 'text-white'}>{formatNaira(account.maxDrawdownNgn)}</strong> ({maxDdPercent}%)</span>
-            <span>Headroom: <strong className="text-amber-400">{formatNaira(account.maxLossHeadroomNgn)}</strong></span>
-            <span>Limit: <strong className="text-white">{formatNaira(account.maxDrawdownLimitNgn || (account.sizeNgn * (isPhoenix ? 0.07 : 0.10)))}</strong></span>
+            <span>
+              Used:{' '}
+              <strong className={account.maxDrawdownNgn > 0 ? (maxDdPercent > 75 ? 'text-rose-400 font-bold' : 'text-amber-400') : 'text-white'}>
+                {formatNaira(account.maxDrawdownNgn)}
+              </strong>{' '}
+              ({maxDdPercent}% of limit &bull; {((account.maxDrawdownNgn / (account.sizeNgn || 1)) * 100).toFixed(1)}% of capital)
+            </span>
+            <span>
+              Headroom:{' '}
+              <strong className={account.maxLossHeadroomNgn < (account.maxDrawdownLimitNgn * 0.25) ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                {formatNaira(account.maxLossHeadroomNgn)}
+              </strong>
+            </span>
+            <span>
+              Limit: <strong className="text-white">{formatNaira(account.maxDrawdownLimitNgn || (account.sizeNgn * (isPhoenix ? 0.07 : 0.10)))}</strong>
+            </span>
           </div>
         </div>
       </div>

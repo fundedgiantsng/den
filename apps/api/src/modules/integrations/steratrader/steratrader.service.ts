@@ -32,7 +32,7 @@ export interface SteraTraderAccountMetrics {
   accountNumber: string;
   balance: number; // in NGN (converted from kobo)
   equity: number; // in NGN (converted from kobo)
-  startingDayEquity: number; // in NGN (converted from kobo)
+  startingDayEquity?: number; // in NGN (converted from kobo)
   openTradesCount: number;
   openTradesProfit: number; // in NGN (converted from kobo)
 }
@@ -180,14 +180,17 @@ export class SteraTraderService {
     // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
     const rawBalance = Number(data.balance ?? data.current_balance ?? 0);
     const rawEquity = Number(data.equity ?? data.current_equity ?? rawBalance);
-    const rawStartingDayEquity = Number(data.starting_day_equity ?? rawBalance);
+    const rawStartingDayEquity =
+      data.starting_day_equity != null && !isNaN(Number(data.starting_day_equity)) && Number(data.starting_day_equity) > 0
+        ? Number(data.starting_day_equity)
+        : null;
     const rawTradesProfit = Number(data.floating ?? data.open_trades_profit ?? 0);
 
     return {
       accountNumber,
       balance: rawBalance / 100,
       equity: rawEquity / 100,
-      startingDayEquity: rawStartingDayEquity / 100,
+      startingDayEquity: rawStartingDayEquity != null ? rawStartingDayEquity / 100 : undefined,
       openTradesCount: Number(data.open_positions ?? data.open_trades_count ?? 0),
       openTradesProfit: rawTradesProfit / 100,
     };

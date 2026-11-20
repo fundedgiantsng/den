@@ -112,7 +112,7 @@ export default function TradingAccountsPage() {
                   profitPercent: item.profitPercent || '+0.00%',
                   dailyLossNgn: item.dailyDrawdownNgn || 0,
                   dailyLossLimitNgn: item.dailyDrawdownLimitNgn || (item.sizeNgn * 0.04),
-                  maxLossNgn: 0,
+                  maxLossNgn: item.maxDrawdownNgn || 0,
                   maxLossLimitNgn: item.maxDrawdownLimitNgn || (item.sizeNgn * (isPhoenix ? 0.07 : 0.10)),
                   platform: 'SteraTrader',
                   leverage: item.leverage || (isPhoenix ? '1:30' : '1:100'),

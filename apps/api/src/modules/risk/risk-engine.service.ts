@@ -230,6 +230,26 @@ export class RiskEngineService {
         const newStartingBaseline = Math.max(currentBalance, currentEquity);
         const newDailyLimit = newStartingBaseline * 0.04;
 
+        if (!isRhinoRushEvaluation) {
+          // Record session reset snapshot banking starting baseline for funded/instant accounts
+          await prisma.riskEvent.create({
+            data: {
+              challengeId: account.challengeId,
+              tradingAccountId: account.id,
+              eventType: 'DAILY_RESET_SNAPSHOT',
+              description: JSON.stringify({
+                sessionDate: new Date().toISOString().split('T')[0],
+                startingBaseline: newStartingBaseline,
+                dailyLimit: newDailyLimit,
+                ...sessionInfo,
+              }),
+              severity: 'INFO',
+              snapshotBalance: currentBalance,
+              snapshotEquity: currentEquity,
+            },
+          });
+        }
+
         await prisma.tradingAccount.update({
           where: { id: account.id },
           data: {
@@ -432,6 +452,64 @@ export class RiskEngineService {
   }
 
   /**
+   * Determine the true starting baseline for the 23:00 GMT+1 session (22:00 UTC).
+   * Starting baseline is the higher of balance or equity at session reset.
+   * Closed and open trade losses during the session must NEVER collapse this baseline.
+   */
+  async getStartingDayBaseline(
+    account: { id: string; initialBalance: any; createdAt?: Date },
+    currentBalance: number,
+    metricsStartingDayEquity?: number,
+  ): Promise<number> {
+    const initialBal = Number(account.initialBalance);
+
+    // Calculate current session start in UTC (22:00 UTC = 23:00 GMT+1)
+    const now = new Date();
+    const sessionStart = new Date(now);
+    if (now.getUTCHours() < 22) {
+      sessionStart.setUTCDate(sessionStart.getUTCDate() - 1);
+    }
+    sessionStart.setUTCHours(22, 0, 0, 0);
+
+    // 1. Check if a DAILY_RESET_SNAPSHOT was recorded for this session
+    const latestSnapshot = await prisma.riskEvent.findFirst({
+      where: {
+        tradingAccountId: account.id,
+        eventType: 'DAILY_RESET_SNAPSHOT',
+        createdAt: { gte: sessionStart },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (latestSnapshot) {
+      const snapBal = Number(latestSnapshot.snapshotBalance || initialBal);
+      const snapEq = Number(latestSnapshot.snapshotEquity || snapBal);
+      const snapBaseline = Math.max(snapBal, snapEq);
+      return Math.max(snapBaseline, initialBal, metricsStartingDayEquity || 0);
+    }
+
+    // 2. If account was created during the current session (after 22:00 UTC)
+    if (account.createdAt && new Date(account.createdAt) >= sessionStart) {
+      return Math.max(initialBal, metricsStartingDayEquity || 0);
+    }
+
+    // 3. If account existed before session start, reconstruct session opening balance from closed trades
+    // Opening Balance = Current Balance - Net Profit of trades closed since sessionStart
+    const tradesClosedToday = await prisma.tradeRecord.findMany({
+      where: {
+        tradingAccountId: account.id,
+        closedAt: { gte: sessionStart },
+      },
+      select: { profit: true },
+    });
+
+    const netProfitToday = tradesClosedToday.reduce((sum, t) => sum + Number(t.profit || 0), 0);
+    const sessionOpeningBalance = currentBalance - netProfitToday;
+
+    return Math.max(initialBal, sessionOpeningBalance, metricsStartingDayEquity || 0);
+  }
+
+  /**
    * Evaluate a single trading account against strict risk parameters:
    * 1. 4% Daily Drawdown Rule (based on 23:00 GMT+1 starting baseline, open & closed trades inclusive)
    * 2. Max Total Drawdown (10% Rhino Rush / 7% Phoenix Rise - 100% Static Floor)
@@ -442,7 +520,6 @@ export class RiskEngineService {
     this.totalEvaluationsCount++;
     const { challenge, initialBalance, dailyDrawdownLimit, maxDrawdownLimit } = account;
     const initialBal = Number(initialBalance);
-    const dailyLimit = Number(dailyDrawdownLimit);
     const maxLimit = Number(maxDrawdownLimit);
 
     // Fetch real-time equity & metrics from SteraTrader, or use pushed webhook metrics
@@ -458,7 +535,8 @@ export class RiskEngineService {
     // 1. Calculate Daily Drawdown (Open & Closed Trades Inclusive):
     // Evaluated against 23:00 GMT+1 baseline: higher of starting day balance or equity.
     // Current equity = current balance (all closed trades) + floating PnL (all open trades).
-    const startingDayBaseline = Math.max(metrics.startingDayEquity || initialBal, metrics.balance || initialBal);
+    const startingDayBaseline = await this.getStartingDayBaseline(account, currentBalance, metrics.startingDayEquity);
+    const dailyLimit = startingDayBaseline * 0.04;
     const dailyLoss = Math.max(0, startingDayBaseline - currentEquity);
 
     // 2. Calculate Maximum Loss (100% Static Floor - Zero Trailing):
@@ -1007,7 +1085,7 @@ export class RiskEngineService {
     // 1. Daily Drawdown calculations (4% from 23:00 GMT+1 baseline, Open & Closed Trades Inclusive)
     // Starting baseline is the higher of balance or equity at 23:00 GMT+1 session reset.
     // Current equity reflects all closed trades (in balance) + all open trades (in floating PnL).
-    const startingDayHwm = Math.max(metrics?.startingDayEquity || initialBal, currentBalance);
+    const startingDayHwm = await this.getStartingDayBaseline(account, currentBalance, metrics?.startingDayEquity);
     const dailyLimitAmount = startingDayHwm * 0.04;
     const dailyBreachFloor = startingDayHwm - dailyLimitAmount;
     const dailyLossCurrent = Math.max(0, startingDayHwm - currentEquity);
