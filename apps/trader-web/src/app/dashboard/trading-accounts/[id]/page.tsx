@@ -261,7 +261,7 @@ export default function AccountAnalyticsTerminalPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <button
                 type="button"
-                onClick={fetchDetails}
+                onClick={() => fetchDetails()}
                 disabled={loading}
                 className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-emerald-500/30 text-fgText-secondary hover:text-white transition"
                 title="Refresh Metrics"
