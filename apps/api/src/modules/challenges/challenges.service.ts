@@ -987,11 +987,7 @@ export class ChallengesService implements OnModuleInit {
       throw new NotFoundException('User wallet not found');
     }
 
-    if (user.kycStatus !== 'APPROVED') {
-      throw new BadRequestException(
-        'Identity verification (KYC) is required before requesting trading account profit payouts. Please complete your Ninja KYC verification in your Profile.'
-      );
-    }
+
 
     const reference = `PAYOUT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 

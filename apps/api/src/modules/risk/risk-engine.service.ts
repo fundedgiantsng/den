@@ -997,20 +997,11 @@ export class RiskEngineService {
     // Rule C: No active critical risk breaches
     const noActiveBreachesMet = account.riskEvents.length === 0;
 
-    // Rule D: Identity verification (KYC) must be approved before payout
-    const accountUser = await prisma.user.findUnique({
-      where: { id: account.userId },
-      select: { kycStatus: true },
-    });
-    const kycApproved = accountUser?.kycStatus === 'APPROVED';
-
-    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && kycApproved;
+    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
     const traderProfitSplit = isEligible ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
 
     let failureReason: string | undefined;
-    if (!kycApproved) {
-      failureReason = 'Identity verification (KYC) is required before requesting a payout. Please complete KYC in your profile.';
-    } else if (!zeroOpenTradesMet) {
+    if (!zeroOpenTradesMet) {
       failureReason = `Account has ${openTradesCount} open position(s). All positions must be closed before payout.`;
     } else if (!minimumProfitMet) {
       failureReason = isPhoenix && payoutNumber === 1
@@ -1224,9 +1215,7 @@ export class RiskEngineService {
       throw new BadRequestException('Customer wallet not initialized');
     }
 
-    if (user.kycStatus !== 'APPROVED') {
-      throw new BadRequestException('Identity verification (KYC) is required before requesting a payout. Please complete KYC in your profile.');
-    }
+
 
     const payoutAmount = eligibility.withdrawableProfitNgn;
     const reference = `FG-PAYOUT-${Date.now()}`;

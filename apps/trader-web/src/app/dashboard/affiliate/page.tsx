@@ -242,23 +242,23 @@ export default function AffiliateProgramPage() {
               Earn with FundedGiants
             </h1>
             <p className="text-xs sm:text-sm text-fgText-secondary max-w-2xl leading-relaxed">
-              Earn a flat 10% CPA commission on all referral purchases plus an automated 3% lifetime share on every profit withdrawal your traders make. Denominated and settled directly in Naira.
+              Earn a flat 10% CPA commission on all referral purchases plus an automated 3% lifetime share on every profit withdrawal your traders make.
             </p>
           </div>
 
           {/* Referral Link Quick Copy Box */}
-          <div className="bg-bg-base/80 backdrop-blur-md p-4 rounded-2xl border border-fgBorder-subtle space-y-2 md:w-80 flex-shrink-0">
+          <div className="bg-bg-base/80 backdrop-blur-md p-4 rounded-2xl border border-fgBorder-subtle space-y-2 w-full md:w-[460px] lg:w-[500px] flex-shrink-0">
             <span className="text-[11px] font-semibold text-fgText-muted block uppercase tracking-wider">
               Your Referral Link
             </span>
-            <div className="flex items-center gap-2 bg-bg-card px-3 py-2 rounded-xl border border-fgBorder-subtle">
-              <span className="text-xs font-mono text-emerald-400 truncate flex-1">
+            <div className="flex items-center gap-2 bg-bg-card px-3.5 py-2.5 rounded-xl border border-fgBorder-subtle">
+              <span className="text-xs font-mono text-emerald-400 select-all break-all flex-1">
                 {affiliateData.referralLink}
               </span>
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500 hover:text-bg-base transition-all flex items-center justify-center flex-shrink-0"
+                className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500 hover:text-bg-base transition-all flex items-center justify-center flex-shrink-0"
                 title="Copy Link"
               >
                 {copiedLink ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -375,7 +375,7 @@ export default function AffiliateProgramPage() {
               </span>
             </div>
             <p className="text-xs text-fgText-secondary leading-relaxed mt-2">
-              Earn instantly whenever your referral buys an account, whether it&apos;s a Phoenix Rise Instant Funded Account or a Rhino Rush 1-Step Challenge. No waiting, just immediate liquidity credited to your partner balance.
+              Earn instantly whenever your referral buys an account, whether it&apos;s a Phoenix Rise Instant Funded Account or a Rhino Rush 1-Step Challenge. No waiting,  Withdraw immediately.
             </p>
           </div>
 
@@ -429,7 +429,7 @@ export default function AffiliateProgramPage() {
               </span>
             </div>
             <p className="text-xs text-fgText-secondary max-w-3xl leading-relaxed">
-              Create unique custom promo codes with personalized discounts (1% to 10%) and set the maximum number of traders who can use each code. Whatever discount you gift your community is deducted from your 10% CPA commission, allowing you to co-share value as a growth strategy.
+              Create unique custom Discount codes with personalized discounts (1% to 10%) to share with your community, allowing you to co-share value as a growth strategy.
             </p>
           </div>
 
@@ -452,16 +452,16 @@ export default function AffiliateProgramPage() {
         </div>
 
         {/* Creator Form */}
-        <form onSubmit={handleCreateCustomCode} className="space-y-5 bg-bg-card p-5 rounded-2xl border border-fgBorder-subtle">
+        <form onSubmit={handleCreateCustomCode} className="space-y-4 bg-bg-card p-4 sm:p-5 rounded-2xl border border-fgBorder-subtle">
           <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
             <Sparkles className="w-4 h-4" />
             <span>Generate New Sitewide Unique Discount Code</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
             {/* Unique Code Input */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-fgText-secondary">
+            <div className="space-y-1">
+              <label className="block text-[11px] font-semibold text-fgText-secondary">
                 Custom Promo Code <span className="text-emerald-400">*</span>
               </label>
               <input
@@ -471,14 +471,14 @@ export default function AffiliateProgramPage() {
                 placeholder="e.g. VIP5, TRADE10"
                 maxLength={20}
                 required
-                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white uppercase font-mono tracking-wider focus:outline-none transition-colors"
+                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3 py-1.5 h-9 text-xs text-white uppercase font-mono tracking-wider focus:outline-none transition-colors"
               />
-              <span className="text-[10px] text-fgText-muted">Must be sitewide unique (3-20 characters)</span>
+              <span className="text-[10px] text-fgText-muted block">Unique 3-20 characters</span>
             </div>
 
             {/* Discount Percentage Selection */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-xs">
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[11px]">
                 <span className="font-semibold text-fgText-secondary">Discount Shared:</span>
                 <span className="font-mono text-emerald-400 font-bold">{discountPercent}% OFF</span>
               </div>
@@ -489,15 +489,15 @@ export default function AffiliateProgramPage() {
                 step={1}
                 value={discountPercent}
                 onChange={(e) => setDiscountPercent(Number(e.target.value))}
-                className="w-full accent-emerald-500 cursor-pointer h-2 bg-bg-surface rounded-lg mt-2"
+                className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-bg-surface rounded-lg mt-1"
               />
-              <div className="flex gap-1.5 pt-1">
+              <div className="flex gap-1 pt-0.5">
                 {[2, 3, 5, 8, 10].map((pct) => (
                   <button
                     key={pct}
                     type="button"
                     onClick={() => setDiscountPercent(pct)}
-                    className={`flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-all ${
+                    className={`flex-1 py-0.5 text-[10px] font-semibold rounded-md border transition-all ${
                       discountPercent === pct
                         ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                         : 'bg-bg-surface border-fgBorder-subtle text-fgText-muted hover:text-white'
@@ -510,8 +510,8 @@ export default function AffiliateProgramPage() {
             </div>
 
             {/* User Limit (Max Usage) */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-xs">
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[11px]">
                 <span className="font-semibold text-fgText-secondary">User Limit (Max Uses):</span>
                 <span className="font-mono text-white font-bold">{maxUsageInput} Users</span>
               </div>
@@ -521,15 +521,15 @@ export default function AffiliateProgramPage() {
                 max={1000}
                 value={maxUsageInput}
                 onChange={(e) => setMaxUsageInput(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:outline-none"
+                className="w-full bg-bg-surface border border-fgBorder-subtle focus:border-emerald-500 rounded-xl px-3 py-1.5 h-9 text-xs text-white font-mono focus:outline-none"
               />
-              <div className="flex gap-1.5 pt-1">
+              <div className="flex gap-1 pt-0.5">
                 {[10, 25, 50, 100, 250].map((limit) => (
                   <button
                     key={limit}
                     type="button"
                     onClick={() => setMaxUsageInput(limit)}
-                    className={`flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-all ${
+                    className={`flex-1 py-0.5 text-[10px] font-semibold rounded-md border transition-all ${
                       maxUsageInput === limit
                         ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                         : 'bg-bg-surface border-fgBorder-subtle text-fgText-muted hover:text-white'

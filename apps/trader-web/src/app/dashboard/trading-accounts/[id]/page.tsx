@@ -282,7 +282,7 @@ export default function AccountAnalyticsTerminalPage() {
                       Request Payout ({formatNaira(account.traderProfitSplitNgn)})
                     </span>
                   </button>
-                  {!account.isPayoutEligible && account.payoutIneligibilityReason && (
+                  {!account.isPayoutEligible && account.payoutIneligibilityReason && !account.payoutIneligibilityReason.toLowerCase().includes('identity verification') && !account.payoutIneligibilityReason.toLowerCase().includes('kyc') && (
                     <span className="text-[10px] text-amber-400/90 font-mono">
                       {account.payoutIneligibilityReason}
                     </span>
@@ -536,7 +536,7 @@ export default function AccountAnalyticsTerminalPage() {
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span className="text-xs font-heading font-bold text-white">
-                Daily Drawdown (4% Limit &bull; Open/Closed Trades Inclusive)
+                Daily Drawdown (4% - Equity Based)
               </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400">
@@ -559,7 +559,7 @@ export default function AccountAnalyticsTerminalPage() {
               <strong className={account.dailyDrawdownNgn > 0 ? (dailyDdPercent > 75 ? 'text-rose-400 font-bold' : 'text-amber-400') : 'text-white'}>
                 {formatNaira(account.dailyDrawdownNgn)}
               </strong>{' '}
-              ({dailyDdPercent}% of limit &bull; {((account.dailyDrawdownNgn / (account.sizeNgn || 1)) * 100).toFixed(1)}% of capital)
+              &bull; ({dailyDdPercent}%)
             </span>
             <span>
               Headroom:{' '}
@@ -579,10 +579,10 @@ export default function AccountAnalyticsTerminalPage() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-heading font-bold text-white">
-                Maximum Drawdown ({isPhoenix ? '7%' : '10%'} Static Floor)
+                Maximum Drawdown:
               </span>
             </div>
-            <span className="text-[10px] font-mono text-amber-400">100% Static (Zero Trailing)</span>
+            <span className="text-[10px] font-mono text-amber-400">{isPhoenix ? '7% Static' : '10% Static'}</span>
           </div>
 
           <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">
@@ -600,7 +600,7 @@ export default function AccountAnalyticsTerminalPage() {
               <strong className={account.maxDrawdownNgn > 0 ? (maxDdPercent > 75 ? 'text-rose-400 font-bold' : 'text-amber-400') : 'text-white'}>
                 {formatNaira(account.maxDrawdownNgn)}
               </strong>{' '}
-              ({maxDdPercent}% of limit &bull; {((account.maxDrawdownNgn / (account.sizeNgn || 1)) * 100).toFixed(1)}% of capital)
+              &bull; ({maxDdPercent}%)
             </span>
             <span>
               Headroom:{' '}

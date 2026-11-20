@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Activity, ShieldAlert, Power, RefreshCw } from 'lucide-react';
+import { Search, Activity, ShieldAlert, Power, RefreshCw, RotateCcw } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ActionModal } from '@/components/ActionModal';
@@ -14,6 +14,15 @@ export default function TradingAccountsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [killModal, setKillModal] = useState<{
+    isOpen: boolean;
+    accountId: string;
+    accountNumber: string;
+  }>({
+    isOpen: false,
+    accountId: '',
+    accountNumber: '',
+  });
+  const [reinstateModal, setReinstateModal] = useState<{
     isOpen: boolean;
     accountId: string;
     accountNumber: string;
@@ -52,6 +61,14 @@ export default function TradingAccountsPage() {
 
   const handleTriggerKillSwitch = async (reason: string) => {
     await fetchAdminApi(`/admin/trading-accounts/${killModal.accountId}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    await loadAccounts();
+  };
+
+  const handleReinstateAccount = async (reason: string) => {
+    await fetchAdminApi(`/admin/trading-accounts/${reinstateModal.accountId}/reinstate`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
@@ -177,7 +194,19 @@ export default function TradingAccountsPage() {
                             <span>Kill Switch</span>
                           </button>
                         ) : (
-                          <span className="text-slate-500 text-[11px]">Terminated</span>
+                          <button
+                            onClick={() =>
+                              setReinstateModal({
+                                isOpen: true,
+                                accountId: acc.id,
+                                accountNumber: acc.accountNumber,
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors text-xs font-semibold"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reinstate</span>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -197,6 +226,16 @@ export default function TradingAccountsPage() {
         variant="danger"
         onClose={() => setKillModal({ isOpen: false, accountId: '', accountNumber: '' })}
         onConfirm={handleTriggerKillSwitch}
+      />
+
+      <ActionModal
+        isOpen={reinstateModal.isOpen}
+        title={`Reinstate Trading Account ${reinstateModal.accountNumber}`}
+        description="Restores trading access on SteraTrader, sets account status back to ACTIVE, and reactivates the customer challenge."
+        confirmLabel="Confirm Reinstatement"
+        variant="primary"
+        onClose={() => setReinstateModal({ isOpen: false, accountId: '', accountNumber: '' })}
+        onConfirm={handleReinstateAccount}
       />
     </>
   );

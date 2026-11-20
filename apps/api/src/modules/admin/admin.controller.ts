@@ -157,6 +157,18 @@ export class AdminController {
     return this.adminService.terminateTradingAccount(id, context);
   }
 
+  // Administrative Account Reinstatement
+  @Post('trading-accounts/:id/reinstate')
+  @HttpCode(HttpStatus.OK)
+  reinstateTradingAccount(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req, body);
+    return this.adminService.reinstateTradingAccount(id, context);
+  }
+
   // 7. Risk Events Log
   @Get('risk/events')
   getRiskEvents(

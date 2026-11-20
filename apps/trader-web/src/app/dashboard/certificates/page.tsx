@@ -69,7 +69,7 @@ export default function CertificatesPage() {
             <h1 className="text-2xl font-bold tracking-tight text-white">Official Certificates</h1>
           </div>
           <p className="text-xs text-gray-400">
-            Download high-resolution certificates and publicly verify accredited milestones on the official ledger.
+            Download your high-resolution certificates to celebrate your trading milestones with FundedGiants.
           </p>
         </div>
 

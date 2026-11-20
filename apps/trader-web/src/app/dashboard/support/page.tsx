@@ -308,7 +308,7 @@ export default function SupportPage() {
               <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse" />
             </div>
             <p className="text-[11px] text-fgText-secondary">
-              WhatsApp Concierge • Instant Response (24/7)
+              Chat with WhatsApp Support 24/7
             </p>
           </div>
           <ExternalLink className="w-4 h-4 text-fgText-muted group-hover:text-white transition-colors ml-1" />
@@ -345,7 +345,7 @@ export default function SupportPage() {
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          <span>Live Chat Concierge</span>
+          <span>Live Chat</span>
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
         </button>
 
@@ -577,7 +577,7 @@ export default function SupportPage() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <span>FundedGiants Concierge Live Chat</span>
+                  <span>FundedGiants Web Chat</span>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 </h3>
                 <p className="text-xs text-fgText-secondary">

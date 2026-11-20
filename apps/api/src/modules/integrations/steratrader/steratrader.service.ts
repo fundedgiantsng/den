@@ -444,20 +444,20 @@ export class SteraTraderService {
   }
 
   /**
-   * Terminate or Archive account upon rule breach
-   * Strictly enforces complete trading cessation:
-   * 1. Sets account status to 'disabled' (prevents opening new trades)
-   * 2. Liquidates all active positions on SteraTrader
-   * 3. Scrambles the master password on SteraTrader (immediately disconnecting active trader terminals)
-   * 4. Updates TradingAccount status to CLOSED in the database and overwrites stored masterPassword
-   * 5. Sets account status to 'archived' on SteraTrader
+   * Terminate or Restrict account upon rule breach
+   * Strictly enforces complete trading cessation without locking out read-only dispute inspection:
+   * 1. Sets account status to 'disabled' on SteraTrader (stops all new trade execution)
+   * 2. Liquidates all active open positions
+   * 3. Retains trader login credentials so the user can log in to review history for dispute resolution
+   * 4. Updates TradingAccount status to CLOSED in the database
    */
   async terminateAccount(accountNumber: string, reason: string): Promise<boolean> {
-    this.logger.warn(`Restricting and terminating SteraTrader account ${accountNumber}. Reason: ${reason}`);
+    this.logger.warn(`Restricting SteraTrader account ${accountNumber}. Reason: ${reason}`);
 
-    // 1. Immediately disable account to block new orders
+    // 1. Immediately disable account to block all new trade execution
     try {
       await this.updateAccountStatus(accountNumber, 'disabled', reason);
+      this.logger.log(`Account ${accountNumber} set to disabled on SteraTrader`);
     } catch (err: any) {
       this.logger.warn(`Could not set status to disabled on SteraTrader: ${err.message}`);
     }
@@ -470,39 +470,17 @@ export class SteraTraderService {
       this.logger.error(`Error closing positions for account ${accountNumber}: ${err.message}`);
     }
 
-    // 3. Forcefully scramble master password on SteraTrader to revoke terminal access immediately
-    let scrambledPassword = `FG-LOCKED-${crypto.randomBytes(8).toString('hex')}!Aa9`;
-    if (this.apiKey) {
-      try {
-        const resetRes = await this.resetTraderPassword(accountNumber);
-        if (resetRes.success && resetRes.newPassword) {
-          scrambledPassword = resetRes.newPassword;
-          this.logger.log(`Scrambled master password on SteraTrader for account ${accountNumber}`);
-        }
-      } catch (err: any) {
-        this.logger.error(`Error scrambling master password on SteraTrader for ${accountNumber}: ${err.message}`);
-      }
-    }
-
-    // 4. Update TradingAccount in database to CLOSED and scramble stored masterPassword
+    // 3. Update TradingAccount in database to CLOSED (do NOT scramble password so user can inspect history)
     try {
       await prisma.tradingAccount.updateMany({
         where: { accountNumber },
         data: {
           status: 'CLOSED',
-          masterPassword: scrambledPassword,
         },
       });
       this.logger.log(`Database trading account status for ${accountNumber} set to CLOSED`);
     } catch (dbErr: any) {
       this.logger.error(`Failed to update trading account in database for ${accountNumber}: ${dbErr.message}`);
-    }
-
-    // 5. Finally set status to 'archived' on SteraTrader
-    try {
-      await this.updateAccountStatus(accountNumber, 'archived', reason);
-    } catch (err: any) {
-      this.logger.warn(`Could not archive account on SteraTrader: ${err.message}`);
     }
 
     return true;

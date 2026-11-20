@@ -916,6 +916,67 @@ export class AdminService {
   }
 
   /**
+   * Administrative Reinstatement
+   * Restores an account back to ACTIVE status in SteraTrader and the database
+   */
+  async reinstateTradingAccount(accountId: string, context: AdminActionContext) {
+    const account = await prisma.tradingAccount.findFirst({
+      where: { OR: [{ id: accountId }, { accountNumber: accountId }] },
+      include: { challenge: true, user: true },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Trading account ${accountId} not found`);
+    }
+
+    const reason = context.reason?.trim() || 'Admin manual reinstatement';
+
+    // 1. Re-enable in SteraTrader
+    await this.steraTraderService.updateAccountStatus(account.accountNumber, 'active', reason);
+
+    // 2. Update DB records
+    await prisma.$transaction(async (tx) => {
+      await tx.tradingAccount.update({
+        where: { id: account.id },
+        data: { status: 'ACTIVE' },
+      });
+
+      if (account.challengeId) {
+        await tx.customerChallenge.update({
+          where: { id: account.challengeId },
+          data: {
+            status: 'ACTIVE',
+            failedAt: null,
+            failureReason: null,
+          },
+        });
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_ACCOUNT_REINSTATED',
+          resource: 'TradingAccount',
+          resourceId: account.id,
+          details: {
+            accountNumber: account.accountNumber,
+            userEmail: account.user?.email,
+            reason,
+          },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      message: `Account #${account.accountNumber} successfully reinstated to ACTIVE.`,
+      accountNumber: account.accountNumber,
+    };
+  }
+
+  /**
    * 7. Risk Events Log
    */
   async getRiskEvents(params: { eventType?: string; severity?: string; skip?: number; take?: number }) {
