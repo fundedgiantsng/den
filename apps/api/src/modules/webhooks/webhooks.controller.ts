@@ -1315,8 +1315,21 @@ export class WebhooksController {
         });
 
         // Store / update KycRecord with encrypted/stored BVN and verified payload
-        await prisma.kycRecord.create({
-          data: {
+        await prisma.kycRecord.upsert({
+          where: { externalReference: reference },
+          update: {
+            status: 'APPROVED',
+            verifiedAt: new Date(),
+            providerPayload: {
+              bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+              rawBvn: bvn || undefined,
+              firstName: finalFirstName,
+              lastName: finalLastName,
+              rawPayload: payload,
+              verifiedAt: new Date().toISOString(),
+            },
+          },
+          create: {
             userId: user.id,
             provider: 'NinjaKYC',
             externalReference: reference,

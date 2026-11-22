@@ -822,8 +822,16 @@ export class AuthService {
 
     if (sessionRes.data?.id) {
       try {
-        await prisma.kycRecord.create({
-          data: {
+        await prisma.kycRecord.upsert({
+          where: { externalReference: sessionRes.data.id },
+          update: {
+            status: 'PENDING',
+            providerPayload: {
+              url: sessionRes.data.url,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          create: {
             userId: user.id,
             provider: 'NinjaKYC',
             externalReference: sessionRes.data.id,
@@ -935,46 +943,37 @@ export class AuthService {
       include: { wallet: true },
     });
 
-    // 2. Create or update KycRecord
-    const existingRec = await prisma.kycRecord.findFirst({
-      where: { userId: user.id, externalReference: targetSessionId },
+    // 2. Create or update KycRecord idempotently
+    await prisma.kycRecord.upsert({
+      where: { externalReference: targetSessionId },
+      update: {
+        status: 'APPROVED',
+        verifiedAt: new Date(),
+        providerPayload: {
+          bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+          rawBvn: bvn || undefined,
+          firstName: finalFirstName,
+          lastName: finalLastName,
+          ninjaVerification: verification,
+          verifiedAt: new Date().toISOString(),
+        },
+      },
+      create: {
+        userId: user.id,
+        provider: 'NinjaKYC',
+        externalReference: targetSessionId,
+        status: 'APPROVED',
+        verifiedAt: new Date(),
+        providerPayload: {
+          bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+          rawBvn: bvn || undefined,
+          firstName: finalFirstName,
+          lastName: finalLastName,
+          ninjaVerification: verification,
+          verifiedAt: new Date().toISOString(),
+        },
+      },
     });
-
-    if (existingRec) {
-      await prisma.kycRecord.update({
-        where: { id: existingRec.id },
-        data: {
-          status: 'APPROVED',
-          verifiedAt: new Date(),
-          providerPayload: {
-            bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
-            rawBvn: bvn || undefined,
-            firstName: finalFirstName,
-            lastName: finalLastName,
-            ninjaVerification: verification,
-            verifiedAt: new Date().toISOString(),
-          },
-        },
-      });
-    } else {
-      await prisma.kycRecord.create({
-        data: {
-          userId: user.id,
-          provider: 'NinjaKYC',
-          externalReference: targetSessionId,
-          status: 'APPROVED',
-          verifiedAt: new Date(),
-          providerPayload: {
-            bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
-            rawBvn: bvn || undefined,
-            firstName: finalFirstName,
-            lastName: finalLastName,
-            ninjaVerification: verification,
-            verifiedAt: new Date().toISOString(),
-          },
-        },
-      });
-    }
 
     // 3. Ensure dedicated Nomba deposit account
     await this.ensureDedicatedNombaAccount(user.id).catch((err) => {
