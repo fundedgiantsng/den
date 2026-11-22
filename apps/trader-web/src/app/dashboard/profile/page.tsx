@@ -17,12 +17,14 @@ import {
   Lock,
   Calendar,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { FundedGiantsKycModal } from '@/components/auth/FundedGiantsKycModal';
 
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingKyc, setSyncingKyc] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -74,7 +76,57 @@ export default function ProfilePage() {
 
   useEffect(() => {
     fetchProfile();
+
+    // Check if returning from Ninja KYC callback
+    if (typeof window !== 'undefined') {
+      const fullUrl = window.location.href;
+      const vsMatch = fullUrl.match(/vs_[a-zA-Z0-9_-]+/);
+      const isCallback = fullUrl.includes('kyc=callback') || fullUrl.includes('status=success') || !!vsMatch;
+
+      if (isCallback) {
+        const vsId = vsMatch ? vsMatch[0] : undefined;
+        fetch(`${API_BASE_URL}/auth/ninja-sync-status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ verificationId: vsId }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((resData) => {
+            if (resData?.kycStatus === 'APPROVED') {
+              setSuccess('KYC verification confirmed and approved! Your deposit vault is active.');
+              fetchProfile();
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }, []);
+
+  const handleSyncKyc = async () => {
+    setSyncingKyc(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/ninja-sync-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: profile.email }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.kycStatus === 'APPROVED') {
+        setSuccess('Identity verified and approved! Your dedicated deposit vault is active.');
+        await fetchProfile();
+      } else {
+        setError(data?.message || 'Verification is not yet confirmed by Ninja.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error checking verification status.');
+    } finally {
+      setSyncingKyc(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -434,6 +486,37 @@ export default function ProfilePage() {
             </span>
           </div>
         </div>
+
+        {!isKycApproved && (
+          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsKycModalOpen(true)}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Complete Identity Verification</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSyncKyc}
+              disabled={syncingKyc}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-semibold text-xs hover:bg-white/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {syncingKyc ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                  <span>Checking Ninja Status...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 text-emerald-400" />
+                  <span>Sync Verification Status</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Dedicated Bank Account (FundedGiants Deposit Vault) */}

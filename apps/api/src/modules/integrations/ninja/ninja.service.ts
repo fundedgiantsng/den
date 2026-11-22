@@ -173,13 +173,64 @@ export class NinjaKycService {
   }
 
   /**
-   * Verify incoming Ninja KYC webhook signature using HMAC SHA256 if configured
+   * Fetch verification session details directly from Ninja API
+   * Calls: GET https://api.ninja.boucloud.io/api/verifications/:id
    */
-  verifyWebhookSignature(rawBody: string, signature?: string): boolean {
-    const secret = this.webhookSecret || this.secretKey || this.publicKey;
+  async getVerification(verificationId: string): Promise<any> {
+    const key = this.secretKey;
+    if (!key) {
+      this.logger.warn('NINJA_KYC_SECRET_KEY is not configured in live environment.');
+      return null;
+    }
+    const cleanId = verificationId.trim();
+    const endpoint = `${this.baseUrl}/api/verifications/${cleanId}`;
+    this.logger.log(`Fetching verification ${cleanId} from ${endpoint}`);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${key}`,
+        },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        this.logger.warn(`Failed to fetch verification ${cleanId} (HTTP ${res.status}): ${JSON.stringify(err)}`);
+        return null;
+      }
+
+      const data = await res.json().catch(() => null);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Network error fetching verification ${cleanId}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Verify incoming Ninja KYC webhook signature using HMAC SHA256 if configured
+   * Handles "hmac-sha256=" prefix and multiple possible secret candidates
+   */
+  verifyWebhookSignature(rawBody: string | Buffer, signature?: string): boolean {
     if (!signature) return false;
-    if (!secret) return false;
-    const computed = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-    return computed.toLowerCase() === signature.toLowerCase();
+    const cleanSig = signature.trim().replace(/^hmac-sha256=/i, '').replace(/^sha256=/i, '').trim();
+    const candidateSecrets = [
+      this.webhookSecret,
+      this.secretKey,
+      this.publicKey,
+    ].filter(Boolean);
+
+    const bodyStr = typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8');
+
+    for (const sec of candidateSecrets) {
+      try {
+        const computed = crypto.createHmac('sha256', sec).update(bodyStr).digest('hex');
+        if (computed.toLowerCase() === cleanSig.toLowerCase()) {
+          return true;
+        }
+      } catch {}
+    }
+    return false;
   }
 }

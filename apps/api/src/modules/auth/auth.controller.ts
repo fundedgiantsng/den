@@ -159,4 +159,28 @@ export class AuthController {
     }
     return this.authService.initiateHostedKyc(userId);
   }
+
+  @Post('ninja-sync-status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sync and verify Ninja KYC verification status with official Ninja API' })
+  @ApiResponse({ status: 200, description: 'Returns synced KYC status and profile details' })
+  async syncNinjaKycStatus(@Body() body: any, @Req() req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    const user = token ? await this.authService.getSessionUser(token) : null;
+    let userId = user?.id || req.user?.id || body?.userId;
+
+    if (!userId && body?.email) {
+      const userByEmail = await prisma.user.findUnique({ where: { email: body.email } });
+      if (userByEmail) {
+        userId = userByEmail.id;
+      }
+    }
+
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required to sync Ninja KYC status');
+    }
+
+    const verificationId = body?.verificationId || body?.vs_id;
+    return this.authService.syncNinjaKycStatus(userId, verificationId);
+  }
 }

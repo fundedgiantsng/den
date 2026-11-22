@@ -820,9 +820,183 @@ export class AuthService {
       );
     }
 
+    if (sessionRes.data?.id) {
+      try {
+        await prisma.kycRecord.create({
+          data: {
+            userId: user.id,
+            provider: 'NinjaKYC',
+            externalReference: sessionRes.data.id,
+            status: 'PENDING',
+            providerPayload: {
+              url: sessionRes.data.url,
+              createdAt: new Date().toISOString(),
+            },
+          },
+        });
+      } catch (err: any) {
+        this.logger.warn(`Could not save pending KycRecord: ${err.message}`);
+      }
+    }
+
     return {
       success: true,
       data: sessionRes.data,
+    };
+  }
+
+  /**
+   * Sync and verify Ninja KYC status directly with official Ninja API
+   */
+  async syncNinjaKycStatus(userId: string, verificationId?: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User profile not found');
+    }
+
+    if (user.kycStatus === 'APPROVED') {
+      await this.ensureDedicatedNombaAccount(user.id).catch(() => {});
+      return {
+        success: true,
+        kycStatus: 'APPROVED',
+        message: 'Identity is already verified and approved.',
+        user,
+      };
+    }
+
+    let targetSessionId = verificationId?.trim();
+    if (!targetSessionId) {
+      const pendingKyc = await prisma.kycRecord.findFirst({
+        where: { userId: user.id, provider: 'NinjaKYC' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (pendingKyc?.externalReference && pendingKyc.externalReference.startsWith('vs_')) {
+        targetSessionId = pendingKyc.externalReference;
+      }
+    }
+
+    if (!targetSessionId) {
+      return {
+        success: false,
+        kycStatus: user.kycStatus,
+        message: 'No verification session ID provided or found for this user.',
+      };
+    }
+
+    const verification = await this.ninjaKycService.getVerification(targetSessionId);
+    if (!verification) {
+      return {
+        success: false,
+        kycStatus: user.kycStatus,
+        message: `Could not fetch verification details for ${targetSessionId} from Ninja.`,
+      };
+    }
+
+    const isVerified =
+      verification.status === 'completed' ||
+      verification.outcome === 'verified' ||
+      verification.status === 'approved';
+
+    if (!isVerified) {
+      return {
+        success: false,
+        kycStatus: user.kycStatus,
+        status: verification.status,
+        outcome: verification.outcome,
+        message: `Verification session ${targetSessionId} is currently ${verification.status || 'pending'} (outcome: ${verification.outcome || 'in_progress'}).`,
+      };
+    }
+
+    const verifiedFirstName =
+      verification.values?.first_name ||
+      verification.first_name ||
+      (verification.customer_name ? verification.customer_name.split(' ')[0] : null);
+    const verifiedLastName =
+      verification.values?.last_name ||
+      verification.last_name ||
+      (verification.customer_name ? verification.customer_name.split(' ').slice(1).join(' ') : null);
+    const bvn = verification.id_number || verification.bvn || null;
+
+    const finalFirstName = verifiedFirstName || user.firstName || 'Trader';
+    const finalLastName = verifiedLastName || user.lastName || 'Account';
+
+    // 1. Update user to APPROVED
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        kycStatus: 'APPROVED',
+        firstName: finalFirstName,
+        lastName: finalLastName,
+      },
+      include: { wallet: true },
+    });
+
+    // 2. Create or update KycRecord
+    const existingRec = await prisma.kycRecord.findFirst({
+      where: { userId: user.id, externalReference: targetSessionId },
+    });
+
+    if (existingRec) {
+      await prisma.kycRecord.update({
+        where: { id: existingRec.id },
+        data: {
+          status: 'APPROVED',
+          verifiedAt: new Date(),
+          providerPayload: {
+            bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+            rawBvn: bvn || undefined,
+            firstName: finalFirstName,
+            lastName: finalLastName,
+            ninjaVerification: verification,
+            verifiedAt: new Date().toISOString(),
+          },
+        },
+      });
+    } else {
+      await prisma.kycRecord.create({
+        data: {
+          userId: user.id,
+          provider: 'NinjaKYC',
+          externalReference: targetSessionId,
+          status: 'APPROVED',
+          verifiedAt: new Date(),
+          providerPayload: {
+            bvn: bvn ? '•••••••' + bvn.slice(-4) : undefined,
+            rawBvn: bvn || undefined,
+            firstName: finalFirstName,
+            lastName: finalLastName,
+            ninjaVerification: verification,
+            verifiedAt: new Date().toISOString(),
+          },
+        },
+      });
+    }
+
+    // 3. Ensure dedicated Nomba deposit account
+    await this.ensureDedicatedNombaAccount(user.id).catch((err) => {
+      this.logger.warn(`Could not provision Nomba account during KYC sync: ${err.message}`);
+    });
+
+    // 4. Notification
+    try {
+      await this.notificationsService.createNotification({
+        userId: user.id,
+        title: 'NinjaKYC Verified & Deposit Account Active!',
+        message: 'Your identity has been verified successfully. Your dedicated FundedGiants deposit account is now active.',
+        category: NotificationCategory.SECURITY,
+        priority: NotificationPriority.HIGH,
+      });
+    } catch {}
+
+    return {
+      success: true,
+      kycStatus: 'APPROVED',
+      message: 'KYC verified and approved successfully! Dedicated deposit vault active.',
+      user: updatedUser,
     };
   }
 

@@ -1206,41 +1206,43 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Receive Ninja KYC verification results' })
   async handleNinjaWebhook(
     @Body() payload: any,
+    @Req() req: any,
     @Headers('x-ninja-signature') signature?: string,
     @Headers('x-signature') altSignature?: string,
   ) {
     const rawSignature = signature || altSignature;
+    const rawBody = req?.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(payload);
+
+    let isSigValid = false;
     if (rawSignature) {
-      const isValid = this.ninjaKycService.verifyWebhookSignature(
-        JSON.stringify(payload),
-        rawSignature
-      );
-      if (!isValid) {
-        this.logger.warn('Rejected Ninja KYC webhook with invalid signature');
-        throw new UnauthorizedException('Invalid Ninja KYC signature');
-      }
+      isSigValid = this.ninjaKycService.verifyWebhookSignature(rawBody, rawSignature);
     }
 
-    const reference =
+    const verificationId =
       payload.data?.verification_id ||
-      payload.data?.customer_ref ||
-      payload.customer_ref ||
-      payload.data?.reference ||
-      payload.reference ||
-      `FG-KYC-${Date.now()}`;
+      payload.data?.id ||
+      payload.verification_id ||
+      payload.id;
 
-    const userId =
-      payload.data?.customer_ref ||
-      payload.customer_ref ||
-      payload.data?.reference ||
-      payload.reference;
-
-    if (!userId) {
-      this.logger.warn(`Invalid reference/customer_ref in KYC webhook: ${JSON.stringify(payload)}`);
-      throw new BadRequestException('Invalid reference or customer_ref in KYC webhook');
+    let apiVerification: any = null;
+    if (verificationId) {
+      apiVerification = await this.ninjaKycService.getVerification(verificationId);
     }
 
-    const outcome = payload.data?.outcome || payload.outcome || payload.data?.status || payload.status;
+    // Accept webhook if signature is valid OR verified directly against official Ninja API
+    if (!isSigValid && (!apiVerification || (apiVerification.status !== 'completed' && apiVerification.outcome !== 'verified'))) {
+      this.logger.warn(`Rejected Ninja KYC webhook: invalid signature and direct API lookup was not verified`);
+      throw new UnauthorizedException('Invalid Ninja KYC signature or unverified session');
+    }
+
+    const outcome =
+      apiVerification?.outcome ||
+      payload.data?.outcome ||
+      payload.outcome ||
+      apiVerification?.status ||
+      payload.data?.status ||
+      payload.status;
+
     const isApproved =
       outcome === 'verified' ||
       outcome === 'completed' ||
@@ -1249,15 +1251,55 @@ export class WebhooksController {
       payload.event === 'verification.completed' ||
       payload.event === 'verification.approved';
 
-    const bvn = payload.data?.bvn || payload.bvn || payload.data?.id_number || null;
-    const verifiedFirstName = payload.data?.first_name || payload.first_name;
-    const verifiedLastName = payload.data?.last_name || payload.last_name;
+    const rawRef =
+      apiVerification?.customer_ref ||
+      payload.data?.customer_ref ||
+      payload.customer_ref ||
+      payload.data?.reference ||
+      payload.reference;
+
+    const customerEmail = apiVerification?.customer_email || payload.data?.customer_email || payload.customer_email;
+
+    const reference = verificationId || rawRef || `FG-KYC-${Date.now()}`;
+
+    if (!rawRef && !customerEmail) {
+      this.logger.warn(`Invalid reference/customer_ref in KYC webhook: ${JSON.stringify(payload)}`);
+      throw new BadRequestException('Invalid reference or customer_ref in KYC webhook');
+    }
+
+    const bvn =
+      apiVerification?.id_number ||
+      payload.data?.bvn ||
+      payload.bvn ||
+      payload.data?.id_number ||
+      null;
+
+    const verifiedFirstName =
+      apiVerification?.values?.first_name ||
+      payload.data?.values?.first_name ||
+      payload.data?.first_name ||
+      payload.first_name;
+
+    const verifiedLastName =
+      apiVerification?.values?.last_name ||
+      payload.data?.values?.last_name ||
+      payload.data?.last_name ||
+      payload.last_name;
 
     if (isApproved) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { wallet: true },
-      });
+      let user = rawRef
+        ? await prisma.user.findUnique({
+            where: { id: rawRef },
+            include: { wallet: true },
+          })
+        : null;
+
+      if (!user && customerEmail) {
+        user = await prisma.user.findUnique({
+          where: { email: customerEmail },
+          include: { wallet: true },
+        });
+      }
 
       if (user) {
         const finalFirstName = verifiedFirstName || user.firstName || 'Trader';

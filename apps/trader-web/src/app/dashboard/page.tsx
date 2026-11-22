@@ -117,6 +117,32 @@ export default function DashboardOverviewPage() {
           } else if (!data.user.phone || !data.user.address) {
             setIsProfileModalOpen(true);
           }
+
+          // Check if returning from Ninja KYC callback
+          if (typeof window !== 'undefined' && data.user.kycStatus !== 'APPROVED') {
+            const fullUrl = window.location.href;
+            const vsMatch = fullUrl.match(/vs_[a-zA-Z0-9_-]+/);
+            const isCallback = fullUrl.includes('kyc=callback') || fullUrl.includes('status=success') || !!vsMatch;
+
+            if (isCallback) {
+              const vsId = vsMatch ? vsMatch[0] : undefined;
+              fetch(`${API_BASE_URL}/auth/ninja-sync-status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ verificationId: vsId }),
+              })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((sData) => {
+                  if (sData?.kycStatus === 'APPROVED') {
+                    setCurrentUser((prev) => (prev ? { ...prev, kycStatus: 'APPROVED' } : null));
+                    setIsKycModalOpen(false);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }
+                })
+                .catch(() => {});
+            }
+          }
         }
       })
       .catch(() => {});
@@ -238,9 +264,10 @@ export default function DashboardOverviewPage() {
         }}
       />
 
-      {/* 3. Non-dismissible FundedGiants KYC Modal */}
+      {/* 3. FundedGiants KYC Modal */}
       <FundedGiantsKycModal
         isOpen={isKycModalOpen}
+        onClose={() => setIsKycModalOpen(false)}
         user={{
           firstName: currentUser?.firstName,
           lastName: currentUser?.lastName,
@@ -250,6 +277,11 @@ export default function DashboardOverviewPage() {
         onSuccess={() => {
           setCurrentUser((prev) => (prev ? { ...prev, kycStatus: 'APPROVED' } : null));
           setIsKycModalOpen(false);
+          // Refresh user session and wallet details
+          fetch(`${API_BASE_URL}/auth/me`, { credentials: 'include' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => d?.user && setCurrentUser(d.user))
+            .catch(() => {});
         }}
       />
 
