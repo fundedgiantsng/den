@@ -259,7 +259,8 @@ export class SteraTraderService {
     if (!this.apiKey) return false;
 
     const amountKobo = Math.abs(Math.round(amountNgn * 100));
-    const kind = amountNgn >= 0 ? 'deposit' : 'withdrawal';
+    // SteraTrader CRM API accepts 'deposit' for credits and 'credit_out' for debits (withdrawals/resets)
+    const kind = amountNgn >= 0 ? 'deposit' : 'credit_out';
     this.logger.log(`Executing SteraTrader transaction for ${accountNumber}: ${kind} ₦${Math.abs(amountNgn).toLocaleString()} (${amountKobo} kobo) [${comment}]`);
 
     try {
@@ -414,19 +415,55 @@ export class SteraTraderService {
     }
 
     const mapPosition = (p: any): SteraTraderPosition => {
-      const rawProfit = Number(p.profit ?? p.pnl ?? p.floating ?? 0);
+      // SteraTrader uses realised_pnl on closed positions, or floating/unrealised_pnl on open positions
+      const rawProfit = p.realised_pnl != null ? Number(p.realised_pnl)
+        : p.realized_pnl != null ? Number(p.realized_pnl)
+        : p.unrealised_pnl != null ? Number(p.unrealised_pnl)
+        : p.unrealized_pnl != null ? Number(p.unrealized_pnl)
+        : p.profit != null ? Number(p.profit)
+        : p.pnl != null ? Number(p.pnl)
+        : p.floating != null ? Number(p.floating)
+        : p.net_profit != null ? Number(p.net_profit)
+        : 0;
+
+      const swap = Number(p.swap || 0);
+      const commission = Number(p.commission || 0);
+      const totalRawProfit = rawProfit + swap + commission;
+
       // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
-      const profitNgn = rawProfit !== 0 && Math.abs(rawProfit) >= 100 ? rawProfit / 100 : rawProfit;
+      let profitNgn = totalRawProfit !== 0 && Math.abs(totalRawProfit) >= 100 ? totalRawProfit / 100 : totalRawProfit;
+
       const rawDir = String(p.direction ?? p.type ?? p.side ?? p.cmd ?? 'BUY').toUpperCase();
       const direction: 'BUY' | 'SELL' = rawDir.includes('SELL') || rawDir === '1' ? 'SELL' : 'BUY';
+      const volume = Number(p.volume ?? p.lots ?? p.size ?? 0.1);
+      const openPrice = Number(p.open_price ?? p.openPrice ?? p.price ?? 0);
+      const closePrice = p.close_price != null ? Number(p.close_price) : p.closePrice != null ? Number(p.closePrice) : null;
+      const symbol = String(p.symbol || 'EURUSD');
+
+      // Theoretical fallback calculation if profit is still 0 but trade was closed with price movement
+      if (profitNgn === 0 && closePrice != null && openPrice > 0 && closePrice !== openPrice) {
+        const dirMultiplier = direction === 'BUY' ? 1 : -1;
+        const priceDelta = (closePrice - openPrice) * dirMultiplier;
+        let contractSize = 100000;
+        const symUpper = symbol.toUpperCase();
+        if (symUpper.includes('XAU') || symUpper.includes('GOLD')) {
+          contractSize = 100;
+        } else if (symUpper.includes('BTC') || symUpper.includes('ETH') || symUpper.includes('CRYPTO')) {
+          contractSize = 1;
+        } else if (symUpper.includes('US30') || symUpper.includes('NAS') || symUpper.includes('SPX') || symUpper.includes('GER') || symUpper.includes('INDEX')) {
+          contractSize = 1;
+        }
+        const usdProfit = priceDelta * contractSize * volume;
+        profitNgn = Math.round(usdProfit * 1485 * 100) / 100;
+      }
 
       return {
         id: String(p.id ?? p.ticket ?? p.position_id ?? p.order_id ?? `pos-${Date.now()}`),
-        symbol: String(p.symbol || 'EURUSD'),
+        symbol,
         direction,
-        volume: Number(p.volume ?? p.lots ?? p.size ?? 0.1),
-        openPrice: Number(p.open_price ?? p.openPrice ?? p.price ?? 0),
-        closePrice: p.close_price != null ? Number(p.close_price) : p.closePrice != null ? Number(p.closePrice) : null,
+        volume,
+        openPrice,
+        closePrice,
         stopLoss: p.stop_loss != null ? Number(p.stop_loss) : p.stopLoss != null ? Number(p.stopLoss) : null,
         takeProfit: p.take_profit != null ? Number(p.take_profit) : p.takeProfit != null ? Number(p.takeProfit) : null,
         profitNgn,
@@ -437,7 +474,7 @@ export class SteraTraderService {
 
     const aggregatedPositions: Map<string, SteraTraderPosition> = new Map();
 
-    // 1. Fetch current open & recent positions from /accounts/{login}/positions
+    // 1. Fetch current open positions from /accounts/{login}/positions
     try {
       const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions`, {
         method: 'GET',
@@ -461,9 +498,9 @@ export class SteraTraderService {
       this.logger.error(`Error querying SteraTrader positions for ${accountNumber}: ${err.message}`);
     }
 
-    // 2. Query historical / closed trades endpoint: /accounts/{login}/trades or /accounts/{login}/orders
+    // 2. Query closed positions via /accounts/{login}/positions?status=closed
     try {
-      const tradesResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/trades`, {
+      const closedResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions?status=closed`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -471,24 +508,22 @@ export class SteraTraderService {
         },
       });
 
-      if (tradesResponse.ok) {
-        const resJson = await tradesResponse.json();
-        const rawTrades = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
-        for (const raw of rawTrades) {
+      if (closedResponse.ok) {
+        const resJson = await closedResponse.json();
+        const rawClosed = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+        for (const raw of rawClosed) {
           const mapped = mapPosition(raw);
           aggregatedPositions.set(mapped.id, mapped);
         }
-      } else if (tradesResponse.status !== 404) {
-        this.logger.warn(`SteraTrader /trades responded with HTTP ${tradesResponse.status} for ${accountNumber}`);
       }
     } catch (err: any) {
-      this.logger.debug(`Could not fetch /trades for ${accountNumber}: ${err.message}`);
+      this.logger.debug(`Could not fetch closed positions for ${accountNumber}: ${err.message}`);
     }
 
-    // 3. Fallback/complement: Query closed positions via /accounts/{login}/positions?status=closed
-    if (aggregatedPositions.size === 0 || Array.from(aggregatedPositions.values()).every(p => !p.closedAt)) {
+    // 3. Fallback/complement: Query orders if positions were empty
+    if (aggregatedPositions.size === 0) {
       try {
-        const closedResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions?status=closed`, {
+        const ordersResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/orders`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -496,16 +531,16 @@ export class SteraTraderService {
           },
         });
 
-        if (closedResponse.ok) {
-          const resJson = await closedResponse.json();
-          const rawClosed = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
-          for (const raw of rawClosed) {
+        if (ordersResponse.ok) {
+          const resJson = await ordersResponse.json();
+          const rawOrders = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+          for (const raw of rawOrders) {
             const mapped = mapPosition(raw);
             aggregatedPositions.set(mapped.id, mapped);
           }
         }
       } catch (err: any) {
-        this.logger.debug(`Could not fetch closed positions for ${accountNumber}: ${err.message}`);
+        this.logger.debug(`Could not fetch orders for ${accountNumber}: ${err.message}`);
       }
     }
 

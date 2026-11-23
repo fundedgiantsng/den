@@ -57,6 +57,23 @@ export default function CertificatesPage() {
     loadCertificates();
   }, [apiUrl]);
 
+  const handleDownload = async (url: string, fileName: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, '_blank');
+    }
+  };
+
   const filteredCerts = certificates.filter((cert) => {
     if (filter === 'ALL') return true;
     return cert.type === filter;
@@ -218,14 +235,14 @@ export default function CertificatesPage() {
 
                   {/* Actions */}
                   <div className="pt-2 border-t border-white/[0.04]">
-                    <a
-                      href={cert.certificateUrl}
-                      download={`${cert.id}.jpg`}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#10B981] hover:bg-[#0ea371] text-[#060B11] font-bold text-xs transition-all shadow-sm active:scale-[0.98]"
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(cert.certificateUrl, `${cert.id}.jpg`)}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#10B981] hover:bg-[#0ea371] text-[#060B11] font-bold text-xs transition-all shadow-sm active:scale-[0.98] cursor-pointer"
                     >
                       <Download className="h-3.5 w-3.5" />
                       Download High-Res JPEG
-                    </a>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -244,13 +261,13 @@ export default function CertificatesPage() {
                 <p className="text-xs font-mono text-[#10B981]">ID: {selectedPreview.id}</p>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={selectedPreview.certificateUrl}
-                  download={`${selectedPreview.id}.jpg`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#10B981] text-[#060B11] text-xs font-bold hover:bg-[#0ea371] transition-colors"
+                <button
+                  type="button"
+                  onClick={() => handleDownload(selectedPreview.certificateUrl, `${selectedPreview.id}.jpg`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#10B981] text-[#060B11] text-xs font-bold hover:bg-[#0ea371] transition-colors cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5" /> Download
-                </a>
+                </button>
                 <button
                   onClick={() => setSelectedPreview(null)}
                   className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-gray-400 hover:text-white transition-colors"

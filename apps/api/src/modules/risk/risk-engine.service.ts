@@ -1346,7 +1346,11 @@ export class RiskEngineService {
         OR: [{ id: accountId }, { accountNumber: accountId }],
       },
       include: {
-        challenge: true,
+        challenge: {
+          include: {
+            product: true,
+          },
+        },
       },
     });
 
@@ -1368,9 +1372,9 @@ export class RiskEngineService {
     const payoutAmount = eligibility.withdrawableProfitNgn;
     const reference = `FG-PAYOUT-${Date.now()}`;
     const targetStartBalance = Number(
+      account.challenge?.product?.accountSize ||
       (account.challenge as any)?.accountSizeNgn ||
-      account.initialBalance ||
-      5000000
+      (account.initialBalance && Number(account.initialBalance) > 0 ? Number(account.initialBalance) : 50000000)
     );
 
     // Execute atomic disbursement transaction

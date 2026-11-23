@@ -859,19 +859,37 @@ export class ChallengesService implements OnModuleInit {
         tradingDays: 1,
         status: acc.status,
         leverage: isPhoenix ? '1:30' : '1:100',
-        trades: acc.tradeRecords.map((t) => ({
-          ticketId: t.externalTradeId,
-          symbol: t.symbol,
-          direction: t.direction,
-          volume: Number(t.volume),
-          openPrice: Number(t.openPrice),
-          closePrice: t.closePrice ? Number(t.closePrice) : null,
-          stopLoss: t.stopLoss ? Number(t.stopLoss) : null,
-          takeProfit: t.takeProfit ? Number(t.takeProfit) : null,
-          profitNgn: t.profit ? Number(t.profit) : 0,
-          openedAt: t.openedAt,
-          closedAt: t.closedAt,
-        })),
+        trades: acc.tradeRecords.map((t) => {
+          let profitNgn = t.profit != null ? Number(t.profit) : 0;
+          if (profitNgn === 0 && t.closePrice != null && Number(t.openPrice) > 0 && Number(t.closePrice) !== Number(t.openPrice)) {
+            const dirMultiplier = t.direction === 'BUY' ? 1 : -1;
+            const priceDelta = (Number(t.closePrice) - Number(t.openPrice)) * dirMultiplier;
+            let contractSize = 100000;
+            const sym = (t.symbol || '').toUpperCase();
+            if (sym.includes('XAU') || sym.includes('GOLD')) {
+              contractSize = 100;
+            } else if (sym.includes('BTC') || sym.includes('ETH') || sym.includes('CRYPTO')) {
+              contractSize = 1;
+            } else if (sym.includes('US30') || sym.includes('NAS') || sym.includes('SPX') || sym.includes('GER') || sym.includes('INDEX')) {
+              contractSize = 1;
+            }
+            const usd = priceDelta * contractSize * Number(t.volume);
+            profitNgn = Math.round(usd * 1485 * 100) / 100;
+          }
+          return {
+            ticketId: t.externalTradeId,
+            symbol: t.symbol,
+            direction: t.direction,
+            volume: Number(t.volume),
+            openPrice: Number(t.openPrice),
+            closePrice: t.closePrice ? Number(t.closePrice) : null,
+            stopLoss: t.stopLoss ? Number(t.stopLoss) : null,
+            takeProfit: t.takeProfit ? Number(t.takeProfit) : null,
+            profitNgn,
+            openedAt: t.openedAt,
+            closedAt: t.closedAt,
+          };
+        }),
       };
     }
 

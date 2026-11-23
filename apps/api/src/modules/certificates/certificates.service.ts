@@ -117,9 +117,10 @@ export class CertificatesService {
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
+    const nameFontSize = cleanName.length > 28 ? 26 : cleanName.length > 20 ? 30 : 34;
 
     // Granular scan: line begins at x=113, ends at x=581 (width = 468px), y=348
-    // Font: exact typography of 'Giants', normal weight (not bold), font-size 64
+    // Font: exact typography of 'Giants', normal weight (not bold), cleanly fits line width
     const overlaySvg = `
       <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -144,8 +145,8 @@ export class CertificatesService {
           </style>
         </defs>
 
-        <!-- Trader Name scaled across full 468px line width in Title Case, not bold -->
-        <text x="113" y="336" font-size="64" class="trader-name" textLength="468" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
+        <!-- Trader Name placed cleanly inside 468px line width in Title Case, not bold -->
+        <text x="113" y="336" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
 
         <!-- Issue Date (enlarged, bold white) -->
         <text x="168" y="643" font-size="17" class="date-text">${issueDate}</text>
@@ -248,11 +249,13 @@ export class CertificatesService {
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
+    const nameFontSize = cleanName.length > 28 ? 26 : cleanName.length > 20 ? 30 : 34;
+    const amountFontSize = formattedAmount.length > 18 ? 28 : formattedAmount.length > 14 ? 32 : 36;
 
     // Granular scan:
     // Name line begins at x=106, ends at x=569 (width = 463px), y=371
     // Profit Split line begins at x=105, ends at x=575 (width = 470px), y=484
-    // Font: exact typography of 'Giants', normal weight (not bold), scaled to fill line
+    // Font: exact typography of 'Giants', normal weight (not bold), cleanly fits inside line width
     const overlaySvg = `
       <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -289,11 +292,11 @@ export class CertificatesService {
           </style>
         </defs>
 
-        <!-- 1. Trader Name scaled across full 463px line width in Title Case, not bold -->
-        <text x="106" y="358" font-size="64" class="trader-name" textLength="463" lengthAdjust="spacingAndGlyphs">${cleanName}</text>
+        <!-- 1. Trader Name placed cleanly inside line width in Title Case, not bold -->
+        <text x="106" y="358" font-size="${nameFontSize}" class="trader-name">${cleanName}</text>
 
-        <!-- 2. Profit Split full amount scaled across full 470px line width -->
-        <text x="105" y="472" font-size="60" class="profit-split" textLength="470" lengthAdjust="spacingAndGlyphs">${formattedAmount}</text>
+        <!-- 2. Profit Split full amount placed cleanly inside line width -->
+        <text x="105" y="472" font-size="${amountFontSize}" class="profit-split">${formattedAmount}</text>
 
         <!-- 3. Date right below Profit Split section, placed on Date line at y=531 -->
         <text x="160" y="527" font-size="16" class="date-text">${issueDate}</text>
@@ -439,6 +442,7 @@ export class CertificatesService {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
+        tradingAccounts: true,
         challenges: {
           include: { product: true, tradingAccount: true },
         },
@@ -496,15 +500,17 @@ export class CertificatesService {
     }
 
     // 2. Payout certificates for approved payouts recorded in RiskEvents / Deposits strictly for this user
-    const userAccountIds = user.challenges
-      .map((c) => c.tradingAccount?.id)
-      .filter(Boolean) as string[];
+    const userAccountIds = Array.from(new Set([
+      ...(user.tradingAccounts || []).map((a) => a.id),
+      ...(user.challenges || []).map((c) => c.tradingAccount?.id).filter(Boolean) as string[],
+    ]));
 
     const payouts = await prisma.riskEvent.findMany({
       where: {
         eventType: 'AUTOMATED_PAYOUT_APPROVED',
         OR: [
           { challenge: { userId: user.id } },
+          { tradingAccount: { userId: user.id } },
           { tradingAccountId: { in: userAccountIds } },
         ],
       },
