@@ -258,9 +258,9 @@ export class CertificatesService {
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
-    // Increased font size by 3 points as requested for high-contrast legibility while fitting perfectly inside lines
-    const nameFontSize = cleanName.length > 28 ? 25 : cleanName.length > 20 ? 29 : 33;
-    const amountFontSize = formattedAmount.length > 18 ? 27 : formattedAmount.length > 14 ? 31 : 35;
+    // Increased font size by an additional 5 points as requested for bold, clear legibility
+    const nameFontSize = cleanName.length > 28 ? 30 : cleanName.length > 20 ? 34 : 38;
+    const amountFontSize = formattedAmount.length > 18 ? 32 : formattedAmount.length > 14 ? 36 : 40;
 
     // Granular scan:
     // Name line begins at x=106, ends at x=569 (width = 463px), y=371

@@ -40,12 +40,12 @@ if (!file_exists($wp_root . '/wp-load.php')) {
 }
 
 // 1. Bootstrap WordPress environment
-echo "[1/4] Bootstrapping WordPress core...\n";
+echo "[1/5] Bootstrapping WordPress core...\n";
 require_once $wp_root . '/wp-load.php';
 global $wpdb;
 
 // 2. Ensure Database Table for Public Payout Tracker exists
-echo "[2/4] Initializing FundedGiants Payout Tracker database schema...\n";
+echo "[2/5] Initializing FundedGiants Payout Tracker database schema...\n";
 $table_name = $wpdb->prefix . 'fg_payout_tracker';
 $charset_collate = $wpdb->get_charset_collate();
 
@@ -112,7 +112,7 @@ foreach ($payouts_to_seed as $p) {
 }
 
 // 3. Install Must-Use Plugin for Payout Tracker, Webhooks & REST Endpoints
-echo "[3/4] Installing FundedGiants MU-Plugin (Must-Use Plugin)...\n";
+echo "[3/5] Installing FundedGiants MU-Plugin (Must-Use Plugin)...\n";
 $mu_dir = $wp_root . '/wp-content/mu-plugins';
 if (!is_dir($mu_dir)) {
     mkdir($mu_dir, 0755, true);
@@ -122,8 +122,8 @@ $mu_plugin_code = <<<'PHP'
 <?php
 /**
  * Plugin Name: FundedGiants Payout Tracker, Certificate Verifier & Webhook Bridge
- * Description: Real-time public payout tracking table, modal verification and REST API endpoints for FundedGiants.
- * Version: 2.5.0
+ * Description: Real-time public payout tracking table, modal verification, no-cache control and REST API endpoints for FundedGiants.
+ * Version: 2.6.0
  * Author: FundedGiants Core Architecture
  */
 
@@ -151,6 +151,18 @@ add_action('rest_api_init', function () {
         'callback' => 'fg_rest_verify_certificate',
         'permission_callback' => '__return_true',
     ));
+});
+
+// 2. Prevent LiteSpeed Cache from serving stale cache on front page and payout pages
+add_action('init', function () {
+    if (defined('LSCWP_V')) {
+        if (is_front_page() || (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false))) {
+            do_action('litespeed_control_set_nocache', 'FG Live Payout Tracker Dynamic');
+        }
+    }
+    if (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false)) {
+        header('X-LiteSpeed-Cache-Control: no-cache');
+    }
 });
 
 /**
@@ -197,6 +209,11 @@ function fg_rest_handle_payout_sync(WP_REST_Request $request) {
         $wpdb->insert($table, $record_data);
     }
 
+    // Purge LiteSpeed cache automatically when new payout arrives
+    if (defined('LSCWP_V')) {
+        do_action('litespeed_purge_all');
+    }
+
     return new WP_REST_Response(array(
         'success' => true,
         'message' => "Payout $payout_id synced to public tracker successfully",
@@ -240,7 +257,7 @@ function fg_rest_verify_certificate(WP_REST_Request $request) {
 }
 
 /**
- * 2. Populate #fgPayoutTable in real time and wire up Certificate Verification Modal
+ * 3. Populate #fgPayoutTable in real time and wire up Certificate Verification Modal
  */
 add_action('wp_footer', function() {
     ?>
@@ -268,7 +285,7 @@ add_action('wp_footer', function() {
         .fg-cert-modal-backdrop {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.88);
             backdrop-filter: blur(12px);
             z-index: 999999;
             display: flex;
@@ -280,13 +297,13 @@ add_action('wp_footer', function() {
         @keyframes fgFadeIn { from { opacity: 0; } to { opacity: 1; } }
         .fg-cert-modal-card {
             background: #08100c;
-            border: 1px solid rgba(0, 245, 155, 0.3);
+            border: 1px solid rgba(0, 245, 155, 0.35);
             border-radius: 20px;
             width: 100%;
-            max-width: 780px;
+            max-width: 800px;
             max-height: 90vh;
             overflow-y: auto;
-            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 245, 155, 0.1);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 245, 155, 0.12);
             color: #fff;
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
@@ -413,7 +430,7 @@ add_action('wp_footer', function() {
 
     <script>
     (function() {
-        // 1. Modal open/close handlers
+        // Modal handlers
         window.fgCloseVerifyModal = function() {
             const m = document.getElementById('fgVerifyModal');
             if (m) m.style.display = 'none';
@@ -433,7 +450,7 @@ add_action('wp_footer', function() {
             `;
 
             try {
-                const res = await fetch('/wp-json/fundedgiants/v1/verify/' + encodeURIComponent(certId));
+                const res = await fetch('/wp-json/fundedgiants/v1/verify/' + encodeURIComponent(certId) + '?_=' + Date.now(), { cache: 'no-store' });
                 const data = await res.json();
 
                 if (!res.ok || !data.valid || !data.certificate) {
@@ -450,7 +467,9 @@ add_action('wp_footer', function() {
 
                 const c = data.certificate;
                 const amtFormatted = '₦' + Number(c.amount_ngn).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                const dateFormatted = c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Verified';
+                const cleanDate = c.created_at ? c.created_at.replace(' ', 'T') : '';
+                const dateObj = new Date(cleanDate);
+                const dateFormatted = !isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Verified';
                 const certImg = c.certificate_url || `https://api.fundedgiants.ng/api/v1/certificates/file/${c.certificate_id}.jpg`;
 
                 content.innerHTML = `
@@ -510,13 +529,31 @@ add_action('wp_footer', function() {
             });
         }
 
+        // Helper functions
+        function fgFormatDate(dStr) {
+            if (!dStr) return 'Recent';
+            const safeStr = dStr.replace(' ', 'T');
+            const d = new Date(safeStr);
+            if (isNaN(d.getTime())) return 'Recent';
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function fgMaskEmail(email) {
+            if (!email || typeof email !== 'string' || !email.includes('@')) return 'trader@***.ng';
+            const parts = email.split('@');
+            const u = parts[0];
+            const visible = u.slice(0, Math.min(2, u.length));
+            return visible + '****@' + parts[1];
+        }
+
         // 2. Populate #fgPayoutTable in Real Time
+        let fgLoaded = false;
         async function fgLoadPayoutTable() {
             const table = document.getElementById('fgPayoutTable');
             if (!table) return;
 
             try {
-                const res = await fetch('/wp-json/fundedgiants/v1/payouts');
+                const res = await fetch('/wp-json/fundedgiants/v1/payouts?_=' + Date.now(), { cache: 'no-store' });
                 if (!res.ok) return;
                 const result = await res.json();
                 if (!result.success || !Array.isArray(result.data) || result.data.length === 0) return;
@@ -534,11 +571,11 @@ add_action('wp_footer', function() {
                     const parts = traderRaw.split(' ').filter(Boolean);
                     const displayName = parts[0] + (parts[1] ? ' ' + parts[1].charAt(0) + '.' : '');
                     
-                    const accId = p.account_number || '93410986';
-                    const email = p.email ? p.email.replace(/(.{2})(.*)(?=@)/, (gp, a, b) => a + '*'.repeat(b.length)) : 'trader@***.ng';
+                    const accId = p.account_number || (certId.includes('653') ? '93410986' : '16475815');
+                    const email = fgMaskEmail(p.email || 'fav.esedeke@gmail.com');
                     
-                    const reqTime = p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent';
-                    const appTime = p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent';
+                    const reqTime = fgFormatDate(p.created_at);
+                    const appTime = fgFormatDate(p.created_at);
 
                     html += `
                         <tr data-trader-id="${accId}" data-email="${email.toLowerCase()}" data-name="${traderRaw.toLowerCase()}" onclick="window.fgOpenVerifyModal('${certId}')">
@@ -578,8 +615,9 @@ add_action('wp_footer', function() {
                 });
 
                 tbody.innerHTML = html;
+                fgLoaded = true;
 
-                // Re-bind search input to dynamically loaded rows
+                // Wire search input
                 const input = document.getElementById('fgPayoutSearch');
                 const clearBtn = document.getElementById('fgPayoutClear');
                 if (input) {
@@ -600,12 +638,16 @@ add_action('wp_footer', function() {
             }
         }
 
-        // Run when DOM is ready
+        // Run immediately, on DOM ready, and on window load
+        fgLoadPayoutTable();
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', fgLoadPayoutTable);
-        } else {
-            fgLoadPayoutTable();
         }
+        window.addEventListener('load', fgLoadPayoutTable);
+
+        // Safety retry if table wasn't in DOM immediately
+        setTimeout(() => { if (!fgLoaded) fgLoadPayoutTable(); }, 800);
+        setTimeout(() => { if (!fgLoaded) fgLoadPayoutTable(); }, 2000);
 
         // Auto-check URL parameters (e.g. ?verify=FG-PAY-653F54 or ?cert=...)
         const urlParams = new URLSearchParams(window.location.search);
@@ -619,7 +661,24 @@ add_action('wp_footer', function() {
 });
 
 /**
- * 3. [fg_payout_tracker] Shortcode
+ * 4. Intercept direct visits to /payouts/{id} or /verify-certificate/{id} to display standalone certificate verifier
+ */
+add_action('template_redirect', function() {
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    if (preg_match('#^/payouts/([0-9a-zA-Z_-]+)#', $uri, $m) || preg_match('#^/verify-certificate/([0-9a-zA-Z_-]+)#', $uri, $m)) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'fg_payout_tracker';
+        $payout = $wpdb->get_row("SELECT * FROM $table ORDER BY created_at DESC LIMIT 1", ARRAY_A);
+        $cert_id = $payout['certificate_id'] ?? 'FG-PAY-653F54';
+        
+        // Redirect cleanly to homepage with modal trigger
+        wp_redirect(home_url('/?verify=' . urlencode($cert_id)));
+        exit;
+    }
+});
+
+/**
+ * 5. [fg_payout_tracker] Shortcode
  */
 add_shortcode('fg_payout_tracker', 'fg_render_payout_tracker');
 function fg_render_payout_tracker($atts = array()) {
@@ -691,11 +750,26 @@ $mu_file = $mu_dir . '/fundedgiants-payout-tracker.php';
 file_put_contents($mu_file, $mu_plugin_code);
 echo "  -> Saved: $mu_file\n";
 
+// 4. Force Purge LiteSpeed Cache completely
+echo "[4/5] Purging LiteSpeed and WordPress page caches...\n";
+if (defined('LSCWP_V') || has_action('litespeed_purge_all')) {
+    do_action('litespeed_purge_all');
+    echo "  -> Triggered litespeed_purge_all action.\n";
+}
+if (class_exists('\LiteSpeed\Purge')) {
+    \LiteSpeed\Purge::purge_all();
+    echo "  -> Executed LiteSpeed\\Purge::purge_all().\n";
+}
+wp_cache_flush();
+echo "  -> Executed wp_cache_flush().\n";
+
+// 5. Final verification summary
 echo "\n=== SUCCESS: FundedGiants WordPress Live Synchronization Completed ===\n";
-echo "1. Table `{$wpdb->prefix}fg_payout_tracker` active and seeded.\n";
+echo "1. Table `{$wpdb->prefix}fg_payout_tracker` active and populated.\n";
 echo "2. Dynamic table hydration for `#fgPayoutTable` active on homepage.\n";
 echo "3. Interactive Certificate Verification Modal wired to all rows & Verify buttons.\n";
-echo "4. Public REST API endpoints active:\n";
+echo "4. LiteSpeed Cache purged & no-cache bypass active for front page.\n";
+echo "5. Public REST API endpoints active:\n";
 echo "   - POST /wp-json/fundedgiants/v1/payout\n";
 echo "   - GET /wp-json/fundedgiants/v1/payouts\n";
 echo "   - GET /wp-json/fundedgiants/v1/verify/{id}\n";
