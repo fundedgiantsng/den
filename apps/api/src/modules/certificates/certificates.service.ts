@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import sharp from 'sharp';
 import { prisma } from '@fundedgiants/database';
 
@@ -18,17 +19,59 @@ export interface GeneratedCertificateResult {
 export class CertificatesService {
   private readonly logger = new Logger(CertificatesService.name);
 
-  private readonly templatesDir = path.join(__dirname, '../../../assets/certificates/templates');
-  private readonly generatedDir = path.join(__dirname, '../../../../trader-web/public/certificates/generated');
+  private getTemplatesDir(): string {
+    const candidateDirs = [
+      path.resolve(process.cwd(), 'apps/api/assets/certificates/templates'),
+      path.resolve(process.cwd(), 'assets/certificates/templates'),
+      path.resolve(process.cwd(), 'apps/trader-web/public/certificates/templates'),
+      path.resolve(__dirname, '../../../assets/certificates/templates'),
+      path.resolve(__dirname, '../../../../apps/api/assets/certificates/templates'),
+      path.resolve(__dirname, '../../../../trader-web/public/certificates/templates'),
+      '/var/www/fundedgiants/apps/trader-web/public/certificates/templates',
+      '/var/www/fundedgiants/apps/api/assets/certificates/templates',
+    ];
+    for (const d of candidateDirs) {
+      if (fs.existsSync(d) && fs.existsSync(path.join(d, 'payout-certificate-template.jpg'))) {
+        return d;
+      }
+    }
+    return candidateDirs[0];
+  }
 
-  // In-memory template buffer caching for ultra-high throughput (hundreds of certs/sec without disk I/O)
+  getGeneratedDirs(): string[] {
+    const dirs = [
+      path.resolve(process.cwd(), 'apps/trader-web/public/certificates/generated'),
+      path.resolve(process.cwd(), 'apps/api/assets/certificates/generated'),
+      path.resolve(__dirname, '../../../../trader-web/public/certificates/generated'),
+      path.resolve(__dirname, '../../../assets/certificates/generated'),
+      '/var/www/fundedgiants/apps/trader-web/public/certificates/generated',
+    ];
+    const validDirs: string[] = [];
+    for (const d of dirs) {
+      try {
+        if (!fs.existsSync(d)) {
+          fs.mkdirSync(d, { recursive: true });
+        }
+        if (!validDirs.includes(d)) validDirs.push(d);
+      } catch (e) {}
+    }
+    return validDirs;
+  }
+
+  findCertificateFile(fileName: string): string | null {
+    for (const dir of this.getGeneratedDirs()) {
+      const fullPath = path.join(dir, fileName);
+      if (fs.existsSync(fullPath)) return fullPath;
+    }
+    return null;
+  }
+
+  // In-memory template buffer caching for ultra-high throughput
   private completionTemplateBuffer: Buffer | null = null;
   private payoutTemplateBuffer: Buffer | null = null;
 
   constructor() {
-    if (!fs.existsSync(this.generatedDir)) {
-      fs.mkdirSync(this.generatedDir, { recursive: true });
-    }
+    this.getGeneratedDirs();
     this.prewarmTemplates();
   }
 
@@ -37,11 +80,12 @@ export class CertificatesService {
    */
   private prewarmTemplates() {
     try {
-      const completionPath = path.join(this.templatesDir, 'rhino-rush-completion-template.jpg');
+      const tDir = this.getTemplatesDir();
+      const completionPath = path.join(tDir, 'rhino-rush-completion-template.jpg');
       if (fs.existsSync(completionPath)) {
         this.completionTemplateBuffer = fs.readFileSync(completionPath);
       }
-      const payoutPath = path.join(this.templatesDir, 'payout-certificate-template.jpg');
+      const payoutPath = path.join(tDir, 'payout-certificate-template.jpg');
       if (fs.existsSync(payoutPath)) {
         this.payoutTemplateBuffer = fs.readFileSync(payoutPath);
       }
@@ -57,17 +101,19 @@ export class CertificatesService {
     recipientName: string;
     accountNumber: string;
     date?: string;
+    customCertId?: string;
   }): Promise<GeneratedCertificateResult> {
-    const certificateId = `FG-CERT-${Math.floor(100000 + Math.random() * 900000)}`;
+    const certificateId = params.customCertId || `FG-CERT-${Math.floor(100000 + Math.random() * 900000)}`;
     const issueDate = params.date || new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     });
 
-    const templatePath = path.join(this.templatesDir, 'rhino-rush-completion-template.jpg');
+    const templatePath = path.join(this.getTemplatesDir(), 'rhino-rush-completion-template.jpg');
     const fileName = `${certificateId}.jpg`;
-    const outputPath = path.join(this.generatedDir, fileName);
+    const genDirs = this.getGeneratedDirs();
+    const outputPath = path.join(genDirs[0] || process.cwd(), fileName);
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
@@ -111,18 +157,25 @@ export class CertificatesService {
 
     try {
       const baseBuffer = this.completionTemplateBuffer || fs.readFileSync(templatePath);
-      await sharp(baseBuffer)
+      const imageBuffer = await sharp(baseBuffer)
         .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
         .jpeg({ quality: 95 })
-        .toFile(outputPath);
+        .toBuffer();
+
+      for (const dir of genDirs) {
+        try {
+          fs.writeFileSync(path.join(dir, fileName), imageBuffer);
+        } catch (e: any) {}
+      }
 
       this.logger.log(`Generated Completion Certificate ${certificateId} for ${cleanName}`);
+      const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
 
       return {
         certificateId,
         type: 'COMPLETION',
         filePath: outputPath,
-        publicUrl: `/certificates/generated/${fileName}`,
+        publicUrl: `${apiBase}/api/v1/certificates/file/${fileName}`,
         issueDate,
         recipientName: cleanName,
       };
@@ -164,8 +217,9 @@ export class CertificatesService {
     userEmail?: string;
     payoutReference?: string;
     date?: string;
+    customCertId?: string;
   }): Promise<GeneratedCertificateResult> {
-    const certificateId = `FG-PAY-${Math.floor(100000 + Math.random() * 900000)}`;
+    const certificateId = params.customCertId || `FG-PAY-${Math.floor(100000 + Math.random() * 900000)}`;
     const issueDate = params.date || new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -187,9 +241,10 @@ export class CertificatesService {
     const traderSplitK = this.formatK(traderSplit);
     const companySplitK = this.formatK(companySplit);
 
-    const templatePath = path.join(this.templatesDir, 'payout-certificate-template.jpg');
+    const templatePath = path.join(this.getTemplatesDir(), 'payout-certificate-template.jpg');
     const fileName = `${certificateId}.jpg`;
-    const outputPath = path.join(this.generatedDir, fileName);
+    const genDirs = this.getGeneratedDirs();
+    const outputPath = path.join(genDirs[0] || process.cwd(), fileName);
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
@@ -247,17 +302,17 @@ export class CertificatesService {
         <text x="110" y="562" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
 
         <!-- 5. Throne Jewel Badges (GENEROUS OVER-SIZED PILLS - 100% COVERAGE) -->
-        <!-- Top Right Badge: Total Profit (Covers $6,980 with generous margins) -->
+        <!-- Top Right Badge: Total Profit -->
         <rect x="740" y="546" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
         <circle cx="760" cy="565" r="4.5" fill="#10B981"/>
         <text x="774" y="570" class="pill-text">${totalProfitK}</text>
 
-        <!-- Left Badge: Trader Split (Covers $4,886 with generous margins) -->
+        <!-- Left Badge: Trader Split -->
         <rect x="622" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
         <circle cx="642" cy="621" r="4.5" fill="#10B981"/>
         <text x="656" y="626" class="pill-text">${traderSplitK}</text>
 
-        <!-- Bottom Right Badge: Company Split (Covers $2,094 with generous margins) -->
+        <!-- Bottom Right Badge: Company Split -->
         <rect x="784" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
         <circle cx="804" cy="621" r="4.5" fill="#10B981"/>
         <text x="818" y="626" class="pill-text">${companySplitK}</text>
@@ -266,14 +321,21 @@ export class CertificatesService {
 
     try {
       const baseBuffer = this.payoutTemplateBuffer || fs.readFileSync(templatePath);
-      await sharp(baseBuffer)
+      const imageBuffer = await sharp(baseBuffer)
         .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
         .jpeg({ quality: 95 })
-        .toFile(outputPath);
+        .toBuffer();
+
+      for (const dir of genDirs) {
+        try {
+          fs.writeFileSync(path.join(dir, fileName), imageBuffer);
+        } catch (e: any) {}
+      }
 
       this.logger.log(`Generated Payout Certificate ${certificateId} for ${cleanName} (${formattedAmount})`);
 
       const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
+      const certificateUrl = `${apiBase}/api/v1/certificates/file/${fileName}`;
 
       // Dispatch payout record to WordPress live payout tracker & validation system
       await this.syncPayoutToWordPress({
@@ -282,14 +344,14 @@ export class CertificatesService {
         name: cleanName,
         approvedAmount: params.amountNgn,
         certificateId,
-        certificateUrl: `${apiBase}/certificates/generated/${fileName}`,
+        certificateUrl,
       });
 
       return {
         certificateId,
         type: 'PAYOUT',
         filePath: outputPath,
-        publicUrl: `/certificates/generated/${fileName}`,
+        publicUrl: certificateUrl,
         issueDate,
         recipientName: cleanName,
         amountNgn: params.amountNgn,
@@ -311,9 +373,11 @@ export class CertificatesService {
     certificateId: string;
     certificateUrl: string;
   }) {
-    const wpApiUrl = process.env.WOOCOMMERCE_API_URL
-      ? process.env.WOOCOMMERCE_API_URL.replace('/wc/v3', '/fundedgiants/v1/payout')
-      : 'https://fundedgiants.local/wp-json/fundedgiants/v1/payout';
+    const wpBase =
+      process.env.WOOCOMMERCE_API_URL?.replace(/\/wp-json\/wc\/v3\/?$/, '') ||
+      process.env.WORDPRESS_URL ||
+      'https://fundedgiants.ng';
+    const wpApiUrl = `${wpBase}/wp-json/fundedgiants/v1/payout`;
 
     const nowFormatted = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
@@ -322,36 +386,46 @@ export class CertificatesService {
     const lastName = names.slice(1).join(' ') || '';
 
     const payload = {
+      payout_id: data.certificateId,
       mt5_id: data.accountNumber,
+      account_number: data.accountNumber,
       email: data.email,
       first_name: firstName,
       last_name: lastName,
+      trader_name: data.name,
       requested_amount: data.approvedAmount,
       requested_at: nowFormatted,
       approved_amount: data.approvedAmount,
+      amount_ngn: data.approvedAmount,
       approved_at: nowFormatted,
       payout_method: 'Giants Vault',
       sent_at: nowFormatted,
       certificate_id: data.certificateId,
       certificate_url: data.certificateUrl,
+      timestamp: new Date().toISOString(),
     };
 
     try {
-      // In development with self-signed SSL, ignore cert error
       process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      const webhookSecret = process.env.WOOCOMMERCE_WEBHOOK_SECRET || 'fg_live_webhook_secret_key';
+      const body = JSON.stringify(payload);
+      const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
+
       const response = await fetch(wpApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-FG-WEBHOOK-TOKEN': process.env.FG_PAYOUT_WEBHOOK_TOKEN || 'fg-payout-sync-token-2026',
+          'X-FGT-Signature': signature,
         },
-        body: JSON.stringify(payload),
+        body,
       });
 
       if (response.ok) {
-        this.logger.log(`Successfully synced payout ${data.certificateId} to WordPress payout tracker`);
+        this.logger.log(`Successfully synced payout ${data.certificateId} to WordPress payout tracker (${wpApiUrl})`);
       } else {
-        this.logger.warn(`WordPress payout tracker sync returned status ${response.status}`);
+        const respText = await response.text().catch(() => '');
+        this.logger.warn(`WordPress payout tracker sync returned status ${response.status}: ${respText}`);
       }
     } catch (err: any) {
       this.logger.warn(`Could not reach WordPress payout tracker (${err.message}) - record preserved locally.`);
@@ -375,6 +449,7 @@ export class CertificatesService {
 
     const fullName = `${user.firstName || 'Valued'} ${user.lastName || 'Trader'}`.trim();
     const certificates: any[] = [];
+    const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
 
     // 1. Completion certificates for passed challenges
     for (const challenge of user.challenges) {
@@ -383,29 +458,55 @@ export class CertificatesService {
         const issueDate = challenge.passedAt
           ? new Date(challenge.passedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
           : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        const fileName = `${certId}.jpg`;
 
+        // Check if file exists, if not generate on demand
+        const exists = this.findCertificateFile(fileName);
+        if (!exists) {
+          try {
+            await this.generateCompletionCertificate({
+              recipientName: fullName,
+              accountNumber: challenge.tradingAccount?.accountNumber || challenge.challengeNumber,
+              customCertId: certId,
+            });
+          } catch (e: any) {
+            this.logger.warn(`Could not on-demand generate completion certificate: ${e.message}`);
+          }
+        }
+
+        const certUrl = `${apiBase}/api/v1/certificates/file/${fileName}`;
         certificates.push({
-          id: challenge.id,
+          id: certId,
           certificateNumber: certId,
-          type: 'EVALUATION_PASSED',
+          type: 'COMPLETION',
           title: 'RHINO RUSH COMPLETION',
           subtitle: 'OFFICIAL FUNDED GIANT',
+          program: 'Rhino Rush (1 Step)',
           recipientName: fullName,
           accountNumber: challenge.tradingAccount?.accountNumber || challenge.challengeNumber,
           planName: 'Rhino Rush (1 Step)',
-          capitalSizeNgn: Number(challenge.product.accountSize),
+          capitalSizeNgn: Number(challenge.product?.accountSize || (challenge as any).accountSizeNgn || 5000000),
           issueDate,
-          imageUrl: `/certificates/generated/${certId}.jpg`,
+          certificateUrl: certUrl,
+          imageUrl: certUrl,
           verificationUrl: `https://fundedgiants.ng/#payouts`,
           verificationHash: `0x${Buffer.from(certId).toString('hex')}`,
         });
       }
     }
 
-    // 2. Payout certificates for approved payouts recorded in RiskEvents / Deposits
+    // 2. Payout certificates for approved payouts recorded in RiskEvents / Deposits strictly for this user
+    const userAccountIds = user.challenges
+      .map((c) => c.tradingAccount?.id)
+      .filter(Boolean) as string[];
+
     const payouts = await prisma.riskEvent.findMany({
       where: {
         eventType: 'AUTOMATED_PAYOUT_APPROVED',
+        OR: [
+          { challenge: { userId: user.id } },
+          { tradingAccountId: { in: userAccountIds } },
+        ],
       },
       include: {
         tradingAccount: true,
@@ -422,19 +523,40 @@ export class CertificatesService {
       });
       const match = payout.description.match(/₦([\d,]+)/);
       const payoutAmount = match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+      const fileName = `${payoutCertId}.jpg`;
 
+      // Check if file exists, if not generate on demand
+      const exists = this.findCertificateFile(fileName);
+      if (!exists) {
+        try {
+          await this.generatePayoutCertificate({
+            recipientName: fullName,
+            amountNgn: payoutAmount,
+            accountNumber: payout.tradingAccount?.accountNumber || 'FG-ACCOUNT',
+            userEmail: user.email || '',
+            customCertId: payoutCertId,
+          });
+        } catch (e: any) {
+          this.logger.warn(`Could not on-demand generate payout certificate: ${e.message}`);
+        }
+      }
+
+      const certUrl = `${apiBase}/api/v1/certificates/file/${fileName}`;
       certificates.push({
-        id: payout.id,
+        id: payoutCertId,
         certificateNumber: payoutCertId,
-        type: 'ELITE_PAYOUT',
+        type: 'PAYOUT',
         title: 'PAYOUT DISBURSEMENT',
         subtitle: 'PROFIT REWARD ISSUED',
+        program: 'Funded Giant Trader',
         recipientName: fullName,
         accountNumber: payout.tradingAccount?.accountNumber || 'FG-ACCOUNT',
         planName: 'Funded Giant Trader',
+        amount: payoutAmount,
         amountNgn: payoutAmount,
         issueDate,
-        imageUrl: `/certificates/generated/${payoutCertId}.jpg`,
+        certificateUrl: certUrl,
+        imageUrl: certUrl,
         verificationUrl: `https://fundedgiants.ng/#payouts`,
         verificationHash: `0x${Buffer.from(payoutCertId).toString('hex')}`,
       });

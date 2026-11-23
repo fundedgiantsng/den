@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Put, Body, Query, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
+import * as crypto from 'crypto';
 import { prisma } from '@fundedgiants/database';
 import { AuthService } from './auth.service';
 import { RequestOtpDto, RetryWhatsappOtpDto, VerifyOtpDto, SignupDto, NinjaBvnVerifyDto, UpdateProfileDto, SetUsernameDto } from './dto/auth.dto';
@@ -122,6 +123,32 @@ export class AuthController {
         affiliateProfile: user.affiliateProfile,
         kycRecord: (user as any).kycRecords?.[0] || null,
       },
+    };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Logout trader and invalidate active session cookies' })
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    if (token) {
+      try {
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        await prisma.session.deleteMany({ where: { tokenHash } });
+      } catch (e) {
+        // Session already invalidated or deleted
+      }
+    }
+
+    response.clearCookie('fg_session', { path: '/' });
+    response.clearCookie('fg_admin_token', { path: '/' });
+
+    return {
+      success: true,
+      message: 'Logged out successfully',
     };
   }
 

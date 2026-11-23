@@ -326,33 +326,36 @@ export class ChallengesService implements OnModuleInit {
     const originalPriceNgn = validation.subtotalNgn;
 
     // 2. Check available wallet balance via double-entry ledger calculation
-    const deposits = await prisma.deposit.aggregate({
-      where: { walletId: user.wallet?.id, status: 'SUCCESSFUL' },
-      _sum: { amount: true },
-    });
+    let availableBalanceNgn = 0;
+    if (user.wallet?.id) {
+      const deposits = await prisma.deposit.aggregate({
+        where: { walletId: user.wallet.id, status: 'SUCCESSFUL' },
+        _sum: { amount: true },
+      });
 
-    const withdrawals = await prisma.withdrawal.aggregate({
-      where: {
-        walletId: user.wallet?.id,
-        status: { in: ['APPROVED', 'PROCESSING', 'PAID'] },
-      },
-      _sum: { amount: true },
-    });
+      const withdrawals = await prisma.withdrawal.aggregate({
+        where: {
+          walletId: user.wallet.id,
+          status: { in: ['APPROVED', 'PROCESSING', 'PAID'] },
+        },
+        _sum: { amount: true },
+      });
 
-    // Also deduct previous internal orders paid from wallet
-    const previousWalletOrders = await prisma.internalOrder.aggregate({
-      where: {
-        userId: user.id,
-        paymentMethod: 'WALLET',
-        paymentStatus: 'SUCCESSFUL',
-      },
-      _sum: { amount: true },
-    });
+      // Also deduct previous internal orders paid from wallet
+      const previousWalletOrders = await prisma.internalOrder.aggregate({
+        where: {
+          userId: user.id,
+          paymentMethod: 'WALLET',
+          paymentStatus: 'SUCCESSFUL',
+        },
+        _sum: { amount: true },
+      });
 
-    const totalDeposits = Number(deposits._sum.amount || 0);
-    const totalWithdrawals = Number(withdrawals._sum.amount || 0);
-    const totalSpent = Number(previousWalletOrders._sum.amount || 0);
-    const availableBalanceNgn = totalDeposits - totalWithdrawals - totalSpent;
+      const totalDeposits = Number(deposits._sum.amount || 0);
+      const totalWithdrawals = Number(withdrawals._sum.amount || 0);
+      const totalSpent = Number(previousWalletOrders._sum.amount || 0);
+      availableBalanceNgn = totalDeposits - totalWithdrawals - totalSpent;
+    }
 
     if (availableBalanceNgn < netPriceNgn) {
       throw new BadRequestException(
@@ -772,6 +775,19 @@ export class ChallengesService implements OnModuleInit {
         }
       } catch (syncErr: any) {
         this.logger.warn(`Could not sync live SteraTrader positions for ${acc.accountNumber}: ${syncErr.message}`);
+      }
+
+      // If no trades are recorded yet on database for this account, check if any closed/open trades exist
+      // across all account records to guarantee the user's trading log displays history
+      if (!acc.tradeRecords || acc.tradeRecords.length === 0) {
+        const existingTrades = await prisma.tradeRecord.findMany({
+          where: { tradingAccountId: acc.id },
+          orderBy: { openedAt: 'desc' },
+          take: 50,
+        });
+        if (existingTrades && existingTrades.length > 0) {
+          acc.tradeRecords = existingTrades;
+        }
       }
 
       // 2. Fetch authoritative risk status from Risk Engine

@@ -2,7 +2,7 @@
 
 import { API_BASE_URL } from '@/lib/api';
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bell, Menu, Check, ExternalLink } from 'lucide-react';
+import { Search, Bell, Menu, Check, ExternalLink, User, LogOut, ChevronDown, Award, Settings } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { playNotificationChime } from '@/lib/audio';
@@ -13,15 +13,21 @@ interface TopNavProps {
 
 export function TopNav({ onMobileMenuToggle }: TopNavProps) {
   const [currentUser, setCurrentUser] = useState<{
+    id?: string;
+    email?: string;
+    username?: string;
     firstName?: string;
     lastName?: string;
+    kycStatus?: string;
   } | null>(null);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const previousUnreadRef = useRef<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const fetchNotificationStats = () => {
     fetch(`${API_BASE_URL}/notifications/unread-count`, {
@@ -66,16 +72,34 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    // Clear cookies client-side as well
+    document.cookie = 'fg_session=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = 'fg_admin_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    window.location.href = '/login';
+  };
 
   const handleMarkAllRead = async () => {
     try {
@@ -225,18 +249,92 @@ export function TopNav({ onMobileMenuToggle }: TopNavProps) {
           )}
         </div>
 
-        {/* User Avatar */}
-        <Link
-          href="/dashboard/profile"
-          className="flex items-center gap-2 sm:gap-2.5 pl-1 sm:pl-2 border-l border-fgBorder-subtle hover:opacity-80 transition group"
-        >
-          <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-500/30 group-hover:border-emerald-400 transition-colors">
-            {initials}
-          </div>
-          <span className="text-xs font-medium text-white hidden lg:inline-block group-hover:text-emerald-400 transition-colors">
-            {fullName}
-          </span>
-        </Link>
+        {/* User Avatar & Dropdown Menu */}
+        <div className="relative" ref={userMenuRef}>
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="flex items-center gap-2 sm:gap-2.5 pl-1 sm:pl-2 border-l border-fgBorder-subtle hover:opacity-90 transition group focus:outline-none"
+          >
+            <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-500/30 group-hover:border-emerald-400 transition-colors">
+              {initials}
+            </div>
+            <div className="hidden lg:flex flex-col text-left">
+              <span className="text-xs font-semibold text-white group-hover:text-emerald-400 transition-colors leading-tight">
+                {fullName}
+              </span>
+              <span className="text-[10px] text-fgText-muted leading-none mt-0.5">
+                {currentUser?.email || 'Verified Trader'}
+              </span>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 text-fgText-muted transition-transform duration-200 hidden sm:block ${userMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {userMenuOpen && (
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#091218] border border-white/[0.08] shadow-2xl p-2 z-50">
+              {/* User Info Header */}
+              <div className="p-3 bg-[#060B11]/60 rounded-xl border border-white/[0.04] mb-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-white truncate max-w-[140px]">
+                    {fullName}
+                  </span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                    currentUser?.kycStatus === 'APPROVED'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                  }`}>
+                    {currentUser?.kycStatus === 'APPROVED' ? 'KYC Verified' : 'Standard'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 truncate font-mono">
+                  {currentUser?.email || ''}
+                </p>
+              </div>
+
+              {/* Navigation Links */}
+              <div className="space-y-0.5 text-xs font-medium">
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/[0.05] transition-colors"
+                >
+                  <User className="w-3.5 h-3.5 text-gray-400" />
+                  My Profile
+                </Link>
+
+                <Link
+                  href="/dashboard/certificates"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/[0.05] transition-colors"
+                >
+                  <Award className="w-3.5 h-3.5 text-yellow-400" />
+                  Official Certificates
+                </Link>
+
+                <Link
+                  href="/dashboard/settings/notifications"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/[0.05] transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5 text-gray-400" />
+                  Settings
+                </Link>
+              </div>
+
+              {/* Logout Action */}
+              <div className="border-t border-white/[0.06] mt-1.5 pt-1.5">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Log Out
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

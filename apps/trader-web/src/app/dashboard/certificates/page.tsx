@@ -39,7 +39,12 @@ export default function CertificatesPage() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setCertificates(data);
+            const mapped = data.map((c: any) => ({
+              ...c,
+              type: c.type === 'EVALUATION_PASSED' ? 'COMPLETION' : c.type === 'ELITE_PAYOUT' ? 'PAYOUT' : c.type,
+              certificateUrl: c.certificateUrl || c.imageUrl || '',
+            }));
+            setCertificates(mapped);
           }
         }
       } catch (err) {

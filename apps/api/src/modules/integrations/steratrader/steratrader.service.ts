@@ -405,14 +405,39 @@ export class SteraTraderService {
   }
 
   /**
-   * Fetch live open positions and executed trades from SteraTrader
-   * Route: GET /accounts/{login}/positions
+   * Fetch live open positions and executed trades (including closed historical trades) from SteraTrader
+   * Queries both active positions and trade history to populate the position trading log.
    */
   async fetchAccountPositions(accountNumber: string): Promise<SteraTraderPosition[]> {
     if (!this.apiKey) {
       return [];
     }
 
+    const mapPosition = (p: any): SteraTraderPosition => {
+      const rawProfit = Number(p.profit ?? p.pnl ?? p.floating ?? 0);
+      // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
+      const profitNgn = rawProfit !== 0 && Math.abs(rawProfit) >= 100 ? rawProfit / 100 : rawProfit;
+      const rawDir = String(p.direction ?? p.type ?? p.side ?? p.cmd ?? 'BUY').toUpperCase();
+      const direction: 'BUY' | 'SELL' = rawDir.includes('SELL') || rawDir === '1' ? 'SELL' : 'BUY';
+
+      return {
+        id: String(p.id ?? p.ticket ?? p.position_id ?? p.order_id ?? `pos-${Date.now()}`),
+        symbol: String(p.symbol || 'EURUSD'),
+        direction,
+        volume: Number(p.volume ?? p.lots ?? p.size ?? 0.1),
+        openPrice: Number(p.open_price ?? p.openPrice ?? p.price ?? 0),
+        closePrice: p.close_price != null ? Number(p.close_price) : p.closePrice != null ? Number(p.closePrice) : null,
+        stopLoss: p.stop_loss != null ? Number(p.stop_loss) : p.stopLoss != null ? Number(p.stopLoss) : null,
+        takeProfit: p.take_profit != null ? Number(p.take_profit) : p.takeProfit != null ? Number(p.takeProfit) : null,
+        profitNgn,
+        openedAt: p.opened_at || p.open_time || p.created_at || new Date().toISOString(),
+        closedAt: p.closed_at || p.close_time || null,
+      };
+    };
+
+    const aggregatedPositions: Map<string, SteraTraderPosition> = new Map();
+
+    // 1. Fetch current open & recent positions from /accounts/{login}/positions
     try {
       const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions`, {
         method: 'GET',
@@ -422,39 +447,69 @@ export class SteraTraderService {
         },
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        const resJson = await response.json();
+        const rawPositions = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+        for (const raw of rawPositions) {
+          const mapped = mapPosition(raw);
+          aggregatedPositions.set(mapped.id, mapped);
+        }
+      } else {
         this.logger.warn(`Failed to fetch positions for SteraTrader account ${accountNumber}: HTTP ${response.status}`);
-        return [];
       }
-
-      const resJson = await response.json();
-      const rawPositions = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
-
-      return rawPositions.map((p: any) => {
-        const rawProfit = Number(p.profit ?? p.pnl ?? p.floating ?? 0);
-        // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
-        const profitNgn = rawProfit !== 0 && Math.abs(rawProfit) >= 100 ? rawProfit / 100 : rawProfit;
-        const rawDir = String(p.direction ?? p.type ?? p.side ?? p.cmd ?? 'BUY').toUpperCase();
-        const direction: 'BUY' | 'SELL' = rawDir.includes('SELL') || rawDir === '1' ? 'SELL' : 'BUY';
-
-        return {
-          id: String(p.id ?? p.ticket ?? p.position_id ?? `pos-${Date.now()}`),
-          symbol: String(p.symbol || 'EURUSD'),
-          direction,
-          volume: Number(p.volume ?? p.lots ?? p.size ?? 0.1),
-          openPrice: Number(p.open_price ?? p.openPrice ?? p.price ?? 0),
-          closePrice: p.close_price != null ? Number(p.close_price) : p.closePrice != null ? Number(p.closePrice) : null,
-          stopLoss: p.stop_loss != null ? Number(p.stop_loss) : p.stopLoss != null ? Number(p.stopLoss) : null,
-          takeProfit: p.take_profit != null ? Number(p.take_profit) : p.takeProfit != null ? Number(p.takeProfit) : null,
-          profitNgn,
-          openedAt: p.opened_at || p.open_time || p.created_at || new Date().toISOString(),
-          closedAt: p.closed_at || p.close_time || null,
-        };
-      });
     } catch (err: any) {
       this.logger.error(`Error querying SteraTrader positions for ${accountNumber}: ${err.message}`);
-      return [];
     }
+
+    // 2. Query historical / closed trades endpoint: /accounts/{login}/trades or /accounts/{login}/orders
+    try {
+      const tradesResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/trades`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      });
+
+      if (tradesResponse.ok) {
+        const resJson = await tradesResponse.json();
+        const rawTrades = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+        for (const raw of rawTrades) {
+          const mapped = mapPosition(raw);
+          aggregatedPositions.set(mapped.id, mapped);
+        }
+      } else if (tradesResponse.status !== 404) {
+        this.logger.warn(`SteraTrader /trades responded with HTTP ${tradesResponse.status} for ${accountNumber}`);
+      }
+    } catch (err: any) {
+      this.logger.debug(`Could not fetch /trades for ${accountNumber}: ${err.message}`);
+    }
+
+    // 3. Fallback/complement: Query closed positions via /accounts/{login}/positions?status=closed
+    if (aggregatedPositions.size === 0 || Array.from(aggregatedPositions.values()).every(p => !p.closedAt)) {
+      try {
+        const closedResponse = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions?status=closed`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+        });
+
+        if (closedResponse.ok) {
+          const resJson = await closedResponse.json();
+          const rawClosed = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+          for (const raw of rawClosed) {
+            const mapped = mapPosition(raw);
+            aggregatedPositions.set(mapped.id, mapped);
+          }
+        }
+      } catch (err: any) {
+        this.logger.debug(`Could not fetch closed positions for ${accountNumber}: ${err.message}`);
+      }
+    }
+
+    return Array.from(aggregatedPositions.values());
   }
 
   /**

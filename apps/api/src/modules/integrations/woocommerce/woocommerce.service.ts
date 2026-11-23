@@ -155,11 +155,16 @@ export class WooCommerceService {
   async syncPublicPayoutTracker(trackerPayload: PublicPayoutTrackerPayload): Promise<boolean> {
     try {
       const endpoint = `${this.wpBaseUrl}/wp-json/fundedgiants/v1/payout`;
+      const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
+      const certificateUrl = `${apiBase}/api/v1/certificates/file/${trackerPayload.certificateId}.jpg`;
+
       const body = JSON.stringify({
         payout_id: trackerPayload.payoutId,
         trader_name: trackerPayload.traderName,
         amount_ngn: trackerPayload.amountNgn,
+        approved_amount: trackerPayload.amountNgn,
         certificate_id: trackerPayload.certificateId,
+        certificate_url: certificateUrl,
         certificate_hash: trackerPayload.certificateHash,
         profit_split_rate: trackerPayload.profitSplitRate,
         program_type: trackerPayload.programType,
@@ -173,6 +178,7 @@ export class WooCommerceService {
         headers: {
           'Content-Type': 'application/json',
           'X-FGT-Signature': signature,
+          'X-FG-WEBHOOK-TOKEN': process.env.FG_PAYOUT_WEBHOOK_TOKEN || 'fg-payout-sync-token-2026',
         },
         body,
       });

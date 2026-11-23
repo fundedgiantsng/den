@@ -33,15 +33,28 @@ export class WalletService {
       throw new NotFoundException('User not found');
     }
 
+    // Ensure customer wallet always exists and is scoped strictly to this user
+    let userWallet = user.wallet;
+    if (!userWallet) {
+      userWallet = await prisma.customerWallet.upsert({
+        where: { userId: user.id },
+        update: {},
+        create: {
+          userId: user.id,
+          currency: 'NGN',
+        },
+      });
+    }
+
     // Ledger balance calculation: Sum of all completed deposits minus withdrawals & internal purchases
     const deposits = await prisma.deposit.aggregate({
-      where: { walletId: user.wallet?.id, status: 'SUCCESSFUL' },
+      where: { walletId: userWallet.id, status: 'SUCCESSFUL' },
       _sum: { amount: true },
     });
 
     const withdrawals = await prisma.withdrawal.aggregate({
       where: {
-        walletId: user.wallet?.id,
+        walletId: userWallet.id,
         status: { in: ['REQUESTED', 'PENDING_REVIEW', 'APPROVED', 'PROCESSING', 'PAID'] },
       },
       _sum: { amount: true },
@@ -62,7 +75,6 @@ export class WalletService {
     const availableBalanceNgn = Math.max(0, totalDepositsNgn - totalWithdrawalsNgn - totalSpentNgn);
 
     // Auto-provision dedicated Nomba Virtual Account if not present yet
-    let userWallet = user.wallet;
     if (!userWallet?.nombaAccountNumber && !userWallet?.lencoAccountNumber) {
       try {
         const nombaService = new (require('../integrations/nomba/nomba.service').NombaService)();
@@ -104,7 +116,7 @@ export class WalletService {
     };
 
     return {
-      walletId: user.wallet?.id,
+      walletId: userWallet.id,
       currency: 'NGN',
       availableBalanceNgn,
       withdrawableProfitsNgn: availableBalanceNgn,
@@ -133,14 +145,26 @@ export class WalletService {
 
     if (!user) return [];
 
+    let userWallet = user.wallet;
+    if (!userWallet) {
+      userWallet = await prisma.customerWallet.upsert({
+        where: { userId: user.id },
+        update: {},
+        create: {
+          userId: user.id,
+          currency: 'NGN',
+        },
+      });
+    }
+
     const [deposits, withdrawals, orders] = await Promise.all([
       prisma.deposit.findMany({
-        where: { walletId: user.wallet?.id },
+        where: { walletId: userWallet.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
       prisma.withdrawal.findMany({
-        where: { walletId: user.wallet?.id },
+        where: { walletId: userWallet.id },
         include: { bankAccount: true },
         orderBy: { createdAt: 'desc' },
         take: 20,

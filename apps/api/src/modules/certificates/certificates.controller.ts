@@ -4,13 +4,18 @@ import {
   Post,
   Body,
   Req,
+  Res,
+  Param,
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import * as crypto from 'crypto';
+import * as path from 'path';
+import * as fs from 'fs';
 import { prisma } from '@fundedgiants/database';
 import { CertificatesService } from './certificates.service';
 
@@ -24,6 +29,20 @@ export class CertificatesController {
   async getMyCertificates(@Req() req: Request) {
     const userId = await this.resolveUserId(req);
     return this.certificatesService.getUserCertificates(userId);
+  }
+
+  @Get('file/:fileName')
+  @ApiOperation({ summary: 'Stream generated high-resolution certificate JPEG image' })
+  async getCertificateFile(@Param('fileName') fileName: string, @Res() res: Response) {
+    const cleanFileName = path.basename(fileName);
+    const filePath = this.certificatesService.findCertificateFile(cleanFileName);
+    if (!filePath || !fs.existsSync(filePath)) {
+      throw new NotFoundException('Certificate image file not found');
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+    res.setHeader('Content-Disposition', `inline; filename="${cleanFileName}"`);
+    return res.sendFile(filePath);
   }
 
   @Post('generate-completion')

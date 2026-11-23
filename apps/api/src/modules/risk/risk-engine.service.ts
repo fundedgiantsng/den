@@ -492,7 +492,15 @@ export class RiskEngineService {
     }
     sessionStart.setUTCHours(22, 0, 0, 0);
 
-    // 1. Check if an admin balance adjustment or reinstatement occurred during this session
+    // 1. Check if an admin reinstatement or balance adjustment occurred
+    const latestAdminReinstatement = await prisma.auditEvent.findFirst({
+      where: {
+        resourceId: account.id,
+        action: 'ADMIN_ACCOUNT_REINSTATED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     const latestAdminAction = await prisma.auditEvent.findFirst({
       where: {
         resourceId: account.id,
@@ -502,7 +510,13 @@ export class RiskEngineService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const snapshotQueryStart = latestAdminAction ? latestAdminAction.createdAt : sessionStart;
+    // If account was reinstated at any point, baseline query start cannot precede reinstatement
+    const effectiveReinstatementTime = latestAdminReinstatement?.createdAt;
+    const snapshotQueryStart = latestAdminAction
+      ? latestAdminAction.createdAt
+      : (effectiveReinstatementTime && effectiveReinstatementTime > sessionStart)
+        ? effectiveReinstatementTime
+        : sessionStart;
 
     // 2. Check if a DAILY_RESET_SNAPSHOT was recorded for this session after any admin adjustment
     let latestSnapshot = await prisma.riskEvent.findFirst({
@@ -1095,8 +1109,30 @@ export class RiskEngineService {
     // Rule B: Zero open trades (all positions must be closed)
     const zeroOpenTradesMet = openTradesCount === 0;
 
-    // Rule C: No active critical risk breaches
-    const noActiveBreachesMet = account.riskEvents.length === 0;
+    // Rule C: No active critical risk breaches after any administrative reinstatement
+    // When an account is reinstated, prior breaches are forgiven and resolved
+    let activeRiskEvents = account.riskEvents;
+    const latestReinstatement = await prisma.auditEvent.findFirst({
+      where: {
+        resourceId: account.id,
+        action: 'ADMIN_ACCOUNT_REINSTATED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (account.status === 'ACTIVE') {
+      if (latestReinstatement) {
+        // Filter out any risk events created prior to reinstatement
+        activeRiskEvents = activeRiskEvents.filter(
+          (re) => new Date(re.createdAt).getTime() > new Date(latestReinstatement.createdAt).getTime()
+        );
+      } else {
+        // If account is ACTIVE, any previous breach events created prior to becoming ACTIVE are cleared
+        activeRiskEvents = [];
+      }
+    }
+
+    const noActiveBreachesMet = activeRiskEvents.length === 0;
 
     const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
     const cycleTraderProfitNgn = netProfit > 0 ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
@@ -1111,7 +1147,7 @@ export class RiskEngineService {
         ? `Phoenix Rise 1st payout requires 10.0% net profit. Current gain is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}).`
         : `Current profit is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}), below the required ${minThresholdPercent}% minimum gain.`;
     } else if (!noActiveBreachesMet) {
-      const activeBreach = account.riskEvents[0];
+      const activeBreach = activeRiskEvents[0];
       const breachType = activeBreach?.eventType ? activeBreach.eventType.replace(/_/g, ' ') : 'Risk Compliance Breach';
       const breachDesc = activeBreach?.description || breachType;
       const snapEquityStr = activeBreach?.snapshotEquity ? ` (Snapshot Equity: ₦${Number(activeBreach.snapshotEquity).toLocaleString()})` : '';
@@ -1331,6 +1367,11 @@ export class RiskEngineService {
 
     const payoutAmount = eligibility.withdrawableProfitNgn;
     const reference = `FG-PAYOUT-${Date.now()}`;
+    const targetStartBalance = Number(
+      (account.challenge as any)?.accountSizeNgn ||
+      account.initialBalance ||
+      5000000
+    );
 
     // Execute atomic disbursement transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -1373,12 +1414,27 @@ export class RiskEngineService {
         });
       }
 
-      // 3. Reset starting watermark baseline for next profit cycle
+      // 3. Reset account balance to starting capital (clearing all profits above start balance so user can restart trading)
       await tx.tradingAccount.update({
         where: { id: account.id },
         data: {
-          initialBalance: account.currentEquity, // Adjust baseline to current equity
+          initialBalance: targetStartBalance,
+          currentBalance: targetStartBalance,
+          currentEquity: targetStartBalance,
           totalProfit: 0,
+        },
+      });
+
+      // Insert fresh baseline snapshot for drawdown monitoring from initial capital
+      await tx.riskEvent.create({
+        data: {
+          challengeId: account.challengeId,
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+          description: `Post-payout reset to initial balance baseline of ₦${targetStartBalance.toLocaleString()}`,
+          severity: 'INFO',
+          snapshotBalance: targetStartBalance,
+          snapshotEquity: targetStartBalance,
         },
       });
 
@@ -1388,15 +1444,23 @@ export class RiskEngineService {
           challengeId: account.challengeId,
           tradingAccountId: account.id,
           eventType: 'AUTOMATED_PAYOUT_APPROVED',
-          description: `Automated payout #${eligibility.payoutNumber} of ₦${payoutAmount.toLocaleString()} (${eligibility.profitSplitRatio} tiered split) approved by Risk Engine and credited to Giants Vault.`,
+          description: `Automated payout #${eligibility.payoutNumber} of ₦${payoutAmount.toLocaleString()} (${eligibility.profitSplitRatio} tiered split) approved by Risk Engine and credited to Giants Vault. Balance reset to initial ₦${targetStartBalance.toLocaleString()}.`,
           severity: 'INFO',
-          snapshotBalance: account.currentBalance,
-          snapshotEquity: account.currentEquity,
+          snapshotBalance: targetStartBalance,
+          snapshotEquity: targetStartBalance,
         },
       });
 
       return deposit;
     });
+
+    // Reset SteraTrader live balance back to starting capital by withdrawing/clearing all profits above starting balance
+    try {
+      await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetStartBalance);
+      this.logger.log(`Reset SteraTrader balance for ${account.accountNumber} back to starting balance ₦${targetStartBalance.toLocaleString()}`);
+    } catch (steraErr: any) {
+      this.logger.error(`Failed to reset SteraTrader balance for ${account.accountNumber}: ${steraErr.message}`);
+    }
 
     this.totalAutomatedPayoutsApproved++;
     this.logger.log(
