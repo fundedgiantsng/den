@@ -281,6 +281,11 @@ export class WalletService {
     }
 
     if (!resolveResult.status || !resolveResult.data) {
+      const errMsg = resolveResult.message || '';
+      if (errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('403') || errMsg.toLowerCase().includes('credential')) {
+        this.logger.error(`Banking gateway auth error during account binding: ${errMsg}`);
+        throw new BadRequestException('Banking network verification service is currently synchronizing. Please check the account number and bank, or try again shortly.');
+      }
       throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network. Please check the account number and bank selected.');
     }
 

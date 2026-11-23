@@ -40,9 +40,9 @@ async function restamp() {
     maximumFractionDigits: 2,
   })}`;
 
-  // Font size reduced by 4 points as requested
-  const nameFontSize = 26;
-  const amountFontSize = 28;
+  // Font size increased by 3 points as requested
+  const nameFontSize = 29;
+  const amountFontSize = 31;
 
   const overlaySvg = `
     <svg width="1024" height="723" viewBox="0 0 1024 723" xmlns="http://www.w3.org/2000/svg">

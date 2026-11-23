@@ -42,20 +42,25 @@ export class NombaService {
   // Production Live Base URL
   public static readonly PRODUCTION_BASE_URL = 'https://api.nomba.com';
 
+  private clean(val?: string): string {
+    if (!val) return '';
+    return val.trim().replace(/^["']|["']$/g, '').trim();
+  }
+
   private get baseUrl(): string {
-    return (process.env.NOMBA_BASE_URL || NombaService.PRODUCTION_BASE_URL).replace(/\/+$/, '');
+    return (this.clean(process.env.NOMBA_BASE_URL) || NombaService.PRODUCTION_BASE_URL).replace(/\/+$/, '');
   }
   private get clientId(): string {
-    return process.env.NOMBA_CLIENT_ID || '';
+    return this.clean(process.env.NOMBA_CLIENT_ID);
   }
   private get clientSecret(): string {
-    return process.env.NOMBA_PRIVATE_KEY || process.env.NOMBA_CLIENT_SECRET || '';
+    return this.clean(process.env.NOMBA_PRIVATE_KEY || process.env.NOMBA_CLIENT_SECRET);
   }
   private get accountId(): string {
-    return process.env.NOMBA_ACCOUNT_ID || '';
+    return this.clean(process.env.NOMBA_ACCOUNT_ID);
   }
   private get webhookSecret(): string {
-    return process.env.NOMBA_WEBHOOK_SECRET || '';
+    return this.clean(process.env.NOMBA_WEBHOOK_SECRET);
   }
 
   private cachedToken: string | null = null;
