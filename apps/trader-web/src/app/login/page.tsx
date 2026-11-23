@@ -68,6 +68,24 @@ function LoginContent() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle Admin Trader Impersonation Token (?impersonation_token=... or ?impersonate_token=...)
+  useEffect(() => {
+    const impToken = searchParams?.get('impersonation_token') || searchParams?.get('impersonate_token');
+    if (impToken) {
+      setLoading(true);
+      document.cookie = `fg_session=${encodeURIComponent(impToken)}; path=/; max-age=604800; SameSite=Lax`;
+      fetch(`${API_BASE_URL}/auth/impersonate-session?token=${encodeURIComponent(impToken)}`, {
+        credentials: 'include',
+      })
+        .then(() => {
+          window.location.href = '/dashboard';
+        })
+        .catch(() => {
+          window.location.href = '/dashboard';
+        });
+    }
+  }, [searchParams]);
+
   // 60-Day Affiliate Referral Tracking (via ?ref=, ?aff=, ?affiliate=)
   useEffect(() => {
     const ref = searchParams?.get('ref') || searchParams?.get('aff') || searchParams?.get('affiliate');

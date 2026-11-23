@@ -107,7 +107,10 @@ export class LencoService {
    */
   async resolveAccount(accountNumber: string, bankCode: string): Promise<LencoResolveAccountResponse> {
     if (!this.apiKey) {
-      throw new Error('LENCO_API_KEY is not configured.');
+      return {
+        status: false,
+        message: 'LENCO_API_KEY is not configured.',
+      };
     }
 
     try {
@@ -153,7 +156,10 @@ export class LencoService {
     reference: string;
   }): Promise<LencoTransferResponse> {
     if (!this.apiKey) {
-      throw new Error('LENCO_API_KEY is not configured.');
+      return {
+        status: false,
+        message: 'LENCO_API_KEY is not configured.',
+      };
     }
 
     try {

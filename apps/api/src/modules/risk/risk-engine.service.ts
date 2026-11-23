@@ -37,8 +37,13 @@ export interface PayoutEligibilityResult {
   phase: string;
   currentEquity: number;
   currentProfit: number;
+  cycleProfitNgn?: number;
   profitPercent: number;
   withdrawableProfitNgn: number;
+  traderProfitSplit?: number;
+  firmProfitSplit?: number;
+  traderProfitSplitNgn?: number;
+  firmProfitSplitNgn?: number;
   payoutNumber: number;
   traderSplitPercent: number;
   profitSplitRatio: string;
@@ -168,8 +173,23 @@ export class RiskEngineService {
         let sessionInfo: any = {};
 
         if (isRhinoRushEvaluation) {
-          const startingDayBaseline = Math.max(metrics?.startingDayEquity || initialBal, currentBalance);
-          const todayRawProfit = Math.max(0, currentEquity - startingDayBaseline);
+          // Retrieve prior snapshot to know the opening baseline of the session that just concluded
+          const lastSnapshot = await prisma.riskEvent.findFirst({
+            where: {
+              tradingAccountId: account.id,
+              eventType: 'DAILY_RESET_SNAPSHOT',
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          let sessionOpeningBaseline = initialBal;
+          if (lastSnapshot) {
+            const snapBal = Number(lastSnapshot.snapshotBalance || initialBal);
+            const snapEq = Number(lastSnapshot.snapshotEquity || snapBal);
+            sessionOpeningBaseline = Math.max(snapBal, snapEq);
+          }
+
+          const todayRawProfit = Math.max(0, currentEquity - sessionOpeningBaseline);
           const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
           const cappedCredit = Math.min(todayRawProfit, dailyCap);
           const excessProfitCleared = Math.max(0, todayRawProfit - dailyCap);
@@ -200,6 +220,7 @@ export class RiskEngineService {
               eventType: 'DAILY_RESET_SNAPSHOT',
               description: JSON.stringify({
                 sessionDate: new Date().toISOString().split('T')[0],
+                sessionOpeningBaseline,
                 todayRawProfit,
                 cappedCredit,
                 excessProfitCleared,
@@ -457,7 +478,7 @@ export class RiskEngineService {
    * Closed and open trade losses during the session must NEVER collapse this baseline.
    */
   async getStartingDayBaseline(
-    account: { id: string; initialBalance: any; createdAt?: Date },
+    account: { id: string; challengeId?: string; initialBalance: any; createdAt?: Date },
     currentBalance: number,
     metricsStartingDayEquity?: number,
   ): Promise<number> {
@@ -471,12 +492,24 @@ export class RiskEngineService {
     }
     sessionStart.setUTCHours(22, 0, 0, 0);
 
-    // 1. Check if a DAILY_RESET_SNAPSHOT was recorded for this session
-    const latestSnapshot = await prisma.riskEvent.findFirst({
+    // 1. Check if an admin balance adjustment or reinstatement occurred during this session
+    const latestAdminAction = await prisma.auditEvent.findFirst({
+      where: {
+        resourceId: account.id,
+        action: { in: ['ADMIN_ACCOUNT_REINSTATED', 'ADMIN_ACCOUNT_BALANCE_ADJUSTED'] },
+        createdAt: { gte: sessionStart },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const snapshotQueryStart = latestAdminAction ? latestAdminAction.createdAt : sessionStart;
+
+    // 2. Check if a DAILY_RESET_SNAPSHOT was recorded for this session after any admin adjustment
+    let latestSnapshot = await prisma.riskEvent.findFirst({
       where: {
         tradingAccountId: account.id,
         eventType: 'DAILY_RESET_SNAPSHOT',
-        createdAt: { gte: sessionStart },
+        createdAt: { gte: snapshotQueryStart },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -484,29 +517,92 @@ export class RiskEngineService {
     if (latestSnapshot) {
       const snapBal = Number(latestSnapshot.snapshotBalance || initialBal);
       const snapEq = Number(latestSnapshot.snapshotEquity || snapBal);
-      const snapBaseline = Math.max(snapBal, snapEq);
-      return Math.max(snapBaseline, initialBal, metricsStartingDayEquity || 0);
+      return Math.max(snapBal, snapEq, initialBal);
     }
 
-    // 2. If account was created during the current session (after 22:00 UTC)
-    if (account.createdAt && new Date(account.createdAt) >= sessionStart) {
-      return Math.max(initialBal, metricsStartingDayEquity || 0);
+    // 3. Self-healing: If account existed before sessionStart but no snapshot was recorded yet for today
+    if (!account.createdAt || new Date(account.createdAt) < sessionStart) {
+      try {
+        const priorSnapshot = await prisma.riskEvent.findFirst({
+          where: {
+            tradingAccountId: account.id,
+            eventType: 'DAILY_RESET_SNAPSHOT',
+            createdAt: { lt: sessionStart },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        const priorBaseline = priorSnapshot
+          ? Math.max(Number(priorSnapshot.snapshotBalance || initialBal), Number(priorSnapshot.snapshotEquity || initialBal))
+          : initialBal;
+
+        const sessionProfit = Math.max(0, currentBalance - priorBaseline);
+        const dailyCap = initialBal * 0.02;
+        const cappedCredit = Math.min(sessionProfit, dailyCap);
+        const excessProfitCleared = Math.max(0, sessionProfit - dailyCap);
+
+        const pastSnapshots = await prisma.riskEvent.findMany({
+          where: {
+            tradingAccountId: account.id,
+            eventType: 'DAILY_RESET_SNAPSHOT',
+          },
+        });
+        let bankedTotal = 0;
+        for (const s of pastSnapshots) {
+          try {
+            const p = JSON.parse(s.description);
+            bankedTotal += Number(p.cappedCredit || 0);
+          } catch {}
+        }
+        const cumulativeQualifiedProfit = bankedTotal + cappedCredit;
+
+        const challengeId =
+          account.challengeId ||
+          priorSnapshot?.challengeId ||
+          (
+            await prisma.tradingAccount.findUnique({
+              where: { id: account.id },
+              select: { challengeId: true },
+            })
+          )?.challengeId ||
+          '';
+
+        if (challengeId) {
+          await prisma.riskEvent.create({
+            data: {
+              challengeId,
+              tradingAccountId: account.id,
+              eventType: 'DAILY_RESET_SNAPSHOT',
+              createdAt: sessionStart,
+              description: JSON.stringify({
+                sessionDate: sessionStart.toISOString().split('T')[0],
+                sessionOpeningBaseline: priorBaseline,
+                todayRawProfit: sessionProfit,
+                cappedCredit,
+                excessProfitCleared,
+                cumulativeQualifiedProfit,
+                profitTarget: initialBal * 0.10,
+              }),
+              severity: 'INFO',
+              snapshotBalance: currentBalance,
+              snapshotEquity: currentBalance,
+            },
+          });
+        }
+
+        return Math.max(currentBalance, initialBal);
+      } catch (err: any) {
+        this.logger.warn(`Could not create self-healing reset snapshot: ${err.message}`);
+      }
     }
 
-    // 3. If account existed before session start, reconstruct session opening balance from closed trades
-    // Opening Balance = Current Balance - Net Profit of trades closed since sessionStart
-    const tradesClosedToday = await prisma.tradeRecord.findMany({
-      where: {
-        tradingAccountId: account.id,
-        closedAt: { gte: sessionStart },
-      },
-      select: { profit: true },
-    });
+    // 4. If account was reinstated/adjusted by admin during the current session without a subsequent snapshot
+    if (latestAdminAction) {
+      return Math.max(initialBal, currentBalance);
+    }
 
-    const netProfitToday = tradesClosedToday.reduce((sum, t) => sum + Number(t.profit || 0), 0);
-    const sessionOpeningBalance = currentBalance - netProfitToday;
-
-    return Math.max(initialBal, sessionOpeningBalance, metricsStartingDayEquity || 0);
+    // 5. Account created during the current session (after 22:00 UTC)
+    return initialBal;
   }
 
   /**
@@ -904,8 +1000,13 @@ export class RiskEngineService {
         phase: currentPhase,
         currentEquity: Number(account.currentEquity),
         currentProfit: Number(account.totalProfit),
+        cycleProfitNgn: 0,
         profitPercent: 0,
         withdrawableProfitNgn: 0,
+        traderProfitSplit: 0,
+        firmProfitSplit: 0,
+        traderProfitSplitNgn: 0,
+        firmProfitSplitNgn: 0,
         payoutNumber: 1,
         traderSplitPercent: 50,
         profitSplitRatio: '50:50',
@@ -998,7 +1099,9 @@ export class RiskEngineService {
     const noActiveBreachesMet = account.riskEvents.length === 0;
 
     const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
-    const traderProfitSplit = isEligible ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
+    const cycleTraderProfitNgn = netProfit > 0 ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
+    const cycleFirmProfitNgn = netProfit > 0 ? Math.floor(netProfit * ((100 - traderSplitPercent) / 100)) : 0;
+    const withdrawableProfitNgn = isEligible ? cycleTraderProfitNgn : 0;
 
     let failureReason: string | undefined;
     if (!zeroOpenTradesMet) {
@@ -1008,7 +1111,11 @@ export class RiskEngineService {
         ? `Phoenix Rise 1st payout requires 10.0% net profit. Current gain is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}).`
         : `Current profit is ${profitPercent.toFixed(2)}% (₦${netProfit.toLocaleString()}), below the required ${minThresholdPercent}% minimum gain.`;
     } else if (!noActiveBreachesMet) {
-      failureReason = 'Account has an active or unresolved risk compliance event.';
+      const activeBreach = account.riskEvents[0];
+      const breachType = activeBreach?.eventType ? activeBreach.eventType.replace(/_/g, ' ') : 'Risk Compliance Breach';
+      const breachDesc = activeBreach?.description || breachType;
+      const snapEquityStr = activeBreach?.snapshotEquity ? ` (Snapshot Equity: ₦${Number(activeBreach.snapshotEquity).toLocaleString()})` : '';
+      failureReason = `Risk Compliance Event Active: ${breachDesc}${snapEquityStr}. Trading and payout requests are restricted following a risk breach. If this breach was already investigated or occurred due to broker/maintenance downtime, please contact compliance at support@fundedgiants.ng or reach out to support for administrative resolution and account reinstatement.`;
     }
 
     return {
@@ -1017,8 +1124,13 @@ export class RiskEngineService {
       phase: currentPhase,
       currentEquity,
       currentProfit: netProfit,
+      cycleProfitNgn: netProfit,
       profitPercent,
-      withdrawableProfitNgn: traderProfitSplit,
+      withdrawableProfitNgn,
+      traderProfitSplit: cycleTraderProfitNgn,
+      firmProfitSplit: cycleFirmProfitNgn,
+      traderProfitSplitNgn: cycleTraderProfitNgn,
+      firmProfitSplitNgn: cycleFirmProfitNgn,
       payoutNumber,
       traderSplitPercent,
       profitSplitRatio,

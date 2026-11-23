@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ShieldAlert, AlertTriangle, RefreshCw, Filter } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, RefreshCw, Filter, CheckCircle, Loader2 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MetricCard } from '@/components/MetricCard';
@@ -13,6 +13,7 @@ export default function RiskMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState('');
   const [eventTypeFilter, setEventTypeFilter] = useState('');
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const loadRiskEvents = async () => {
     setLoading(true);
@@ -29,6 +30,28 @@ export default function RiskMonitorPage() {
       console.error('Failed to load risk events:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResolveEvent = async (eventId: string) => {
+    if (!confirm('Are you sure you want to resolve and clear this risk compliance event?')) {
+      return;
+    }
+    setResolvingId(eventId);
+    try {
+      const res = await fetchAdminApi(`/admin/risk/events/${eventId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Admin compliance resolution' }),
+      });
+      if (res.success) {
+        await loadRiskEvents();
+      } else {
+        alert(res.message || 'Failed to resolve risk event');
+      }
+    } catch (err: any) {
+      alert('Error resolving risk event: ' + err.message);
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -130,18 +153,19 @@ export default function RiskMonitorPage() {
                   <th className="py-3.5 px-6">Rule Breached</th>
                   <th className="py-3.5 px-6">Snapshot Equity</th>
                   <th className="py-3.5 px-6">Details / Reason</th>
+                  <th className="py-3.5 px-6 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1b3322]/60 text-slate-300">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">
+                    <td colSpan={9} className="py-8 text-center text-slate-500">
                       Loading risk audit events...
                     </td>
                   </tr>
                 ) : events.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">
+                    <td colSpan={9} className="py-8 text-center text-slate-500">
                       Zero risk breach events recorded.
                     </td>
                   </tr>
@@ -170,6 +194,21 @@ export default function RiskMonitorPage() {
                       </td>
                       <td className="py-3.5 px-6 text-slate-300 max-w-sm">
                         {ev.description}
+                      </td>
+                      <td className="py-3.5 px-6 text-right">
+                        <button
+                          onClick={() => handleResolveEvent(ev.id)}
+                          disabled={resolvingId === ev.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500 hover:text-black transition-colors"
+                          title="Resolve and remove this breach event from risk records"
+                        >
+                          {resolvingId === ev.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <CheckCircle className="w-3 h-3" />
+                          )}
+                          <span>Resolve</span>
+                        </button>
                       </td>
                     </tr>
                   ))

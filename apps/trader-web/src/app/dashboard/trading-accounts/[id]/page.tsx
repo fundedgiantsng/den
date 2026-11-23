@@ -153,9 +153,9 @@ export default function AccountAnalyticsTerminalPage() {
             targetEvaluation: riskData.targetEvaluation ?? prev.targetEvaluation,
             isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
             payoutIneligibilityReason: riskData.payoutEligibility?.reason,
-            traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? prev.traderSplitPercent,
-            traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplit ?? prev.traderProfitSplitNgn,
-            firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplit ?? prev.firmProfitSplitNgn,
+            traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? accData.traderSplitPercent ?? prev.traderSplitPercent,
+            traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplitNgn ?? riskData.payoutEligibility?.traderProfitSplit ?? accData.traderProfitSplitNgn ?? prev.traderProfitSplitNgn,
+            firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplitNgn ?? riskData.payoutEligibility?.firmProfitSplit ?? accData.firmProfitSplitNgn ?? prev.firmProfitSplitNgn,
           };
         });
       } else if (Object.keys(accData).length > 0) {
@@ -420,18 +420,33 @@ export default function AccountAnalyticsTerminalPage() {
           </span>
         </div>
 
-        {/* Payout Split Tiered */}
-        <div className="p-5 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-1.5 shadow-xl">
-          <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
-            Your Payout Share ({account.traderSplitPercent || (isPhoenix ? 60 : 50)}%)
-          </span>
-          <div className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-            {formatNaira(account.traderProfitSplitNgn)}
+        {/* Card 3: Payout Split for Funded / Instant accounts OR Challenge Target for Evaluation accounts */}
+        {isFundedAccount ? (
+          <div className="p-5 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-1.5 shadow-xl">
+            <span className="text-[10px] uppercase font-semibold text-fgText-muted tracking-wider block">
+              Your Payout Share ({account.traderSplitPercent || (isPhoenix ? 60 : 50)}%)
+            </span>
+            <div className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
+              {formatNaira(account.traderProfitSplitNgn)}
+            </div>
+            <span className="text-[11px] text-fgText-muted font-mono block">
+              Firm Split ({100 - (account.traderSplitPercent || (isPhoenix ? 60 : 50))}%): {formatNaira(account.firmProfitSplitNgn)}
+            </span>
           </div>
-          <span className="text-[11px] text-fgText-muted font-mono block">
-            Firm Split ({100 - (account.traderSplitPercent || (isPhoenix ? 60 : 50))}%): {formatNaira(account.firmProfitSplitNgn)}
-          </span>
-        </div>
+        ) : (
+          <div className="p-5 rounded-2xl bg-[#09120e] border border-emerald-500/30 space-y-1.5 shadow-xl">
+            <span className="text-[10px] uppercase font-semibold text-emerald-400 tracking-wider block flex items-center gap-1.5">
+              <Award className="w-3.5 h-3.5 text-emerald-400" />
+              Challenge Target (10%)
+            </span>
+            <div className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
+              {formatNaira(account.targetEvaluation?.profitTargetNgn || (account.sizeNgn * 0.10))}
+            </div>
+            <span className="text-[11px] text-fgText-secondary font-mono block">
+              Qualified: <strong className="text-emerald-400">{formatNaira(account.targetEvaluation?.cumulativeQualifiedProfitNgn || 0)}</strong> ({account.targetEvaluation?.progressPercent || 0}%)
+            </span>
+          </div>
+        )}
 
         {/* Free Margin */}
         <div className="p-5 rounded-2xl bg-[#09120e] border border-white/[0.08] space-y-1.5 shadow-xl">
@@ -472,13 +487,13 @@ export default function AccountAnalyticsTerminalPage() {
               <span className="text-fgText-secondary">
                 Qualified Target Progress:{' '}
                 <strong className="text-emerald-400">
-                  {formatNaira(account.targetEvaluation?.cumulativeQualifiedProfitNgn ?? account.profitNgn)}
+                  {formatNaira(account.targetEvaluation?.cumulativeQualifiedProfitNgn ?? 0)}
                 </strong>{' '}
                 /{' '}
                 {formatNaira(account.targetEvaluation?.profitTargetNgn ?? account.sizeNgn * 0.1)}
               </span>
               <span className="font-bold text-white">
-                {account.targetEvaluation?.progressPercent ?? Math.min(100, Math.round((account.profitNgn / (account.sizeNgn * 0.1)) * 100))}%
+                {account.targetEvaluation?.progressPercent ?? 0}%
               </span>
             </div>
 
@@ -486,7 +501,7 @@ export default function AccountAnalyticsTerminalPage() {
               <div
                 className="h-full bg-gradient-to-r from-emerald-500 to-[#00f59b] transition-all duration-500 rounded-full"
                 style={{
-                  width: `${account.targetEvaluation?.progressPercent ?? Math.min(100, Math.round((account.profitNgn / (account.sizeNgn * 0.1)) * 100))}%`,
+                  width: `${account.targetEvaluation?.progressPercent ?? 0}%`,
                 }}
               />
             </div>
@@ -496,14 +511,14 @@ export default function AccountAnalyticsTerminalPage() {
             <div className="p-3 rounded-xl bg-black/40 border border-white/[0.04]">
               <span className="text-[10px] text-fgText-muted uppercase block">Today&apos;s Profit</span>
               <span className="text-sm font-bold text-white">
-                +{formatNaira(account.targetEvaluation?.todayProfitTotalNgn ?? account.profitNgn)}
+                +{formatNaira(account.targetEvaluation?.todayProfitTotalNgn ?? 0)}
               </span>
             </div>
 
             <div className="p-3 rounded-xl bg-black/40 border border-white/[0.04]">
               <span className="text-[10px] text-fgText-muted uppercase block">Credited Towards Target (Max 2%)</span>
               <span className="text-sm font-bold text-emerald-400">
-                +{formatNaira(account.targetEvaluation?.todayCreditedTowardsTargetNgn ?? Math.min(account.profitNgn, account.sizeNgn * 0.02))}
+                +{formatNaira(account.targetEvaluation?.todayCreditedTowardsTargetNgn ?? 0)}
               </span>
             </div>
 

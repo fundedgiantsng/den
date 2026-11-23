@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Body, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, Query, HttpCode, HttpStatus, Res, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
 import { prisma } from '@fundedgiants/database';
@@ -57,6 +57,40 @@ export class AuthController {
       success: true,
       user: result.user,
       sessionToken: result.sessionToken,
+    };
+  }
+
+  @Get('impersonate-session')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Exchange impersonation token for HttpOnly session cookie' })
+  async exchangeImpersonationSession(
+    @Query('token') token: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (!token) {
+      throw new UnauthorizedException('Impersonation token required');
+    }
+    const user = await this.authService.getSessionUser(token);
+    if (!user) {
+      throw new UnauthorizedException('Impersonation session invalid or expired');
+    }
+
+    response.cookie('fg_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
     };
   }
 

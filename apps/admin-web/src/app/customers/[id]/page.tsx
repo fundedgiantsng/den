@@ -18,6 +18,8 @@ import {
   Coins,
   Sparkles,
   PlusCircle,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -57,6 +59,8 @@ export default function CustomerDetailPage() {
     isOpen: false,
     customer: null,
   });
+  const [impersonating, setImpersonating] = useState(false);
+  const [clearingBreachesId, setClearingBreachesId] = useState<string | null>(null);
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -88,6 +92,48 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     loadCustomer();
   }, [customerId]);
+
+  const handleImpersonateTrader = async () => {
+    setImpersonating(true);
+    try {
+      const res = await fetchAdminApi(`/admin/customers/${customerId}/impersonate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Admin dashboard customer testing & feature verification' }),
+      });
+      if (res.success && res.redirectUrl) {
+        window.open(res.redirectUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        alert(res.message || 'Failed to start impersonation session');
+      }
+    } catch (err: any) {
+      alert('Error initiating trader impersonation: ' + err.message);
+    } finally {
+      setImpersonating(false);
+    }
+  };
+
+  const handleClearAccountBreaches = async (accountIdentifier: string) => {
+    if (!confirm(`Are you sure you want to clear all active risk breaches for account ${accountIdentifier}? This will remove breach blocks and restore compliance standing.`)) {
+      return;
+    }
+    setClearingBreachesId(accountIdentifier);
+    try {
+      const res = await fetchAdminApi(`/admin/risk/accounts/${accountIdentifier}/resolve-breaches`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Admin compliance manual breach resolution' }),
+      });
+      if (res.success) {
+        alert(res.message || 'Risk compliance breaches cleared successfully.');
+        await loadCustomer();
+      } else {
+        alert(res.message || 'Failed to clear risk breaches');
+      }
+    } catch (err: any) {
+      alert('Error clearing risk breaches: ' + err.message);
+    } finally {
+      setClearingBreachesId(null);
+    }
+  };
 
   const handleSuspend = () => {
     setModalConfig({
@@ -201,7 +247,21 @@ export default function CustomerDetailPage() {
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={handleImpersonateTrader}
+              disabled={impersonating}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-xs font-semibold text-purple-300 hover:text-white transition-colors"
+              title="Open Trader Portal and view this user's live dashboard in a new tab"
+            >
+              {impersonating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+              <span>Impersonate Trader</span>
+            </button>
+
             {customer.kycStatus !== 'APPROVED' && (
               <button
                 onClick={handleKycApprove}
@@ -326,6 +386,20 @@ export default function CustomerDetailPage() {
 
                     {ch.accountNumber && (
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1b3322]/60">
+                        <button
+                          onClick={() => handleClearAccountBreaches(ch.tradingAccountId || ch.accountNumber)}
+                          disabled={clearingBreachesId === (ch.tradingAccountId || ch.accountNumber)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-colors text-xs font-semibold"
+                          title="Clear all active risk compliance breaches from database for this account"
+                        >
+                          {clearingBreachesId === (ch.tradingAccountId || ch.accountNumber) ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          )}
+                          <span>Clear Breaches</span>
+                        </button>
+
                         <button
                           onClick={() =>
                             setAdjustModal({

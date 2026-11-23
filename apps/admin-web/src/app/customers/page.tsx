@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Search, Filter, ShieldCheck, UserX, UserCheck, Eye, RefreshCw } from 'lucide-react';
+import { Search, Filter, ShieldCheck, UserX, UserCheck, Eye, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatNaira, formatDate } from '@/lib/formatters';
@@ -14,6 +14,7 @@ export default function CustomersDirectoryPage() {
   const [search, setSearch] = useState('');
   const [kycFilter, setKycFilter] = useState('');
   const [suspendedFilter, setSuspendedFilter] = useState('');
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
   const loadCustomers = async () => {
     setLoading(true);
@@ -31,6 +32,25 @@ export default function CustomersDirectoryPage() {
       console.error('Failed to load customers:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleImpersonate = async (customerId: string) => {
+    setImpersonatingId(customerId);
+    try {
+      const res = await fetchAdminApi(`/admin/customers/${customerId}/impersonate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Admin customer directory impersonation' }),
+      });
+      if (res.success && res.redirectUrl) {
+        window.open(res.redirectUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        alert(res.message || 'Failed to start impersonation session');
+      }
+    } catch (err: any) {
+      alert('Error initiating impersonation: ' + err.message);
+    } finally {
+      setImpersonatingId(null);
     }
   };
 
@@ -168,13 +188,28 @@ export default function CustomersDirectoryPage() {
                         {formatDate(c.createdAt)}
                       </td>
                       <td className="py-3.5 px-6 text-right">
-                        <Link
-                          href={`/customers/${c.id}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View 360°</span>
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleImpersonate(c.id)}
+                            disabled={impersonatingId === c.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-xs font-semibold text-purple-300 hover:bg-purple-500/20 transition-colors"
+                            title="Log in to Trader Portal as this user in a new tab"
+                          >
+                            {impersonatingId === c.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            )}
+                            <span>Impersonate</span>
+                          </button>
+                          <Link
+                            href={`/customers/${c.id}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View 360°</span>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))

@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { prisma, KycStatus, UserRole, ChallengeStatus, WithdrawalStatus, PaymentStatus, ChallengeType, TransactionType } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
@@ -981,12 +982,11 @@ export class AdminService {
         where: { id: account.id },
         data: {
           status: 'ACTIVE',
-          ...(shouldResetBalance || addAmount > 0 ? {
-            currentBalance: finalBalance,
-            currentEquity: finalEquity,
-            totalProfit: finalBalance - initialCap,
-            lastSyncedAt: new Date(),
-          } : {}),
+          currentBalance: finalBalance,
+          currentEquity: finalEquity,
+          totalProfit: finalBalance - (shouldResetBalance && options.targetBalanceNgn ? Number(options.targetBalanceNgn) : initialCap),
+          ...(shouldResetBalance && options.targetBalanceNgn ? { initialBalance: Number(options.targetBalanceNgn) } : {}),
+          lastSyncedAt: new Date(),
         },
       });
 
@@ -1000,6 +1000,34 @@ export class AdminService {
           },
         });
       }
+
+      // Remove all unresolved critical risk compliance breaches for this account
+      await tx.riskEvent.deleteMany({
+        where: {
+          tradingAccountId: account.id,
+          severity: 'CRITICAL',
+        },
+      });
+
+      // Clear obsolete snapshots and record fresh session baseline at reinstated balance
+      await tx.riskEvent.deleteMany({
+        where: {
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+        },
+      });
+
+      await tx.riskEvent.create({
+        data: {
+          challengeId: account.challengeId || account.id,
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+          description: `Reinstatement session baseline established at ₦${finalBalance.toLocaleString()}`,
+          severity: 'INFO',
+          snapshotBalance: finalBalance,
+          snapshotEquity: finalEquity,
+        },
+      });
 
       await tx.auditEvent.create({
         data: {
@@ -1085,6 +1113,25 @@ export class AdminService {
           currentEquity: newEquity,
           totalProfit: newBalance - initialCap,
           lastSyncedAt: new Date(),
+        },
+      });
+
+      // Update or replace DAILY_RESET_SNAPSHOT to establish active capital baseline for real-time drawdown tracking
+      await tx.riskEvent.deleteMany({
+        where: {
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+        },
+      });
+      await tx.riskEvent.create({
+        data: {
+          challengeId: account.challengeId || account.id,
+          tradingAccountId: account.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+          description: `Admin balance adjustment baseline established at ₦${newBalance.toLocaleString()}`,
+          severity: 'INFO',
+          snapshotBalance: newBalance,
+          snapshotEquity: newEquity,
         },
       });
 
@@ -1229,6 +1276,162 @@ export class AdminService {
         createdAt: ev.createdAt,
       })),
       pagination: { total, skip, take },
+    };
+  }
+
+  /**
+   * Resolve / Dismiss a specific Risk Event
+   */
+  async resolveRiskEvent(eventId: string, context: AdminActionContext) {
+    const event = await prisma.riskEvent.findUnique({
+      where: { id: eventId },
+      include: { tradingAccount: true },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Risk event ${eventId} not found`);
+    }
+
+    await prisma.riskEvent.delete({
+      where: { id: eventId },
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        adminId: context.adminId,
+        action: 'ADMIN_RISK_EVENT_RESOLVED',
+        resource: 'RiskEvent',
+        resourceId: eventId,
+        details: {
+          accountNumber: event.tradingAccount?.accountNumber,
+          eventType: event.eventType,
+          severity: event.severity,
+          reason: context.reason || 'Admin manual risk breach resolution',
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Risk event #${eventId} resolved and removed from account record.`,
+    };
+  }
+
+  /**
+   * Resolve all active critical risk breaches for a trading account
+   */
+  async resolveAccountRiskBreaches(accountId: string, context: AdminActionContext) {
+    const account = await prisma.tradingAccount.findFirst({
+      where: { OR: [{ id: accountId }, { accountNumber: accountId }] },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Trading account ${accountId} not found`);
+    }
+
+    const deleteRes = await prisma.riskEvent.deleteMany({
+      where: {
+        tradingAccountId: account.id,
+        severity: 'CRITICAL',
+      },
+    });
+
+    // Also establish fresh session baseline so daily/max drawdown is clean
+    await prisma.riskEvent.deleteMany({
+      where: {
+        tradingAccountId: account.id,
+        eventType: 'DAILY_RESET_SNAPSHOT',
+      },
+    });
+
+    await prisma.riskEvent.create({
+      data: {
+        challengeId: account.challengeId || account.id,
+        tradingAccountId: account.id,
+        eventType: 'DAILY_RESET_SNAPSHOT',
+        description: `Risk breaches cleared by admin. Session baseline established at ₦${Number(account.currentBalance).toLocaleString()}`,
+        severity: 'INFO',
+        snapshotBalance: account.currentBalance,
+        snapshotEquity: account.currentEquity,
+      },
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        adminId: context.adminId,
+        action: 'ADMIN_ACCOUNT_BREACHES_CLEARED',
+        resource: 'TradingAccount',
+        resourceId: account.id,
+        details: {
+          accountNumber: account.accountNumber,
+          clearedBreachesCount: deleteRes.count,
+          reason: context.reason || 'Admin manual clearance of all risk breaches',
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Successfully cleared ${deleteRes.count} risk breach event(s) for account #${account.accountNumber}.`,
+      clearedCount: deleteRes.count,
+    };
+  }
+
+  /**
+   * Impersonate a customer: issue valid customer session token and return redirect URL
+   */
+  async impersonateCustomer(customerId: string, context: AdminActionContext) {
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ id: customerId }, { email: customerId }] },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Customer ${customerId} not found`);
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    await prisma.session.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        expiresAt,
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        adminId: context.adminId,
+        action: 'ADMIN_IMPERSONATE_CUSTOMER',
+        resource: 'User',
+        resourceId: user.id,
+        details: {
+          customerEmail: user.email,
+          customerName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+          reason: context.reason || 'Admin customer portal testing and verification',
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    });
+
+    return {
+      success: true,
+      token: rawToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Trader',
+      },
+      redirectUrl: `https://trader.fundedgiants.ng/login?impersonation_token=${rawToken}`,
     };
   }
 

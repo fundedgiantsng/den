@@ -37,6 +37,20 @@ export interface SteraTraderAccountMetrics {
   openTradesProfit: number; // in NGN (converted from kobo)
 }
 
+export interface SteraTraderPosition {
+  id: string;
+  symbol: string;
+  direction: 'BUY' | 'SELL';
+  volume: number;
+  openPrice: number;
+  closePrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  profitNgn: number;
+  openedAt: Date | string;
+  closedAt: Date | string | null;
+}
+
 @Injectable()
 export class SteraTraderService {
   private readonly logger = new Logger(SteraTraderService.name);
@@ -387,6 +401,59 @@ export class SteraTraderService {
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Fetch live open positions and executed trades from SteraTrader
+   * Route: GET /accounts/{login}/positions
+   */
+  async fetchAccountPositions(accountNumber: string): Promise<SteraTraderPosition[]> {
+    if (!this.apiKey) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/positions`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        this.logger.warn(`Failed to fetch positions for SteraTrader account ${accountNumber}: HTTP ${response.status}`);
+        return [];
+      }
+
+      const resJson = await response.json();
+      const rawPositions = Array.isArray(resJson?.data) ? resJson.data : Array.isArray(resJson) ? resJson : [];
+
+      return rawPositions.map((p: any) => {
+        const rawProfit = Number(p.profit ?? p.pnl ?? p.floating ?? 0);
+        // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
+        const profitNgn = rawProfit !== 0 && Math.abs(rawProfit) >= 100 ? rawProfit / 100 : rawProfit;
+        const rawDir = String(p.direction ?? p.type ?? p.side ?? p.cmd ?? 'BUY').toUpperCase();
+        const direction: 'BUY' | 'SELL' = rawDir.includes('SELL') || rawDir === '1' ? 'SELL' : 'BUY';
+
+        return {
+          id: String(p.id ?? p.ticket ?? p.position_id ?? `pos-${Date.now()}`),
+          symbol: String(p.symbol || 'EURUSD'),
+          direction,
+          volume: Number(p.volume ?? p.lots ?? p.size ?? 0.1),
+          openPrice: Number(p.open_price ?? p.openPrice ?? p.price ?? 0),
+          closePrice: p.close_price != null ? Number(p.close_price) : p.closePrice != null ? Number(p.closePrice) : null,
+          stopLoss: p.stop_loss != null ? Number(p.stop_loss) : p.stopLoss != null ? Number(p.stopLoss) : null,
+          takeProfit: p.take_profit != null ? Number(p.take_profit) : p.takeProfit != null ? Number(p.takeProfit) : null,
+          profitNgn,
+          openedAt: p.opened_at || p.open_time || p.created_at || new Date().toISOString(),
+          closedAt: p.closed_at || p.close_time || null,
+        };
+      });
+    } catch (err: any) {
+      this.logger.error(`Error querying SteraTrader positions for ${accountNumber}: ${err.message}`);
+      return [];
     }
   }
 

@@ -83,6 +83,14 @@ export class AdminController {
     return this.adminService.updateCustomerStatus(id, body, context);
   }
 
+  // 4b. Impersonate Trader Customer
+  @Post('customers/:id/impersonate')
+  @HttpCode(HttpStatus.OK)
+  impersonateCustomer(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    const context = this.extractContext(req, body);
+    return this.adminService.impersonateCustomer(id, context);
+  }
+
   // 5. Challenges & Full Cycle Rule Management
   @Get('challenges/products')
   getChallengeProducts() {
@@ -207,6 +215,20 @@ export class AdminController {
       skip: skip ? parseInt(skip, 10) : 0,
       take: take ? parseInt(take, 10) : 50,
     });
+  }
+
+  @Post('risk/events/:id/resolve')
+  @HttpCode(HttpStatus.OK)
+  resolveRiskEvent(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    const context = this.extractContext(req, body);
+    return this.adminService.resolveRiskEvent(id, context);
+  }
+
+  @Post('risk/accounts/:id/resolve-breaches')
+  @HttpCode(HttpStatus.OK)
+  resolveAccountRiskBreaches(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    const context = this.extractContext(req, body);
+    return this.adminService.resolveAccountRiskBreaches(id, context);
   }
 
   // 8. Financial Ledger Journal Entries

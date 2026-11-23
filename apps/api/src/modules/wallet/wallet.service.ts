@@ -224,27 +224,52 @@ export class WalletService {
       throw new BadRequestException('You can bind a maximum of 3 withdrawal bank accounts.');
     }
 
+    const existingAccount = await prisma.customerBankAccount.findFirst({
+      where: {
+        userId: user.id,
+        accountNumber: params.accountNumber,
+        bankCode: params.bankCode,
+      },
+    });
+
+    if (existingAccount) {
+      throw new BadRequestException('This bank account is already bound to your profile.');
+    }
+
     // 1. Resolve account details via Nomba Bank Lookup API
-    let resolveResult = await this.nombaService.resolveAccount(params.accountNumber, params.bankCode);
-    if (!resolveResult.status || !resolveResult.data) {
-      // Fallback to secondary resolution if Nomba is not yet configured with live credentials
-      resolveResult = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
+    let resolveResult: { status: boolean; message?: string; data?: { accountName: string; accountNumber: string; bankCode: string } } = { status: false };
+    try {
+      resolveResult = await this.nombaService.resolveAccount(params.accountNumber, params.bankCode);
+    } catch (err: any) {
+      this.logger.warn(`Nomba resolution attempt failed: ${err.message}`);
     }
 
     if (!resolveResult.status || !resolveResult.data) {
-      throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network');
+      // Fallback to secondary resolution if Nomba could not resolve
+      try {
+        const lencoRes = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
+        if (lencoRes && lencoRes.status && lencoRes.data) {
+          resolveResult = lencoRes;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lenco resolution attempt failed: ${err.message}`);
+      }
     }
 
-    const resolvedName = resolveResult.data.accountName.toUpperCase().trim();
+    if (!resolveResult.status || !resolveResult.data) {
+      throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network. Please check the account number and bank selected.');
+    }
+
+    const resolvedName = (resolveResult.data.accountName || '').toUpperCase().trim();
     const kycName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
 
     // 2. Strict name matching rule: Name on account MUST match KYC
-    const kycParts = kycName.split(' ');
-    const isMatching = kycParts.every((part) => resolvedName.includes(part));
+    const kycParts = kycName.split(/\s+/).filter(Boolean);
+    const isMatching = kycParts.length > 0 && kycParts.every((part) => resolvedName.includes(part));
 
     if (!isMatching) {
       throw new BadRequestException(
-        `Account name '${resolvedName}' does not match your verified name '${kycName}'.`
+        `Account name '${resolvedName}' does not match your verified legal name '${kycName}'. Under regulatory AML guidelines, withdrawals can only be sent to an account registered in your own name.`
       );
     }
 

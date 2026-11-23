@@ -9,6 +9,7 @@ import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
+import { RiskEngineService } from '../risk/risk-engine.service';
 import { PurchaseFromWalletDto, ValidateCouponsDto } from './dto/purchase.dto';
 
 // Official Pricing Table in NGN synced with WordPress FG_Admin_Settings
@@ -38,6 +39,7 @@ export class ChallengesService implements OnModuleInit {
   constructor(
     private readonly steraTraderService: SteraTraderService,
     private readonly notificationsService: NotificationsService,
+    private readonly riskEngineService: RiskEngineService,
   ) {}
 
   async onModuleInit() {
@@ -735,95 +737,76 @@ export class ChallengesService implements OnModuleInit {
     });
 
     if (acc) {
+      // 1. Sync live positions/trades from SteraTrader if available
+      try {
+        const livePositions = await this.steraTraderService.fetchAccountPositions(acc.accountNumber);
+        if (livePositions.length > 0) {
+          for (const pos of livePositions) {
+            await prisma.tradeRecord.upsert({
+              where: { externalTradeId: pos.id },
+              update: {
+                closePrice: pos.closePrice ?? undefined,
+                profit: pos.profitNgn,
+                closedAt: pos.closedAt ? new Date(pos.closedAt) : undefined,
+              },
+              create: {
+                tradingAccountId: acc.id,
+                externalTradeId: pos.id,
+                symbol: pos.symbol,
+                direction: pos.direction,
+                volume: pos.volume,
+                openPrice: pos.openPrice,
+                closePrice: pos.closePrice,
+                profit: pos.profitNgn,
+                openedAt: new Date(pos.openedAt),
+                closedAt: pos.closedAt ? new Date(pos.closedAt) : null,
+              },
+            });
+          }
+          const freshTrades = await prisma.tradeRecord.findMany({
+            where: { tradingAccountId: acc.id },
+            orderBy: { openedAt: 'desc' },
+            take: 50,
+          });
+          acc.tradeRecords = freshTrades;
+        }
+      } catch (syncErr: any) {
+        this.logger.warn(`Could not sync live SteraTrader positions for ${acc.accountNumber}: ${syncErr.message}`);
+      }
+
+      // 2. Fetch authoritative risk status from Risk Engine
+      let riskStatus: any = null;
+      try {
+        riskStatus = await this.riskEngineService.getAccountRiskStatus(acc.accountNumber);
+      } catch (riskErr: any) {
+        this.logger.warn(`Could not query risk status for ${acc.accountNumber}: ${riskErr.message}`);
+      }
+
       const isPhoenix = acc.challenge.type === 'PHOENIX_RISE_INSTANT';
       const initialSize = Number(acc.initialBalance);
-      const balance = Number(acc.currentBalance);
-      const equity = Number(acc.currentEquity);
-      const profitNgn = balance - initialSize;
+      const balance = riskStatus?.currentBalanceNgn ?? Number(acc.currentBalance);
+      const equity = riskStatus?.currentEquityNgn ?? Number(acc.currentEquity);
+      const isFundedPhase = isPhoenix || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED';
+      const profitNgn = Math.max(0, equity - initialSize);
       const profitPercent = ((profitNgn / initialSize) * 100);
 
-      const dailyDrawdownLimitNgn = initialSize * 0.04;
-      const maxDrawdownLimitNgn = isPhoenix ? initialSize * 0.07 : initialSize * 0.10;
+      const dailyDrawdownLimitNgn = riskStatus?.dailyDrawdown?.dailyLimitNgn ?? (initialSize * 0.04);
+      const maxDrawdownLimitNgn = riskStatus?.maximumDrawdown?.limitNgn ?? (isPhoenix ? initialSize * 0.07 : initialSize * 0.10);
+      const dailyDrawdownNgn = riskStatus?.dailyDrawdown?.currentLossNgn ?? Math.max(0, initialSize - equity);
+      const dailyHeadroomNgn = riskStatus?.dailyDrawdown?.headroomRemainingNgn ?? Math.max(0, dailyDrawdownLimitNgn - dailyDrawdownNgn);
+      const maxDrawdownNgn = riskStatus?.maximumDrawdown?.currentLossNgn ?? Math.max(0, initialSize - equity);
+      const maxLossHeadroomNgn = riskStatus?.maximumDrawdown?.headroomRemainingNgn ?? Math.max(0, maxDrawdownLimitNgn - maxDrawdownNgn);
 
-      // Count previous payouts and determine tiered payout split & minimum profit threshold
-      const previousPayoutsCount = await prisma.riskEvent.count({
-        where: {
-          tradingAccountId: acc.id,
-          eventType: 'AUTOMATED_PAYOUT_APPROVED',
-        },
-      });
-      const payoutNumber = previousPayoutsCount + 1;
-
-      let minPayoutPercent = 2.0;
-      let traderSplitPercent = 80;
-
-      if (isPhoenix) {
-        if (payoutNumber === 1) {
-          minPayoutPercent = 10.0;
-          const challengeStartDate = acc.challenge?.createdAt || acc.createdAt || new Date();
-          const daysSinceStart = Math.max(
-            1,
-            Math.floor((Date.now() - new Date(challengeStartDate).getTime()) / (1000 * 60 * 60 * 24))
-          );
-          traderSplitPercent = daysSinceStart < 15 ? 60 : 50;
-        } else if (payoutNumber === 2) {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 60;
-        } else if (payoutNumber === 3) {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 70;
-        } else {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 80;
-        }
-      } else {
-        if (payoutNumber === 1) {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 50;
-        } else if (payoutNumber === 2) {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 60;
-        } else if (payoutNumber === 3) {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 70;
-        } else {
-          minPayoutPercent = 2.0;
-          traderSplitPercent = 80;
-        }
-      }
-
-      const isFundedPhase = isPhoenix || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED';
-      const isPayoutEligible = isFundedPhase && profitPercent >= minPayoutPercent;
-      const traderProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * (traderSplitPercent / 100)) : 0;
-      const firmProfitSplitNgn = profitNgn > 0 ? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)) : 0;
-
-      // Calculate Daily Session Start (22:00 UTC = 23:00 GMT+1)
-      const now = new Date();
-      const sessionStart = new Date(now);
-      if (now.getUTCHours() < 22) {
-        sessionStart.setUTCDate(sessionStart.getUTCDate() - 1);
-      }
-      sessionStart.setUTCHours(22, 0, 0, 0);
-
-      const todaySnapshot = acc.riskEvents.find(
-        (e) => e.eventType === 'DAILY_RESET_SNAPSHOT' && new Date(e.createdAt) >= sessionStart
-      );
-      let startingDayBaseline = initialSize;
-      if (todaySnapshot) {
-        const snapBal = Number(todaySnapshot.snapshotBalance || initialSize);
-        const snapEq = Number(todaySnapshot.snapshotEquity || snapBal);
-        startingDayBaseline = Math.max(snapBal, snapEq);
-      } else if (new Date(acc.createdAt) < sessionStart) {
-        const netProfitToday = acc.tradeRecords
-          .filter((t) => t.closedAt && new Date(t.closedAt) >= sessionStart)
-          .reduce((sum, t) => sum + Number(t.profit || 0), 0);
-        startingDayBaseline = Math.max(initialSize, balance - netProfitToday);
-      }
-
-      const dailyDrawdownNgn = Math.max(0, startingDayBaseline - equity);
-      const dailyHeadroomNgn = Math.max(0, dailyDrawdownLimitNgn - dailyDrawdownNgn);
-      const maxDrawdownNgn = Math.max(0, initialSize - equity);
-      const maxLossHeadroomNgn = Math.max(0, maxDrawdownLimitNgn - maxDrawdownNgn);
+      // Tiered payout split & eligibility
+      const payoutNumber = riskStatus?.payoutEligibility?.payoutNumber ?? 1;
+      const traderSplitPercent = riskStatus?.payoutEligibility?.traderSplitPercent ?? (isPhoenix ? 60 : 50);
+      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false);
+      const traderProfitSplitNgn = isFundedPhase
+        ? (riskStatus?.payoutEligibility?.traderProfitSplitNgn ?? Math.floor(profitNgn * (traderSplitPercent / 100)))
+        : 0;
+      const firmProfitSplitNgn = isFundedPhase
+        ? (riskStatus?.payoutEligibility?.firmProfitSplitNgn ?? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)))
+        : 0;
 
       return {
         id: acc.accountNumber,
@@ -841,16 +824,17 @@ export class ChallengesService implements OnModuleInit {
         currentEquityNgn: equity,
         freeMarginNgn: equity,
         marginLevelPercent: 999.0,
-        profitNgn,
-        profitPercent: `${profitNgn >= 0 ? '+' : ''}${profitPercent.toFixed(2)}%`,
+        profitNgn: equity - initialSize,
+        profitPercent: `${equity >= initialSize ? '+' : ''}${(((equity - initialSize) / initialSize) * 100).toFixed(2)}%`,
         dailyDrawdownNgn,
         dailyDrawdownLimitNgn,
         maxDrawdownNgn,
         maxDrawdownLimitNgn,
         dailyHeadroomNgn,
         maxLossHeadroomNgn,
+        targetEvaluation: riskStatus?.targetEvaluation ?? null,
         isPayoutEligible,
-        minPayoutPercent,
+        minPayoutPercent: riskStatus?.payoutEligibility?.minRequiredPercent ?? 2.0,
         payoutNumber,
         traderSplitPercent,
         profitSplitRatio: `${traderSplitPercent}:${100 - traderSplitPercent}`,

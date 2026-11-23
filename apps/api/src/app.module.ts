@@ -14,6 +14,7 @@ import { CardsModule } from './modules/cards/cards.module';
 import { SupportModule } from './modules/support/support.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SendbabaModule } from './modules/integrations/sendbaba/sendbaba.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SendbabaModule } from './modules/integrations/sendbaba/sendbaba.module'
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
