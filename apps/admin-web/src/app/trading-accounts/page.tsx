@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Activity, ShieldAlert, Power, RefreshCw, RotateCcw } from 'lucide-react';
+import { Search, Activity, ShieldAlert, Power, RefreshCw, RotateCcw, Coins } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ActionModal } from '@/components/ActionModal';
+import { ReinstateAccountModal } from '@/components/ReinstateAccountModal';
+import { AdjustBalanceModal } from '@/components/AdjustBalanceModal';
 import { formatNaira, formatDateTime } from '@/lib/formatters';
 import { fetchAdminApi } from '@/lib/api';
 
@@ -24,12 +26,17 @@ export default function TradingAccountsPage() {
   });
   const [reinstateModal, setReinstateModal] = useState<{
     isOpen: boolean;
-    accountId: string;
-    accountNumber: string;
+    account: any | null;
   }>({
     isOpen: false,
-    accountId: '',
-    accountNumber: '',
+    account: null,
+  });
+  const [adjustModal, setAdjustModal] = useState<{
+    isOpen: boolean;
+    account: any | null;
+  }>({
+    isOpen: false,
+    account: null,
   });
 
   const loadAccounts = async () => {
@@ -61,14 +68,6 @@ export default function TradingAccountsPage() {
 
   const handleTriggerKillSwitch = async (reason: string) => {
     await fetchAdminApi(`/admin/trading-accounts/${killModal.accountId}/terminate`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    });
-    await loadAccounts();
-  };
-
-  const handleReinstateAccount = async (reason: string) => {
-    await fetchAdminApi(`/admin/trading-accounts/${reinstateModal.accountId}/reinstate`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
@@ -179,35 +178,40 @@ export default function TradingAccountsPage() {
                         {formatDateTime(acc.lastSyncedAt)}
                       </td>
                       <td className="py-3.5 px-6 text-right">
-                        {acc.status === 'ACTIVE' ? (
+                        <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() =>
-                              setKillModal({
-                                isOpen: true,
-                                accountId: acc.id,
-                                accountNumber: acc.accountNumber,
-                              })
-                            }
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-600/10 border border-rose-500/30 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors text-xs font-semibold"
+                            onClick={() => setAdjustModal({ isOpen: true, account: acc })}
+                            title="Adjust balance for demo / withdrawal testing"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-colors text-xs font-semibold"
                           >
-                            <Power className="w-3.5 h-3.5" />
-                            <span>Kill Switch</span>
+                            <Coins className="w-3.5 h-3.5" />
+                            <span>Adjust</span>
                           </button>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              setReinstateModal({
-                                isOpen: true,
-                                accountId: acc.id,
-                                accountNumber: acc.accountNumber,
-                              })
-                            }
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors text-xs font-semibold"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Reinstate</span>
-                          </button>
-                        )}
+
+                          {acc.status === 'ACTIVE' ? (
+                            <button
+                              onClick={() =>
+                                setKillModal({
+                                  isOpen: true,
+                                  accountId: acc.id,
+                                  accountNumber: acc.accountNumber,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600/10 border border-rose-500/30 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors text-xs font-semibold"
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                              <span>Kill Switch</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setReinstateModal({ isOpen: true, account: acc })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors text-xs font-semibold"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Reinstate</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -228,14 +232,18 @@ export default function TradingAccountsPage() {
         onConfirm={handleTriggerKillSwitch}
       />
 
-      <ActionModal
+      <ReinstateAccountModal
         isOpen={reinstateModal.isOpen}
-        title={`Reinstate Trading Account ${reinstateModal.accountNumber}`}
-        description="Restores trading access on SteraTrader, sets account status back to ACTIVE, and reactivates the customer challenge."
-        confirmLabel="Confirm Reinstatement"
-        variant="primary"
-        onClose={() => setReinstateModal({ isOpen: false, accountId: '', accountNumber: '' })}
-        onConfirm={handleReinstateAccount}
+        account={reinstateModal.account}
+        onClose={() => setReinstateModal({ isOpen: false, account: null })}
+        onSuccess={loadAccounts}
+      />
+
+      <AdjustBalanceModal
+        isOpen={adjustModal.isOpen}
+        account={adjustModal.account}
+        onClose={() => setAdjustModal({ isOpen: false, account: null })}
+        onSuccess={loadAccounts}
       />
     </>
   );

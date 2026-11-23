@@ -353,6 +353,7 @@ export class AdminService {
           type: ch.type,
           status: ch.status,
           ruleVersion: ch.ruleVersion,
+          tradingAccountId: ch.tradingAccount?.id,
           accountNumber: ch.tradingAccount?.accountNumber,
           initialBalanceNgn: Number(ch.tradingAccount?.initialBalance || 0),
           currentBalanceNgn: Number(ch.tradingAccount?.currentBalance || 0),
@@ -917,28 +918,76 @@ export class AdminService {
 
   /**
    * Administrative Reinstatement
-   * Restores an account back to ACTIVE status in SteraTrader and the database
+   * Restores an account back to ACTIVE status in SteraTrader and the database,
+   * with optional starting balance reset and test balance addition for withdrawal/demo testing.
    */
-  async reinstateTradingAccount(accountId: string, context: AdminActionContext) {
+  async reinstateTradingAccount(
+    accountId: string,
+    options: {
+      reason?: string;
+      resetBalance?: boolean;
+      targetBalanceNgn?: number;
+      addBalanceNgn?: number;
+    },
+    context: AdminActionContext,
+  ) {
     const account = await prisma.tradingAccount.findFirst({
       where: { OR: [{ id: accountId }, { accountNumber: accountId }] },
-      include: { challenge: true, user: true },
+      include: { challenge: { include: { product: true } }, user: true },
     });
 
     if (!account) {
       throw new NotFoundException(`Trading account ${accountId} not found`);
     }
 
-    const reason = context.reason?.trim() || 'Admin manual reinstatement';
+    const reason = options?.reason?.trim() || context.reason?.trim() || 'Admin manual reinstatement';
 
     // 1. Re-enable in SteraTrader
     await this.steraTraderService.updateAccountStatus(account.accountNumber, 'active', reason);
 
-    // 2. Update DB records
+    // 2. Handle Balance Reset and/or Add Balance
+    const shouldResetBalance = options?.resetBalance === true || options?.targetBalanceNgn !== undefined;
+    const initialCap = Number(account.initialBalance || 1000000);
+    let targetBaseBalance = shouldResetBalance
+      ? (options.targetBalanceNgn !== undefined && !isNaN(Number(options.targetBalanceNgn)) && Number(options.targetBalanceNgn) > 0
+          ? Number(options.targetBalanceNgn)
+          : initialCap)
+      : Number(account.currentBalance);
+
+    if (shouldResetBalance) {
+      this.logger.log(`Resetting SteraTrader balance for account #${account.accountNumber} to initial capital ₦${targetBaseBalance.toLocaleString()}`);
+      await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetBaseBalance);
+    }
+
+    const addAmount = Number(options?.addBalanceNgn || 0);
+    if (!isNaN(addAmount) && addAmount > 0) {
+      this.logger.log(`Adding test balance of ₦${addAmount.toLocaleString()} to account #${account.accountNumber}`);
+      await this.steraTraderService.creditAccountBalance(
+        account.accountNumber,
+        addAmount,
+        `Reinstatement demo test balance: ${reason}`
+      );
+      targetBaseBalance += addAmount;
+    }
+
+    // Query live metrics from SteraTrader if available
+    const liveMetrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+    const finalBalance = liveMetrics ? liveMetrics.balance : targetBaseBalance;
+    const finalEquity = liveMetrics ? liveMetrics.equity : targetBaseBalance;
+
+    // 3. Update DB records
     await prisma.$transaction(async (tx) => {
       await tx.tradingAccount.update({
         where: { id: account.id },
-        data: { status: 'ACTIVE' },
+        data: {
+          status: 'ACTIVE',
+          ...(shouldResetBalance || addAmount > 0 ? {
+            currentBalance: finalBalance,
+            currentEquity: finalEquity,
+            totalProfit: finalBalance - initialCap,
+            lastSyncedAt: new Date(),
+          } : {}),
+        },
       });
 
       if (account.challengeId) {
@@ -962,6 +1011,10 @@ export class AdminService {
             accountNumber: account.accountNumber,
             userEmail: account.user?.email,
             reason,
+            balanceReset: shouldResetBalance,
+            targetBalanceNgn: shouldResetBalance ? targetBaseBalance - addAmount : undefined,
+            addBalanceNgn: addAmount > 0 ? addAmount : undefined,
+            finalBalanceNgn: finalBalance,
           },
           ipAddress: context.ipAddress,
           userAgent: context.userAgent,
@@ -971,8 +1024,169 @@ export class AdminService {
 
     return {
       success: true,
-      message: `Account #${account.accountNumber} successfully reinstated to ACTIVE.`,
+      message: `Account #${account.accountNumber} successfully reinstated to ACTIVE${shouldResetBalance ? ` (Balance reset to ₦${finalBalance.toLocaleString()})` : ''}.`,
       accountNumber: account.accountNumber,
+      balance: finalBalance,
+      equity: finalEquity,
+    };
+  }
+
+  /**
+   * Adjust Trading Account Balance (Add / Deduct)
+   * Credits or debits SteraTrader balance for demo, testing, or withdrawal verification
+   */
+  async adjustTradingAccountBalance(
+    accountId: string,
+    dto: { amountNgn: number; type?: 'deposit' | 'withdrawal'; reason?: string },
+    context: AdminActionContext,
+  ) {
+    const account = await prisma.tradingAccount.findFirst({
+      where: { OR: [{ id: accountId }, { accountNumber: accountId }] },
+      include: { challenge: true, user: true },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Trading account ${accountId} not found`);
+    }
+
+    const rawAmount = Number(dto.amountNgn);
+    if (isNaN(rawAmount) || rawAmount === 0) {
+      throw new BadRequestException('Adjustment amount must be a non-zero number');
+    }
+
+    const isWithdrawal = dto.type === 'withdrawal' || rawAmount < 0;
+    const signedAmount = isWithdrawal ? -Math.abs(rawAmount) : Math.abs(rawAmount);
+    const comment = dto.reason?.trim() || 'Admin manual balance adjustment for demo/withdrawal testing';
+
+    // 1. Execute SteraTrader transaction
+    this.logger.log(`Executing admin balance adjustment for #${account.accountNumber}: ${signedAmount >= 0 ? '+' : ''}₦${signedAmount.toLocaleString()} [${comment}]`);
+    const steraOk = await this.steraTraderService.creditAccountBalance(
+      account.accountNumber,
+      signedAmount,
+      comment
+    );
+
+    if (!steraOk) {
+      this.logger.warn(`SteraTrader balance adjustment API returned failure for #${account.accountNumber}`);
+    }
+
+    // 2. Fetch live metrics or compute new balance
+    const liveMetrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+    const newBalance = liveMetrics ? liveMetrics.balance : Number(account.currentBalance) + signedAmount;
+    const newEquity = liveMetrics ? liveMetrics.equity : Number(account.currentEquity) + signedAmount;
+    const initialCap = Number(account.initialBalance || 1000000);
+
+    // 3. Update database
+    await prisma.$transaction(async (tx) => {
+      await tx.tradingAccount.update({
+        where: { id: account.id },
+        data: {
+          currentBalance: newBalance,
+          currentEquity: newEquity,
+          totalProfit: newBalance - initialCap,
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          adminId: context.adminId,
+          action: 'ADMIN_ACCOUNT_BALANCE_ADJUSTED',
+          resource: 'TradingAccount',
+          resourceId: account.id,
+          details: {
+            accountNumber: account.accountNumber,
+            userEmail: account.user?.email,
+            adjustmentAmountNgn: signedAmount,
+            type: isWithdrawal ? 'withdrawal' : 'deposit',
+            newBalanceNgn: newBalance,
+            reason: comment,
+          },
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      message: `Successfully ${isWithdrawal ? 'deducted' : 'added'} ₦${Math.abs(signedAmount).toLocaleString()} ${isWithdrawal ? 'from' : 'to'} account #${account.accountNumber}. New balance: ₦${newBalance.toLocaleString()}.`,
+      accountNumber: account.accountNumber,
+      currentBalanceNgn: newBalance,
+      currentEquityNgn: newEquity,
+    };
+  }
+
+  /**
+   * Adjust Customer Wallet Balance (Admin Test / Demo Credit)
+   * Credits funds directly into the trader's Giants Vault so they can test withdrawals or checkout
+   */
+  async adjustCustomerWalletBalance(
+    userId: string,
+    dto: { amountNgn: number; reason?: string },
+    context: AdminActionContext,
+  ) {
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ id: userId }, { email: userId }] },
+      include: { wallet: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Customer ${userId} not found`);
+    }
+
+    if (!user.wallet) {
+      throw new NotFoundException(`Wallet for customer ${user.email} not found`);
+    }
+
+    const amount = Number(dto.amountNgn);
+    if (isNaN(amount) || amount <= 0) {
+      throw new BadRequestException('Deposit amount must be a positive number');
+    }
+
+    const reason = dto.reason?.trim() || 'Admin manual wallet credit for withdrawal/demo testing';
+
+    const deposit = await prisma.deposit.create({
+      data: {
+        walletId: user.wallet.id,
+        reference: `ADMIN-CREDIT-${user.id.slice(0, 8)}-${Date.now()}`,
+        amount,
+        currency: 'NGN',
+        status: 'SUCCESSFUL',
+        senderName: 'FundedGiants Admin Test Credit',
+        senderBank: 'Nombank MFB',
+        rawWebhookData: {
+          adminId: context.adminId,
+          reason,
+          creditedAt: new Date().toISOString(),
+        },
+        reconciled: true,
+      },
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        adminId: context.adminId,
+        action: 'ADMIN_WALLET_BALANCE_CREDITED',
+        resource: 'CustomerWallet',
+        resourceId: user.wallet.id,
+        details: {
+          userId: user.id,
+          userEmail: user.email,
+          depositId: deposit.id,
+          amountNgn: amount,
+          reason,
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Successfully credited ₦${amount.toLocaleString()} to ${user.email}'s Giants Vault for testing.`,
+      depositId: deposit.id,
+      amountNgn: amount,
     };
   }
 

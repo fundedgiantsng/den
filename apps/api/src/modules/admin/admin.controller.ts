@@ -162,11 +162,35 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   reinstateTradingAccount(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: { reason?: string; resetBalance?: boolean; targetBalanceNgn?: number; addBalanceNgn?: number },
     @Req() req: any,
   ) {
     const context = this.extractContext(req, body);
-    return this.adminService.reinstateTradingAccount(id, context);
+    return this.adminService.reinstateTradingAccount(id, body, context);
+  }
+
+  // Adjust Trading Account Balance (Deposit / Withdrawal)
+  @Post('trading-accounts/:id/adjust-balance')
+  @HttpCode(HttpStatus.OK)
+  adjustTradingAccountBalance(
+    @Param('id') id: string,
+    @Body() body: { amountNgn: number; type?: 'deposit' | 'withdrawal'; reason?: string },
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req, body);
+    return this.adminService.adjustTradingAccountBalance(id, body, context);
+  }
+
+  // Adjust Customer Wallet Balance (Test / Demo Credit)
+  @Post('customers/:id/wallet/adjust-balance')
+  @HttpCode(HttpStatus.OK)
+  adjustCustomerWalletBalance(
+    @Param('id') id: string,
+    @Body() body: { amountNgn: number; reason?: string },
+    @Req() req: any,
+  ) {
+    const context = this.extractContext(req, body);
+    return this.adminService.adjustCustomerWalletBalance(id, body, context);
   }
 
   // 7. Risk Events Log

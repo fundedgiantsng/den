@@ -14,10 +14,17 @@ import {
   Building,
   CheckCircle,
   AlertTriangle,
+  RotateCcw,
+  Coins,
+  Sparkles,
+  PlusCircle,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ActionModal } from '@/components/ActionModal';
+import { ReinstateAccountModal } from '@/components/ReinstateAccountModal';
+import { AdjustBalanceModal } from '@/components/AdjustBalanceModal';
+import { CreditWalletModal } from '@/components/CreditWalletModal';
 import { formatNaira, formatDateTime, formatDate } from '@/lib/formatters';
 import { fetchAdminApi } from '@/lib/api';
 
@@ -29,6 +36,27 @@ export default function CustomerDetailPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'challenges' | 'wallet' | 'orders' | 'audit'>('challenges');
+  const [reinstateModal, setReinstateModal] = useState<{
+    isOpen: boolean;
+    account: any | null;
+  }>({
+    isOpen: false,
+    account: null,
+  });
+  const [adjustModal, setAdjustModal] = useState<{
+    isOpen: boolean;
+    account: any | null;
+  }>({
+    isOpen: false,
+    account: null,
+  });
+  const [creditWalletModal, setCreditWalletModal] = useState<{
+    isOpen: boolean;
+    customer: any | null;
+  }>({
+    isOpen: false,
+    customer: null,
+  });
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -295,6 +323,54 @@ export default function CustomerDetailPage() {
                         <strong>Breach Reason:</strong> {ch.failureReason}
                       </div>
                     )}
+
+                    {ch.accountNumber && (
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1b3322]/60">
+                        <button
+                          onClick={() =>
+                            setAdjustModal({
+                              isOpen: true,
+                              account: {
+                                id: ch.tradingAccountId || ch.id,
+                                accountNumber: ch.accountNumber,
+                                customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                                customerEmail: customer.email,
+                                currentBalanceNgn: ch.currentEquityNgn || ch.currentBalanceNgn,
+                                initialBalanceNgn: ch.initialBalanceNgn,
+                              },
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-colors text-xs font-semibold"
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                          <span>Adjust Balance</span>
+                        </button>
+
+                        {ch.tradingStatus !== 'ACTIVE' && (
+                          <button
+                            onClick={() =>
+                              setReinstateModal({
+                                isOpen: true,
+                                account: {
+                                  id: ch.tradingAccountId || ch.id,
+                                  accountNumber: ch.accountNumber,
+                                  customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                                  customerEmail: customer.email,
+                                  productName: ch.productName,
+                                  initialBalanceNgn: ch.initialBalanceNgn,
+                                  currentBalanceNgn: ch.currentEquityNgn || ch.currentBalanceNgn,
+                                  status: ch.tradingStatus,
+                                },
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors text-xs font-semibold"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reinstate Account</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -306,11 +382,30 @@ export default function CustomerDetailPage() {
         {activeTab === 'wallet' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-5 rounded-xl bg-[#0f1712] border border-[#1b3322]">
-                <div className="text-xs text-slate-400 uppercase font-semibold">Available Vault Balance</div>
-                <div className="text-2xl font-bold text-emerald-400 mt-2 font-mono">
-                  {formatNaira(wallet?.availableBalanceNgn || 0)}
+              <div className="p-5 rounded-xl bg-[#0f1712] border border-[#1b3322] flex flex-col justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 uppercase font-semibold">Available Vault Balance</div>
+                  <div className="text-2xl font-bold text-emerald-400 mt-2 font-mono">
+                    {formatNaira(wallet?.availableBalanceNgn || 0)}
+                  </div>
                 </div>
+                <button
+                  onClick={() =>
+                    setCreditWalletModal({
+                      isOpen: true,
+                      customer: {
+                        id: customer.id,
+                        name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                        email: customer.email,
+                        availableBalanceNgn: wallet?.availableBalanceNgn || 0,
+                      },
+                    })
+                  }
+                  className="mt-3 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-colors text-xs font-semibold self-start"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Credit Vault (Test Balance)</span>
+                </button>
               </div>
               <div className="p-5 rounded-xl bg-[#0f1712] border border-[#1b3322]">
                 <div className="text-xs text-slate-400 uppercase font-semibold">Locked in Pending Withdrawals</div>
@@ -438,6 +533,27 @@ export default function CustomerDetailPage() {
         variant={modalConfig.variant}
         onClose={() => setModalConfig((prev) => ({ ...prev, isOpen: false }))}
         onConfirm={modalConfig.action}
+      />
+
+      <ReinstateAccountModal
+        isOpen={reinstateModal.isOpen}
+        account={reinstateModal.account}
+        onClose={() => setReinstateModal({ isOpen: false, account: null })}
+        onSuccess={loadCustomer}
+      />
+
+      <AdjustBalanceModal
+        isOpen={adjustModal.isOpen}
+        account={adjustModal.account}
+        onClose={() => setAdjustModal({ isOpen: false, account: null })}
+        onSuccess={loadCustomer}
+      />
+
+      <CreditWalletModal
+        isOpen={creditWalletModal.isOpen}
+        customer={creditWalletModal.customer}
+        onClose={() => setCreditWalletModal({ isOpen: false, customer: null })}
+        onSuccess={loadCustomer}
       />
     </>
   );
