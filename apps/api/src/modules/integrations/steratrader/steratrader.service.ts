@@ -35,6 +35,7 @@ export interface SteraTraderAccountMetrics {
   startingDayEquity?: number; // in NGN (converted from kobo)
   openTradesCount: number;
   openTradesProfit: number; // in NGN (converted from kobo)
+  floating?: number;
 }
 
 export interface SteraTraderPosition {
@@ -207,6 +208,7 @@ export class SteraTraderService {
       startingDayEquity: rawStartingDayEquity != null ? rawStartingDayEquity / 100 : undefined,
       openTradesCount: Number(data.open_positions ?? data.open_trades_count ?? 0),
       openTradesProfit: rawTradesProfit / 100,
+      floating: rawTradesProfit / 100,
     };
   }
 
@@ -258,10 +260,16 @@ export class SteraTraderService {
   async creditAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Balance adjustment'): Promise<boolean> {
     if (!this.apiKey) return false;
 
+    if (amountNgn < 0) {
+      // SteraTrader CRM keys with money.deposit scope cannot execute debit transactions.
+      // Do NOT call credit_out as it artificially decreases the credit facility rather than balance.
+      this.logger.log(`Skipping negative credit_out on SteraTrader for ${accountNumber} (balance reset is authoritative in CRM)`);
+      return true;
+    }
+
     const amountKobo = Math.abs(Math.round(amountNgn * 100));
-    // SteraTrader CRM API accepts 'deposit' for credits and 'credit_out' for debits (withdrawals/resets)
-    const kind = amountNgn >= 0 ? 'deposit' : 'credit_out';
-    this.logger.log(`Executing SteraTrader transaction for ${accountNumber}: ${kind} ₦${Math.abs(amountNgn).toLocaleString()} (${amountKobo} kobo) [${comment}]`);
+    const kind = 'deposit';
+    this.logger.log(`Executing SteraTrader transaction for ${accountNumber}: ${kind} ₦${amountNgn.toLocaleString()} (${amountKobo} kobo) [${comment}]`);
 
     try {
       const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {

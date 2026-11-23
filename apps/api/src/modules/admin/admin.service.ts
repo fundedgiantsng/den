@@ -973,8 +973,10 @@ export class AdminService {
 
     // Query live metrics from SteraTrader if available
     const liveMetrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
-    const finalBalance = liveMetrics ? liveMetrics.balance : targetBaseBalance;
-    const finalEquity = liveMetrics ? liveMetrics.equity : targetBaseBalance;
+    // If admin explicitly requested reset balance or added balance, admin target is authoritative
+    const finalBalance = shouldResetBalance || addAmount > 0 ? targetBaseBalance : (liveMetrics ? liveMetrics.balance : targetBaseBalance);
+    const floating = Number(liveMetrics?.floating ?? 0);
+    const finalEquity = finalBalance + floating;
 
     // 3. Update DB records
     await prisma.$transaction(async (tx) => {
@@ -1005,7 +1007,10 @@ export class AdminService {
       await tx.riskEvent.deleteMany({
         where: {
           tradingAccountId: account.id,
-          severity: 'CRITICAL',
+          OR: [
+            { severity: 'CRITICAL' },
+            { eventType: { in: ['DAILY_DD_BREACH', 'MAX_DD_BREACH', 'INACTIVITY_BREACH', 'UNRESOLVED_RISK_BREACH'] } },
+          ],
         },
       });
 
@@ -1098,10 +1103,11 @@ export class AdminService {
       this.logger.warn(`SteraTrader balance adjustment API returned failure for #${account.accountNumber}`);
     }
 
-    // 2. Fetch live metrics or compute new balance
+    // 2. Fetch live metrics or compute new balance (admin adjustment is authoritative in CRM)
     const liveMetrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
-    const newBalance = liveMetrics ? liveMetrics.balance : Number(account.currentBalance) + signedAmount;
-    const newEquity = liveMetrics ? liveMetrics.equity : Number(account.currentEquity) + signedAmount;
+    const newBalance = Number(account.currentBalance) + signedAmount;
+    const floating = Number(liveMetrics?.floating ?? 0);
+    const newEquity = newBalance + floating;
     const initialCap = Number(account.initialBalance || 1000000);
 
     // 3. Update database

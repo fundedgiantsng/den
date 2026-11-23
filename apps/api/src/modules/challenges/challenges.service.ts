@@ -824,6 +824,70 @@ export class ChallengesService implements OnModuleInit {
         ? (riskStatus?.payoutEligibility?.firmProfitSplitNgn ?? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)))
         : 0;
 
+      // Fetch payout withdrawal events for this account to include in trade execution log
+      const withdrawalEvents = await prisma.riskEvent.findMany({
+        where: {
+          tradingAccountId: acc.id,
+          eventType: { in: ['AUTOMATED_PAYOUT_APPROVED', 'MANUAL_PAYOUT_APPROVED', 'PAYOUT_WITHDRAWAL'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const withdrawalTrades = withdrawalEvents.map((w) => {
+        const match = w.description.match(/₦([\d,]+(\.\d+)?)/);
+        const amountStr = match ? match[1].replace(/,/g, '') : '0';
+        const amount = parseFloat(amountStr) || 0;
+        return {
+          ticketId: `PAY-${w.id.slice(0, 8).toUpperCase()}`,
+          symbol: 'WITHDRAWAL',
+          direction: 'OUT',
+          volume: 1.0,
+          openPrice: 0,
+          closePrice: 0,
+          stopLoss: null,
+          takeProfit: null,
+          profitNgn: -amount,
+          openedAt: w.createdAt,
+          closedAt: w.createdAt,
+        };
+      });
+
+      const mappedTrades = acc.tradeRecords.map((t) => {
+        let profitNgn = t.profit != null ? Number(t.profit) : 0;
+        if (profitNgn === 0 && t.closePrice != null && Number(t.openPrice) > 0 && Number(t.closePrice) !== Number(t.openPrice)) {
+          const dirMultiplier = t.direction === 'BUY' ? 1 : -1;
+          const priceDelta = (Number(t.closePrice) - Number(t.openPrice)) * dirMultiplier;
+          let contractSize = 100000;
+          const sym = (t.symbol || '').toUpperCase();
+          if (sym.includes('XAU') || sym.includes('GOLD')) {
+            contractSize = 100;
+          } else if (sym.includes('BTC') || sym.includes('ETH') || sym.includes('CRYPTO')) {
+            contractSize = 1;
+          } else if (sym.includes('US30') || sym.includes('NAS') || sym.includes('SPX') || sym.includes('GER') || sym.includes('INDEX')) {
+            contractSize = 1;
+          }
+          const usd = priceDelta * contractSize * Number(t.volume);
+          profitNgn = Math.round(usd * 1485 * 100) / 100;
+        }
+        return {
+          ticketId: t.externalTradeId,
+          symbol: t.symbol,
+          direction: t.direction,
+          volume: Number(t.volume),
+          openPrice: Number(t.openPrice),
+          closePrice: t.closePrice ? Number(t.closePrice) : null,
+          stopLoss: t.stopLoss ? Number(t.stopLoss) : null,
+          takeProfit: t.takeProfit ? Number(t.takeProfit) : null,
+          profitNgn,
+          openedAt: t.openedAt,
+          closedAt: t.closedAt,
+        };
+      });
+
+      const combinedTrades = [...mappedTrades, ...withdrawalTrades].sort(
+        (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()
+      );
+
       return {
         id: acc.accountNumber,
         loginNumber: acc.accountNumber,
@@ -859,37 +923,7 @@ export class ChallengesService implements OnModuleInit {
         tradingDays: 1,
         status: acc.status,
         leverage: isPhoenix ? '1:30' : '1:100',
-        trades: acc.tradeRecords.map((t) => {
-          let profitNgn = t.profit != null ? Number(t.profit) : 0;
-          if (profitNgn === 0 && t.closePrice != null && Number(t.openPrice) > 0 && Number(t.closePrice) !== Number(t.openPrice)) {
-            const dirMultiplier = t.direction === 'BUY' ? 1 : -1;
-            const priceDelta = (Number(t.closePrice) - Number(t.openPrice)) * dirMultiplier;
-            let contractSize = 100000;
-            const sym = (t.symbol || '').toUpperCase();
-            if (sym.includes('XAU') || sym.includes('GOLD')) {
-              contractSize = 100;
-            } else if (sym.includes('BTC') || sym.includes('ETH') || sym.includes('CRYPTO')) {
-              contractSize = 1;
-            } else if (sym.includes('US30') || sym.includes('NAS') || sym.includes('SPX') || sym.includes('GER') || sym.includes('INDEX')) {
-              contractSize = 1;
-            }
-            const usd = priceDelta * contractSize * Number(t.volume);
-            profitNgn = Math.round(usd * 1485 * 100) / 100;
-          }
-          return {
-            ticketId: t.externalTradeId,
-            symbol: t.symbol,
-            direction: t.direction,
-            volume: Number(t.volume),
-            openPrice: Number(t.openPrice),
-            closePrice: t.closePrice ? Number(t.closePrice) : null,
-            stopLoss: t.stopLoss ? Number(t.stopLoss) : null,
-            takeProfit: t.takeProfit ? Number(t.takeProfit) : null,
-            profitNgn,
-            openedAt: t.openedAt,
-            closedAt: t.closedAt,
-          };
-        }),
+        trades: combinedTrades,
       };
     }
 

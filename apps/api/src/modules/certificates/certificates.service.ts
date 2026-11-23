@@ -238,9 +238,18 @@ export class CertificatesService {
     const traderSplit = params.amountNgn;
     const companySplit = Math.max(0, totalProfit - traderSplit);
 
-    const totalProfitK = this.formatK(totalProfit);
-    const traderSplitK = this.formatK(traderSplit);
-    const companySplitK = this.formatK(companySplit);
+    const totalProfitFormatted = `₦${totalProfit.toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+    const traderSplitFormatted = `₦${traderSplit.toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+    const companySplitFormatted = `₦${companySplit.toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
     const templatePath = path.join(this.getTemplatesDir(), 'payout-certificate-template.jpg');
     const fileName = `${certificateId}.jpg`;
@@ -249,8 +258,9 @@ export class CertificatesService {
 
     // Title Case (small letters with capital first letters, matching 'Giant' typography)
     const cleanName = this.toTitleCase(params.recipientName);
-    const nameFontSize = cleanName.length > 28 ? 26 : cleanName.length > 20 ? 30 : 34;
-    const amountFontSize = formattedAmount.length > 18 ? 28 : formattedAmount.length > 14 ? 32 : 36;
+    // Reduced font size by 4 points as requested to fit perfectly inside designated lines
+    const nameFontSize = cleanName.length > 28 ? 22 : cleanName.length > 20 ? 26 : 30;
+    const amountFontSize = formattedAmount.length > 18 ? 24 : formattedAmount.length > 14 ? 28 : 32;
 
     // Granular scan:
     // Name line begins at x=106, ends at x=569 (width = 463px), y=371
@@ -284,10 +294,10 @@ export class CertificatesService {
             }
             .pill-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-size: 14px;
+              font-size: 11px;
               font-weight: 700;
               fill: #E6FFFA;
-              letter-spacing: 0.5px;
+              letter-spacing: 0.2px;
             }
           </style>
         </defs>
@@ -304,21 +314,21 @@ export class CertificatesService {
         <!-- 4. Certificate ID right below Date line -->
         <text x="110" y="562" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>
 
-        <!-- 5. Throne Jewel Badges (GENEROUS OVER-SIZED PILLS - 100% COVERAGE) -->
+        <!-- 5. Throne Jewel Badges (Full Disbursed Amounts with Reduced Font to cleanly fit inside the pill) -->
         <!-- Top Right Badge: Total Profit -->
-        <rect x="740" y="546" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
-        <circle cx="760" cy="565" r="4.5" fill="#10B981"/>
-        <text x="774" y="570" class="pill-text">${totalProfitK}</text>
+        <rect x="725" y="546" width="165" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="743" cy="565" r="4" fill="#10B981"/>
+        <text x="754" y="569" class="pill-text">${totalProfitFormatted}</text>
 
         <!-- Left Badge: Trader Split -->
-        <rect x="622" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
-        <circle cx="642" cy="621" r="4.5" fill="#10B981"/>
-        <text x="656" y="626" class="pill-text">${traderSplitK}</text>
+        <rect x="605" y="602" width="165" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="623" cy="621" r="4" fill="#10B981"/>
+        <text x="634" y="625" class="pill-text">${traderSplitFormatted}</text>
 
         <!-- Bottom Right Badge: Company Split -->
-        <rect x="784" y="602" width="140" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
-        <circle cx="804" cy="621" r="4.5" fill="#10B981"/>
-        <text x="818" y="626" class="pill-text">${companySplitK}</text>
+        <rect x="780" y="602" width="165" height="38" rx="19" fill="#010e0b" stroke="#10B981" stroke-opacity="0.8" stroke-width="1.5"/>
+        <circle cx="798" cy="621" r="4" fill="#10B981"/>
+        <text x="809" y="625" class="pill-text">${companySplitFormatted}</text>
       </svg>
     `;
 

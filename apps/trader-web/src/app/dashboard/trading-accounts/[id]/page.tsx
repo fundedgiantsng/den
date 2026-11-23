@@ -34,7 +34,7 @@ import { formatNaira, formatSignedNaira } from '@/lib/format';
 interface TradeItem {
   ticketId: string;
   symbol: string;
-  direction: 'BUY' | 'SELL';
+  direction: 'BUY' | 'SELL' | 'OUT' | 'WITHDRAWAL' | string;
   volume: number;
   openPrice: number;
   closePrice: number | null;
@@ -670,6 +670,8 @@ export default function AccountAnalyticsTerminalPage() {
                       className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         t.direction === 'BUY'
                           ? 'bg-emerald-500/15 text-[#00f59b]'
+                          : t.direction === 'OUT' || t.direction === 'WITHDRAWAL'
+                          ? 'bg-amber-500/15 text-amber-400'
                           : 'bg-rose-500/15 text-rose-400'
                       }`}
                     >

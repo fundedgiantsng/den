@@ -639,8 +639,11 @@ export class RiskEngineService {
       return { status: 'metrics_unavailable' };
     }
 
-    const currentEquity = metrics.equity;
-    const currentBalance = metrics.balance;
+    // Authoritative balance in CRM persists (protects against broker external credit facility distortions)
+    const floating = Number((metrics as any).floating ?? metrics.openTradesProfit ?? 0);
+    const dbBal = Number(account.currentBalance);
+    const currentBalance = dbBal > 0 ? dbBal : metrics.balance;
+    const currentEquity = currentBalance + floating;
 
     // 1. Calculate Daily Drawdown (Open & Closed Trades Inclusive):
     // Evaluated against 23:00 GMT+1 baseline: higher of starting day balance or equity.
@@ -1213,8 +1216,10 @@ export class RiskEngineService {
 
     const initialBal = Number(account.initialBalance);
     const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
-    const currentEquity = metrics?.equity ?? Number(account.currentEquity);
-    const currentBalance = metrics?.balance ?? Number(account.currentBalance);
+    const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
+    const dbBal = Number(account.currentBalance);
+    const currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? initialBal);
+    const currentEquity = currentBalance + floating;
     const openTradesCount = metrics?.openTradesCount ?? 0;
 
     const isPhoenix = account.challenge.product.skuPrefix === 'phoenix-rise';
