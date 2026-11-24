@@ -178,7 +178,8 @@ export class RiskEngineService {
 
         const isRhinoRushEvaluation =
           account.challenge.product.skuPrefix === 'rhino-rush' &&
-          account.challenge.status === 'ACTIVE';
+          account.challenge.status === 'ACTIVE' &&
+          account.groupSlug !== 'fg-rr-funded';
 
         let sessionInfo: any = {};
 
@@ -194,13 +195,29 @@ export class RiskEngineService {
             orderBy: { createdAt: 'asc' },
           });
 
+          // Prevent duplicate session reset on the exact same date
+          const existingTodaySnapshot = previousSnapshots.find((snap) => {
+            try {
+              const p = JSON.parse(snap.description);
+              return p.sessionDate === sessionDateStr;
+            } catch {
+              return false;
+            }
+          });
+          if (existingTodaySnapshot) {
+            this.logger.log(`Session reset already completed for sessionDate ${sessionDateStr} on account ${account.accountNumber}`);
+            continue;
+          }
+
+          const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
+
           // De-duplicate completed past sessions by sessionDate (excluding today's in-progress session)
           const dailyBankedMap = new Map<string, number>();
           for (const snap of previousSnapshots) {
             try {
               const parsed = JSON.parse(snap.description);
               if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
-                dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+                dailyBankedMap.set(parsed.sessionDate, Math.min(dailyCap, Math.max(0, Number(parsed.cappedCredit || 0))));
               }
             } catch {}
           }
@@ -212,7 +229,6 @@ export class RiskEngineService {
 
           const sessionOpeningBaseline = initialBal + bankedSoFar;
           const todayRawProfit = Math.max(0, currentEquity - sessionOpeningBaseline);
-          const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
           const cappedCredit = Math.min(todayRawProfit, dailyCap);
           const excessProfitCleared = Math.max(0, todayRawProfit - dailyCap);
           const cumulativeQualifiedProfit = bankedSoFar + cappedCredit;
@@ -708,7 +724,8 @@ export class RiskEngineService {
     // Applies 2% Max Daily Profit Cap: any profit generated above 2% does not count towards target and is cleared at session reset time
     if (
       challenge.product.skuPrefix === 'rhino-rush' &&
-      challenge.status === 'ACTIVE'
+      challenge.status === 'ACTIVE' &&
+      account.groupSlug !== 'fg-rr-funded'
     ) {
       const profitTarget = initialBal * 0.10; // 10% Profit Target
       const dailyCap = initialBal * 0.02; // 2% Max Daily Profit Cap
@@ -729,7 +746,7 @@ export class RiskEngineService {
         try {
           const parsed = JSON.parse(snap.description);
           if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
-            dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+            dailyBankedMap.set(parsed.sessionDate, Math.min(dailyCap, Math.max(0, Number(parsed.cappedCredit || 0))));
           }
         } catch {}
       }
@@ -937,19 +954,36 @@ export class RiskEngineService {
   }
 
   /**
-   * Action upon reaching passing profit target:
-   * Promotes account to Funded stage on SteraTrader (group fg-rr-funded) and database.
+   * Action upon reaching passing profit target on 1-Step Challenge (Rhino Rush):
+   * 1. Closes and terminates the evaluation SteraTrader account.
+   * 2. Marks evaluation challenge as PASSED and sets evaluation trading account status to CLOSED.
+   * 3. Stamped Completion Certificate Generation for the passed challenge.
+   * 4. Provisions a BRAND-NEW funded trading account on SteraTrader in group 'fg-rr-funded'.
+   * 5. Creates new funded CustomerChallenge and TradingAccount in database.
+   * 6. Dispatches new login credentials to trader via email & dashboard notification.
    */
   private async handlePromotion(account: any, profit: number, equity: number) {
     this.logger.log(`TARGET REACHED on account ${account.accountNumber}: Net Profit ₦${profit.toLocaleString()}`);
 
+    // Prevent duplicate promotion if challenge is already passed
+    const existingChallenge = await prisma.customerChallenge.findUnique({
+      where: { id: account.challengeId },
+      include: { user: true, product: true },
+    });
+
+    if (!existingChallenge || existingChallenge.status === 'PASSED') {
+      this.logger.warn(`Challenge ${account.challengeId} is already marked PASSED or not found. Skipping duplicate promotion.`);
+      return;
+    }
+
+    // 1. Mark evaluation challenge as PASSED, record TARGET_REACHED, and set evaluation account to CLOSED
     await prisma.$transaction([
       prisma.riskEvent.create({
         data: {
           challengeId: account.challengeId,
           tradingAccountId: account.id,
           eventType: 'TARGET_REACHED',
-          description: `10% profit target reached with ₦${profit.toLocaleString()} net profit. Promoted to Funded phase.`,
+          description: `10% profit target reached with ₦${profit.toLocaleString()} net profit. Challenge passed. Evaluation account closed. Funded account provisioning initiated.`,
           severity: 'INFO',
           snapshotBalance: account.currentBalance,
           snapshotEquity: equity,
@@ -965,42 +999,109 @@ export class RiskEngineService {
       prisma.tradingAccount.update({
         where: { id: account.id },
         data: {
-          groupSlug: 'fg-rr-funded',
+          status: 'CLOSED',
         },
       }),
     ]);
 
-    // Move trader to funded group fg-rr-funded on SteraTrader
-    await this.steraTraderService.moveAccountGroup(account.accountNumber, 'fg-rr-funded');
-
-    // Stamped Completion Certificate Generation & Trader Notification
+    // 2. Terminate/close evaluation trading on SteraTrader (liquidates positions, disables account)
     try {
-      const challengeWithUser = await prisma.customerChallenge.findUnique({
-        where: { id: account.challengeId },
-        include: { user: true },
-      });
-      const traderName = challengeWithUser?.user
-        ? `${challengeWithUser.user.firstName || 'Valued'} ${challengeWithUser.user.lastName || 'Trader'}`.trim()
-        : 'Valued Trader';
-      const traderEmail = challengeWithUser?.user?.email;
+      await this.steraTraderService.terminateAccount(
+        account.accountNumber,
+        'Passed 1-Step Challenge (Rhino Rush) - Evaluation closed for Funded Account Migration'
+      );
+    } catch (steraErr: any) {
+      this.logger.error(`Error terminating evaluation account ${account.accountNumber} on SteraTrader: ${steraErr.message}`);
+    }
 
+    const traderName = existingChallenge.user
+      ? `${existingChallenge.user.firstName || 'Valued'} ${existingChallenge.user.lastName || 'Trader'}`.trim()
+      : 'Valued Trader';
+    const traderEmail = existingChallenge.user?.email;
+
+    // 3. Stamped Completion Certificate Generation for the passed challenge
+    try {
       await this.certificatesService.generateCompletionCertificate({
         recipientName: traderName,
         accountNumber: account.accountNumber,
       });
+    } catch (certErr: any) {
+      this.logger.error(`Error auto-generating completion certificate: ${certErr.message}`);
+    }
 
-      if (traderEmail) {
-        await this.notificationsService.sendAccountUpgradePassedEmail({
-          toEmail: traderEmail,
-          toName: traderName,
-          accountNumber: account.accountNumber,
-          planTitle: 'Rhino Rush 1-Step Challenge',
-          capitalNgn: Number(account.initialBalance),
-          newGroup: 'fg-rr-funded',
+    // 4. Provision a BRAND-NEW funded trading account on SteraTrader in group fg-rr-funded
+    try {
+      const initialBal = Number(account.initialBalance);
+      const fundedChallengeNumber = `FG-FUNDED-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      // Create new funded CustomerChallenge in database
+      const fundedChallenge = await prisma.customerChallenge.create({
+        data: {
+          challengeNumber: fundedChallengeNumber,
+          userId: account.userId,
+          orderId: existingChallenge.orderId,
+          productId: existingChallenge.productId,
+          type: existingChallenge.type,
+          status: 'ACTIVE',
+          startDate: new Date(),
+        },
+      });
+
+      const steraRes = await this.steraTraderService.provisionAccount({
+        userFullName: traderName,
+        userEmail: traderEmail || 'trader@fundedgiants.ng',
+        userPhone: existingChallenge.user?.phone || undefined,
+        accountSizeNgn: initialBal,
+        planType: 'rhino-rush',
+        stage: 'funded',
+        group: 'fg-rr-funded',
+        reference: fundedChallengeNumber,
+      });
+
+      if (steraRes.success && steraRes.login) {
+        const dailyLimit = initialBal * 0.04; // 4% daily drawdown
+        const maxLimit = initialBal * 0.08;   // 8% trailing max drawdown for funded Rhino Rush
+        const server = steraRes.server || 'FundedGiants';
+
+        const newFundedAccount = await prisma.tradingAccount.create({
+          data: {
+            accountNumber: steraRes.login,
+            userId: account.userId,
+            challengeId: fundedChallenge.id,
+            platform: 'SteraTrader',
+            server,
+            groupSlug: 'fg-rr-funded',
+            masterPassword: steraRes.password || null,
+            investorPassword: steraRes.investorPassword || null,
+            status: 'ACTIVE',
+            initialBalance: initialBal,
+            currentBalance: initialBal,
+            currentEquity: initialBal,
+            dailyDrawdownLimit: dailyLimit,
+            maxDrawdownLimit: maxLimit,
+          },
         });
+
+        this.logger.log(
+          `Successfully provisioned NEW Funded Account ${steraRes.login} in group fg-rr-funded for user ${account.userId} (Evaluation account ${account.accountNumber} closed).`
+        );
+
+        // 5. Send congratulations & new funded account login credentials email
+        if (traderEmail) {
+          await this.notificationsService.sendAccountUpgradePassedEmail({
+            toEmail: traderEmail,
+            toName: traderName,
+            accountNumber: steraRes.login,
+            planTitle: 'Rhino Rush Funded Account',
+            capitalNgn: initialBal,
+            newGroup: 'fg-rr-funded',
+          });
+        }
+      } else {
+        this.logger.error(`Failed to provision new SteraTrader funded account: ${steraRes.error}`);
       }
-    } catch (err: any) {
-      this.logger.error(`Error auto-generating completion certificate or promotion email: ${err.message}`);
+    } catch (provErr: any) {
+      this.logger.error(`Error provisioning brand-new funded account for passed trader ${account.userId}: ${provErr.message}`);
     }
   }
 

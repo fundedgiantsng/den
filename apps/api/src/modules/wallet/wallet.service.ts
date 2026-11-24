@@ -223,6 +223,44 @@ export class WalletService {
   }
 
   /**
+   * Helper to verify if the resolved bank account name matches the user's verified legal KYC name.
+   * Tolerates middle name omission, name order inversions (e.g. LastName FirstName vs FirstName LastName),
+   * and character truncations common in Nigerian core banking switches (e.g. GTBank 15-char limits).
+   */
+  public verifyNameMatch(kycName: string, resolvedName: string): boolean {
+    const cleanKyc = kycName.toUpperCase().replace(/[^A-Z\s]/g, ' ').trim();
+    const cleanResolved = resolvedName.toUpperCase().replace(/[^A-Z\s]/g, ' ').trim();
+
+    if (!cleanKyc || !cleanResolved) return false;
+    if (cleanKyc === cleanResolved) return true;
+
+    const kycTokens = cleanKyc.split(/\s+/).filter(t => t.length >= 2);
+    const resolvedTokens = cleanResolved.split(/\s+/).filter(t => t.length >= 2);
+
+    if (kycTokens.length === 0 || resolvedTokens.length === 0) return false;
+
+    // Check how many KYC tokens appear in the resolved bank account name (or match by prefix for truncation)
+    let matchedTokens = 0;
+    for (const kt of kycTokens) {
+      const match = resolvedTokens.some(rt => {
+        if (kt === rt) return true;
+        // Truncation check (e.g. FAVOURABL vs FAVOURABLE, minimum 4 chars)
+        if (kt.length >= 4 && rt.length >= 4 && (kt.startsWith(rt) || rt.startsWith(kt))) {
+          return true;
+        }
+        return false;
+      });
+      if (match) matchedTokens++;
+    }
+
+    // If at least 2 significant tokens match, or 100% of KYC tokens match, it's valid
+    if (matchedTokens >= 2) return true;
+    if (kycTokens.length === 1 && matchedTokens === 1) return true;
+
+    return false;
+  }
+
+  /**
    * Automatically resolve Nigerian bank account name via Nomba & verify KYC name match
    */
   async resolveBankAccount(params: {
@@ -277,8 +315,7 @@ export class WalletService {
     const kycName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
 
     // 2. Strict name matching rule: Name on account MUST match KYC
-    const kycParts = kycName.split(/\s+/).filter(Boolean);
-    const isMatching = kycParts.length > 0 && kycParts.every((part) => resolvedName.includes(part));
+    const isMatching = this.verifyNameMatch(kycName, resolvedName);
 
     return {
       status: true,
@@ -365,8 +402,7 @@ export class WalletService {
     const kycName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
 
     // 2. Strict name matching rule: Name on account MUST match KYC
-    const kycParts = kycName.split(/\s+/).filter(Boolean);
-    const isMatching = kycParts.length > 0 && kycParts.every((part) => resolvedName.includes(part));
+    const isMatching = this.verifyNameMatch(kycName, resolvedName);
 
     if (!isMatching) {
       throw new BadRequestException(
@@ -461,9 +497,7 @@ export class WalletService {
 
       // Enforce strict name matching: Name on destination withdrawal account MUST match verified profile name
       const profileName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
-      const accountHolderName = bankAccount.accountName.toUpperCase().trim();
-      const nameParts = profileName.split(' ').filter(Boolean);
-      const isNameMatching = nameParts.length > 0 && nameParts.every((part) => accountHolderName.includes(part));
+      const isNameMatching = this.verifyNameMatch(profileName, bankAccount.accountName);
 
       if (!isNameMatching) {
         throw new BadRequestException(
@@ -504,34 +538,58 @@ export class WalletService {
 
   /**
    * Return verified list of Nigerian Commercial Banks & Fintechs (CBN Licensed)
+   * Dynamically synced with Nomba API (630+ banks/MFBs/fintechs) with popular institutions pinned at top
    */
-  getNigerianBanks() {
-    return [
+  async getNigerianBanks() {
+    const TOP_PINNED_BANKS = [
       { code: '044', name: 'Access Bank' },
+      { code: '058', name: 'Guaranty Trust Bank (GTBank)' },
+      { code: '057', name: 'Zenith Bank' },
+      { code: '033', name: 'United Bank for Africa (UBA)' },
+      { code: '011', name: 'First Bank of Nigeria' },
+      { code: '305', name: 'Paycom (OPay)' },
+      { code: '090405', name: 'Moniepoint Bank' },
+      { code: '100033', name: 'PalmPay' },
+      { code: '090267', name: 'Kuda Microfinance Bank' },
+      { code: '090645', name: 'Nombank (Nomba MFB)' },
+      { code: '221', name: 'Stanbic IBTC Bank' },
+      { code: '214', name: 'First City Monument Bank (FCMB)' },
+      { code: '070', name: 'Fidelity Bank' },
+      { code: '035', name: 'Wema Bank' },
+      { code: '232', name: 'Sterling Bank' },
+      { code: '032', name: 'Union Bank of Nigeria' },
+      { code: '101', name: 'Providus Bank' },
+      { code: '076', name: 'Polaris Bank' },
+      { code: '082', name: 'Keystone Bank' },
+      { code: '301', name: 'Jaiz Bank' },
+      { code: '566', name: 'VFD Microfinance Bank' },
+      { code: '100', name: 'Suntrust Bank' },
       { code: '023', name: 'Citibank Nigeria' },
       { code: '050', name: 'Ecobank Nigeria' },
-      { code: '070', name: 'Fidelity Bank' },
-      { code: '011', name: 'First Bank of Nigeria' },
-      { code: '214', name: 'First City Monument Bank (FCMB)' },
-      { code: '058', name: 'Guaranty Trust Bank (GTBank)' },
-      { code: '030', name: 'Heritage Bank' },
-      { code: '301', name: 'Jaiz Bank' },
-      { code: '082', name: 'Keystone Bank' },
-      { code: '50211', name: 'Kuda Bank' },
-      { code: '50515', name: 'Moniepoint MFB' },
-      { code: '999992', name: 'OPay Digital Services' },
-      { code: '999991', name: 'PalmPay' },
-      { code: '076', name: 'Polaris Bank' },
-      { code: '101', name: 'Providus Bank' },
-      { code: '221', name: 'Stanbic IBTC Bank' },
-      { code: '068', name: 'Standard Chartered Bank' },
-      { code: '232', name: 'Sterling Bank' },
-      { code: '100', name: 'Suntrust Bank' },
-      { code: '032', name: 'Union Bank of Nigeria' },
-      { code: '033', name: 'United Bank for Africa (UBA)' },
       { code: '215', name: 'Unity Bank' },
-      { code: '035', name: 'Wema Bank' },
-      { code: '057', name: 'Zenith Bank' },
     ];
+
+    try {
+      const dynamicBanks = await this.nombaService.getBanks();
+      if (dynamicBanks && dynamicBanks.length > 0) {
+        // Collect existing pinned bank codes
+        const pinnedCodes = new Set(TOP_PINNED_BANKS.map((b) => b.code));
+
+        // Map dynamic banks, excluding any already in pinned list
+        const remainingBanks = dynamicBanks
+          .filter((b) => !pinnedCodes.has(b.code))
+          .map((b) => ({
+            code: b.code,
+            name: b.name.trim(),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        return [...TOP_PINNED_BANKS, ...remainingBanks];
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch dynamic banks from Nomba, using default list: ${err.message}`);
+    }
+
+    return TOP_PINNED_BANKS;
   }
 }

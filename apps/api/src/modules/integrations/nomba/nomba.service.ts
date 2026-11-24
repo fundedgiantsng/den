@@ -70,6 +70,8 @@ export class NombaService {
 
   private cachedToken: string | null = null;
   private tokenExpiresAt: number = 0;
+  private cachedBanks: Array<{ code: string; name: string; nipCode?: string }> | null = null;
+  private cachedBanksExpiresAt: number = 0;
 
   constructor() {}
 
@@ -261,6 +263,50 @@ export class NombaService {
         message: err.message,
       };
     }
+  }
+
+  /**
+   * Fetch all CBN-licensed banks, microfinance banks, and fintechs from Nomba
+   * Endpoint: GET /v1/transfers/banks
+   */
+  async getBanks(): Promise<Array<{ code: string; name: string; nipCode?: string }>> {
+    if (this.cachedBanks && Date.now() < this.cachedBanksExpiresAt) {
+      return this.cachedBanks;
+    }
+
+    try {
+      const token = await this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/v1/transfers/banks`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          accountId: this.accountId,
+        },
+      });
+
+      const resData = await response.json().catch(() => ({}));
+      if (response.ok && Array.isArray(resData.data) && resData.data.length > 0) {
+        const banks = resData.data
+          .map((b: any) => ({
+            code: String(b.code || '').trim(),
+            name: String(b.name || '').trim(),
+            nipCode: b.nipCode ? String(b.nipCode).trim() : undefined,
+          }))
+          .filter((b: any) => b.code && b.name);
+
+        this.cachedBanks = banks;
+        this.cachedBanksExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24-hour cache
+        return banks;
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not fetch dynamic bank list from Nomba: ${err.message}`);
+    }
+
+    if (this.cachedBanks) {
+      return this.cachedBanks;
+    }
+
+    return [];
   }
 
   /**
