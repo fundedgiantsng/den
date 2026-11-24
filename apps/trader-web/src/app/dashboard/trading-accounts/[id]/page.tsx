@@ -325,12 +325,12 @@ export default function AccountAnalyticsTerminalPage() {
                 </span>
               </div>
               <p className="text-xs text-fgText-secondary mt-0.5">
-                Profit disbursement of <strong className="text-white">{formatNaira(account.queuedPayout.amountNgn)}</strong> is queued. Automated approval is scheduled in approximately <strong className="text-emerald-400">~{account.queuedPayout.remainingMinutes} minutes</strong>.
+                Your profit payout of <strong className="text-white">{formatNaira(account.queuedPayout.amountNgn)}</strong> has been queued for processing. Approval is expected within approximately <strong className="text-emerald-400">{account.queuedPayout.remainingMinutes} minutes</strong>.
               </p>
             </div>
           </div>
           <div className="text-right text-[11px] font-mono text-fgText-muted shrink-0">
-            <span>Trading balance reset to initial baseline</span>
+            <span>Account has been reset, you can Resume trading</span>
           </div>
         </div>
       )}

@@ -219,8 +219,17 @@ export class CertificatesService {
     payoutReference?: string;
     date?: string;
     customCertId?: string;
+    syncToWordPress?: boolean;
   }): Promise<GeneratedCertificateResult> {
-    const certificateId = params.customCertId || `FG-PAY-${Math.floor(100000 + Math.random() * 900000)}`;
+    let certificateId = params.customCertId;
+    if (!certificateId) {
+      if (params.payoutReference) {
+        const hash = crypto.createHash('md5').update(params.payoutReference).digest('hex').slice(0, 6).toUpperCase();
+        certificateId = `FG-PAY-${hash}`;
+      } else {
+        certificateId = `FG-PAY-${Math.floor(100000 + Math.random() * 900000)}`;
+      }
+    }
     const issueDate = params.date || new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -351,15 +360,21 @@ export class CertificatesService {
       const apiBase = (process.env.API_BASE_URL || process.env.API_URL || 'https://api.fundedgiants.ng').replace(/\/+$/, '');
       const certificateUrl = `${apiBase}/api/v1/certificates/file/${fileName}`;
 
-      // Dispatch payout record to WordPress live payout tracker & validation system
-      await this.syncPayoutToWordPress({
-        accountNumber: params.accountNumber,
-        email: params.userEmail || '',
-        name: cleanName,
-        approvedAmount: params.amountNgn,
-        certificateId,
-        certificateUrl,
-      });
+      // Dispatch payout record to WordPress live payout tracker & validation system ONLY if explicitly requested
+      if (params.syncToWordPress) {
+        try {
+          await this.syncPayoutToWordPress({
+            accountNumber: params.accountNumber,
+            email: params.userEmail || '',
+            name: cleanName,
+            approvedAmount: params.amountNgn,
+            certificateId,
+            certificateUrl,
+          });
+        } catch (wpErr: any) {
+          this.logger.warn(`Could not sync to WordPress payout tracker: ${wpErr.message}`);
+        }
+      }
 
       return {
         certificateId,

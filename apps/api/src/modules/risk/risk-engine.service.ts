@@ -1568,7 +1568,7 @@ export class RiskEngineService {
         const remainingMs = Math.max(0, new Date(raw.scheduledApprovalAt).getTime() - Date.now());
         const remainingMinutes = Math.ceil(remainingMs / 60000);
         throw new BadRequestException(
-          `A payout request of ₦${Number(existingQueuedPayout.amount).toLocaleString()} is already queued for this account. Automated approval is scheduled in approximately ${remainingMinutes} minutes.`
+          `Your profit payout of ₦${Number(existingQueuedPayout.amount).toLocaleString()} has been queued for processing. Approval is expected within approximately ${remainingMinutes} minutes.`
         );
       }
     }
@@ -1673,7 +1673,7 @@ export class RiskEngineService {
       estimatedApprovalMinutes: delayMinutes,
       scheduledApprovalAt: scheduledApprovalAt.toISOString(),
       accountNumber: account.accountNumber,
-      message: `Your payout request of ₦${payoutAmount.toLocaleString()} has been queued! Automated approval and disbursement to your Giants Vault is scheduled in approximately ${delayMinutes} minutes.`,
+      message: `Your profit payout of ₦${payoutAmount.toLocaleString()} has been queued for processing. Approval is expected within approximately ${delayMinutes} minutes.`,
     };
   }
 

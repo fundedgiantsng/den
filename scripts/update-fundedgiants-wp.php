@@ -223,7 +223,16 @@ function fg_rest_handle_payout_sync(WP_REST_Request $request) {
         }
     }
 
+    // Multi-layer idempotency guard: check by payout_id, certificate_id, or identical (account_number, amount_ngn on same date)
     $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE payout_id = %s OR certificate_id = %s", $payout_id, $certificate_id));
+    if (!$exists && !empty($account_number) && $amount_ngn > 0) {
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table WHERE account_number = %s AND ABS(amount_ngn - %f) < 1 AND DATE(created_at) = DATE(%s) LIMIT 1",
+            $account_number,
+            $amount_ngn,
+            $timestamp
+        ));
+    }
     $record_data = array(
         'payout_id' => $payout_id,
         'account_number' => $account_number,
