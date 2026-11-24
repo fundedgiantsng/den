@@ -260,7 +260,8 @@ export class CertificatesService {
     const cleanName = this.toTitleCase(params.recipientName);
     // Increased font size by an additional 5 points as requested for bold, clear legibility
     const nameFontSize = cleanName.length > 28 ? 30 : cleanName.length > 20 ? 34 : 38;
-    const amountFontSize = formattedAmount.length > 18 ? 34 : formattedAmount.length > 14 ? 38 : 42;
+    // Increased amount font size by 2 points as requested
+    const amountFontSize = formattedAmount.length > 18 ? 36 : formattedAmount.length > 14 ? 40 : 44;
 
     // Granular scan:
     // Name line begins at x=106, ends at x=569 (width = 463px), y=371
@@ -294,7 +295,7 @@ export class CertificatesService {
             }
             .pill-text {
               font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-              font-size: 13px;
+              font-size: 15px;
               font-weight: 700;
               fill: #E6FFFA;
               letter-spacing: 0.2px;
@@ -308,8 +309,8 @@ export class CertificatesService {
         <!-- 2. Profit Split full amount placed cleanly inside line width -->
         <text x="105" y="472" font-size="${amountFontSize}" class="profit-split">${formattedAmount}</text>
 
-        <!-- 3. Date right below Profit Split section, placed on Date line at y=531 -->
-        <text x="160" y="527" font-size="18" class="date-text">${issueDate}</text>
+        <!-- 3. Date right below Profit Split section, placed on Date line at y=531 (increased by 2 points) -->
+        <text x="160" y="527" font-size="20" class="date-text">${issueDate}</text>
 
         <!-- 4. Certificate ID right below Date line -->
         <text x="110" y="562" font-size="14" class="cert-id">CERTIFICATE ID: ${certificateId}</text>

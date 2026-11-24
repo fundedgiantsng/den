@@ -70,20 +70,35 @@ $sql = "CREATE TABLE IF NOT EXISTS $table_name (
 require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 dbDelta($sql);
 
+// Check and add missing columns directly (bypassing any dbDelta formatting quirks)
+$cols = $wpdb->get_col("DESC $table_name", 0);
+if (!in_array('account_number', $cols)) {
+    $wpdb->query("ALTER TABLE $table_name ADD COLUMN account_number varchar(100) DEFAULT '' AFTER trader_name");
+    echo "  -> Added missing column 'account_number' to $table_name.\n";
+}
+if (!in_array('email', $cols)) {
+    $wpdb->query("ALTER TABLE $table_name ADD COLUMN email varchar(150) DEFAULT '' AFTER account_number");
+    echo "  -> Added missing column 'email' to $table_name.\n";
+}
+
+// Purge invalidated payouts for account 93410986 / FG-PAY-653F54
+$deleted_count = $wpdb->query("DELETE FROM $table_name WHERE certificate_id = 'FG-PAY-653F54' OR payout_id LIKE '%653F54%' OR account_number = '93410986'");
+echo "  -> Purged $deleted_count invalidated records (FG-PAY-653F54 / Account 93410986) from tracker table.\n";
+
 // Seed or update verified initial payouts
 $payouts_to_seed = [
     [
-        'payout_id' => 'FG-PAY-653F54',
-        'account_number' => '93410986',
+        'payout_id' => 'FG-PAY-212097',
+        'account_number' => '96445139',
         'email' => 'fav.esedeke@gmail.com',
         'trader_name' => 'Favourable Esedeke',
-        'amount_ngn' => 3495494.00,
-        'certificate_id' => 'FG-PAY-653F54',
-        'certificate_url' => 'https://api.fundedgiants.ng/api/v1/certificates/file/FG-PAY-653F54.jpg',
-        'certificate_hash' => '0x46472d5041592d363533463534',
+        'amount_ngn' => 10133475.00,
+        'certificate_id' => 'FG-PAY-212097',
+        'certificate_url' => 'https://api.fundedgiants.ng/api/v1/certificates/file/FG-PAY-212097.jpg',
+        'certificate_hash' => '0x46472d5041592d323132303937',
         'profit_split_rate' => 80,
-        'program_type' => 'Phoenix Rise',
-        'created_at' => '2026-11-23 16:49:40',
+        'program_type' => 'Funded',
+        'created_at' => '2026-11-24 10:35:07',
     ],
     [
         'payout_id' => 'FG-PAY-974060',
@@ -151,6 +166,13 @@ add_action('rest_api_init', function () {
         'callback' => 'fg_rest_verify_certificate',
         'permission_callback' => '__return_true',
     ));
+
+    // D. Purge / Delete specific payout endpoint
+    register_rest_route('fundedgiants/v1', '/payout/delete/(?P<id>[a-zA-Z0-9_-]+)', array(
+        'methods' => array('POST', 'DELETE'),
+        'callback' => 'fg_rest_delete_payout',
+        'permission_callback' => '__return_true',
+    ));
 });
 
 // 2. Prevent LiteSpeed Cache from serving stale cache on front page and payout pages
@@ -188,6 +210,19 @@ function fg_rest_handle_payout_sync(WP_REST_Request $request) {
     $program_type = sanitize_text_field($params['program_type'] ?? 'Phoenix Rise');
     $timestamp = !empty($params['approved_at']) ? date('Y-m-d H:i:s', strtotime($params['approved_at'])) : current_time('mysql');
 
+    // Auto-heal missing columns before executing insert/update
+    $existing_cols = $wpdb->get_col("DESC $table", 0);
+    if (!empty($existing_cols)) {
+        if (!in_array('account_number', $existing_cols)) {
+            $wpdb->query("ALTER TABLE $table ADD COLUMN account_number varchar(100) DEFAULT '' AFTER trader_name");
+            $existing_cols[] = 'account_number';
+        }
+        if (!in_array('email', $existing_cols)) {
+            $wpdb->query("ALTER TABLE $table ADD COLUMN email varchar(150) DEFAULT '' AFTER account_number");
+            $existing_cols[] = 'email';
+        }
+    }
+
     $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE payout_id = %s OR certificate_id = %s", $payout_id, $certificate_id));
     $record_data = array(
         'payout_id' => $payout_id,
@@ -203,10 +238,19 @@ function fg_rest_handle_payout_sync(WP_REST_Request $request) {
         'created_at' => $timestamp,
     );
 
+    // Defensive check: filter out any keys that do not exist as columns
+    if (!empty($existing_cols)) {
+        $record_data = array_intersect_key($record_data, array_flip($existing_cols));
+    }
+
     if ($exists) {
-        $wpdb->update($table, $record_data, array('id' => $exists));
+        $res = $wpdb->update($table, $record_data, array('id' => $exists));
     } else {
-        $wpdb->insert($table, $record_data);
+        $res = $wpdb->insert($table, $record_data);
+    }
+
+    if ($res === false && !empty($wpdb->last_error)) {
+        return new WP_Error('db_insert_failed', $wpdb->last_error, array('status' => 500));
     }
 
     // Purge LiteSpeed cache automatically when new payout arrives
@@ -229,6 +273,26 @@ function fg_rest_get_public_payouts(WP_REST_Request $request) {
     $table = $wpdb->prefix . 'fg_payout_tracker';
     $results = $wpdb->get_results("SELECT * FROM $table ORDER BY created_at DESC LIMIT 50", ARRAY_A);
     return new WP_REST_Response(array('success' => true, 'data' => $results), 200);
+}
+
+/**
+ * Purge / Delete payout endpoint (Used to invalidate purged accounts/certificates)
+ */
+function fg_rest_delete_payout(WP_REST_Request $request) {
+    global $wpdb;
+    $id = sanitize_text_field($request->get_param('id'));
+    $table = $wpdb->prefix . 'fg_payout_tracker';
+    $deleted = $wpdb->query($wpdb->prepare("DELETE FROM $table WHERE certificate_id = %s OR payout_id = %s OR account_number = %s", $id, $id, $id));
+
+    if (defined('LSCWP_V')) {
+        do_action('litespeed_purge_all');
+    }
+
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => "Payout or account $id removed from public tracker",
+        'deleted_rows' => $deleted,
+    ), 200);
 }
 
 /**

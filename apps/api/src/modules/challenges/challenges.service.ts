@@ -10,6 +10,7 @@ import { SteraTraderService } from '../integrations/steratrader/steratrader.serv
 import { NotificationsService } from '../notifications/notifications.service';
 import { NombaService } from '../integrations/nomba/nomba.service';
 import { RiskEngineService } from '../risk/risk-engine.service';
+import { CertificatesService } from '../certificates/certificates.service';
 import { PurchaseFromWalletDto, ValidateCouponsDto } from './dto/purchase.dto';
 
 // Official Pricing Table in NGN synced with WordPress FG_Admin_Settings
@@ -40,6 +41,7 @@ export class ChallengesService implements OnModuleInit {
     private readonly steraTraderService: SteraTraderService,
     private readonly notificationsService: NotificationsService,
     private readonly riskEngineService: RiskEngineService,
+    private readonly certificatesService: CertificatesService,
   ) {}
 
   async onModuleInit() {
@@ -1099,6 +1101,23 @@ export class ChallengesService implements OnModuleInit {
       });
     }
 
+        // Generate certified Payout Certificate & sync to WordPress Live Payout Tracker
+    let generatedCertificate: any = null;
+    try {
+      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
+      generatedCertificate = await this.certificatesService.generatePayoutCertificate({
+        recipientName: traderFullName,
+        amountNgn: requestedPayout,
+        accountNumber: tradingAcc?.accountNumber || accountId,
+        userEmail: user.email || '',
+        payoutReference: reference,
+        totalProfitNgn: (details as any).profitNgn || (requestedPayout > 0 ? Math.round(requestedPayout / 0.8) : undefined),
+      });
+      this.logger.log(`Issued certified payout certificate ${generatedCertificate.certificateId} for trader ${traderFullName} (${reference})`);
+    } catch (certErr: any) {
+      this.logger.error(`Failed to generate payout certificate: ${certErr.message}`, certErr.stack);
+    }
+
     this.logger.log(`Profit payout of ₦${requestedPayout.toLocaleString()} credited to Giants Vault for user ${userId} (ref: ${reference})`);
 
     return {
@@ -1107,6 +1126,8 @@ export class ChallengesService implements OnModuleInit {
       payoutAmountNgn: requestedPayout,
       reference,
       creditedToVault: true,
+      certificateId: generatedCertificate?.certificateId,
+      certificateUrl: generatedCertificate?.publicUrl,
       timestamp: new Date().toISOString(),
     };
   }
