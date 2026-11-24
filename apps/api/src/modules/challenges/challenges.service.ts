@@ -5,6 +5,7 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { prisma } from '@fundedgiants/database';
 import { SteraTraderService } from '../integrations/steratrader/steratrader.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -815,10 +816,42 @@ export class ChallengesService implements OnModuleInit {
       const maxDrawdownNgn = riskStatus?.maximumDrawdown?.currentLossNgn ?? Math.max(0, initialSize - equity);
       const maxLossHeadroomNgn = riskStatus?.maximumDrawdown?.headroomRemainingNgn ?? Math.max(0, maxDrawdownLimitNgn - maxDrawdownNgn);
 
+      // Check if a payout is currently queued for this account
+      const queuedDeposit = await prisma.deposit.findFirst({
+        where: {
+          wallet: { userId: acc.challenge.userId },
+          status: 'PENDING',
+          senderName: 'FundedGiants SteraTrader Profit Split',
+        },
+      });
+
+      let queuedPayout: any = null;
+      if (queuedDeposit) {
+        const raw = (queuedDeposit.rawWebhookData as any) || {};
+        if (raw.tradingAccountId === acc.id || raw.accountNumber === acc.accountNumber) {
+          const remainingMs = Math.max(0, new Date(raw.scheduledApprovalAt).getTime() - Date.now());
+          const remainingMinutes = Math.ceil(remainingMs / 60000);
+          queuedPayout = {
+            reference: queuedDeposit.reference,
+            amountNgn: Number(queuedDeposit.amount),
+            scheduledApprovalAt: raw.scheduledApprovalAt,
+            delayMinutes: raw.delayMinutes,
+            remainingMinutes,
+            requestedAt: raw.requestedAt,
+          };
+        }
+      }
+
       // Tiered payout split & eligibility
       const payoutNumber = riskStatus?.payoutEligibility?.payoutNumber ?? 1;
       const traderSplitPercent = riskStatus?.payoutEligibility?.traderSplitPercent ?? (isPhoenix ? 60 : 50);
-      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0;
+      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0 && !queuedPayout;
+      const payoutIneligibilityReason = queuedPayout
+        ? `A payout request of ₦${queuedPayout.amountNgn.toLocaleString()} is currently queued. Automated approval is scheduled in approximately ${queuedPayout.remainingMinutes} minutes.`
+        : !isPayoutEligible
+        ? (riskStatus?.payoutEligibility?.reason || (profitNgn <= 0 ? 'Account has no withdrawable profits.' : undefined))
+        : undefined;
+
       const traderProfitSplitNgn = isPayoutEligible
         ? (riskStatus?.payoutEligibility?.traderProfitSplitNgn ?? riskStatus?.payoutEligibility?.traderProfitSplit ?? Math.floor(profitNgn * (traderSplitPercent / 100)))
         : 0;
@@ -916,6 +949,8 @@ export class ChallengesService implements OnModuleInit {
         maxLossHeadroomNgn,
         targetEvaluation: riskStatus?.targetEvaluation ?? null,
         isPayoutEligible,
+        payoutIneligibilityReason,
+        queuedPayout,
         minPayoutPercent: riskStatus?.payoutEligibility?.minRequiredPercent ?? 2.0,
         payoutNumber,
         traderSplitPercent,
@@ -961,6 +996,7 @@ export class ChallengesService implements OnModuleInit {
       maxDrawdownLimitNgn: maxLimit,
       maxLossHeadroomNgn: maxLimit - maxLoss,
       isPayoutEligible: true,
+      queuedPayout: null,
       minPayoutPercent: 2,
       payoutNumber: 1,
       traderSplitPercent: isPhoenix ? 60 : 50,
@@ -1041,30 +1077,74 @@ export class ChallengesService implements OnModuleInit {
       throw new NotFoundException('User wallet not found');
     }
 
+    const tradingAcc = await prisma.tradingAccount.findFirst({
+      where: {
+        OR: [
+          { id: accountId },
+          { accountNumber: accountId },
+        ],
+      },
+      include: {
+        challenge: true,
+      },
+    });
 
+    // Check if a payout request for this trading account or wallet is already in the queue
+    const existingQueuedPayout = await prisma.deposit.findFirst({
+      where: {
+        walletId: user.wallet.id,
+        status: 'PENDING',
+        senderName: 'FundedGiants SteraTrader Profit Split',
+      },
+    });
 
-    const reference = `PAYOUT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (existingQueuedPayout) {
+      const raw = (existingQueuedPayout.rawWebhookData as any) || {};
+      if (raw.tradingAccountId === tradingAcc?.id || raw.accountNumber === (tradingAcc?.accountNumber || accountId)) {
+        const remainingMs = Math.max(0, new Date(raw.scheduledApprovalAt).getTime() - Date.now());
+        const remainingMinutes = Math.ceil(remainingMs / 60000);
+        throw new BadRequestException(
+          `A payout request of ₦${Number(existingQueuedPayout.amount).toLocaleString()} is already queued for this account. Automated approval is scheduled in approximately ${remainingMinutes} minutes.`
+        );
+      }
+    }
 
-    // Credit directly into Giants Vault
+    // Set timer random payout approved timing from 5 minutes (300,000 ms) to 45 minutes (2,700,000 ms)
+    const minDelayMs = 5 * 60 * 1000;
+    const maxDelayMs = 45 * 60 * 1000;
+    const delayMs = Math.floor(minDelayMs + Math.random() * (maxDelayMs - minDelayMs));
+    const scheduledApprovalAt = new Date(Date.now() + delayMs);
+    const delayMinutes = Math.max(5, Math.min(45, Math.round(delayMs / 60000)));
+
+    const reference = `FG-PAYOUT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
+
+    // Queue payout via PENDING Deposit (amount is NOT credited to wallet until scheduled auto-approval)
     await prisma.deposit.create({
       data: {
         walletId: user.wallet.id,
         amount: requestedPayout,
         currency: 'NGN',
         reference,
-        status: 'SUCCESSFUL',
+        status: 'PENDING',
         senderName: 'FundedGiants SteraTrader Profit Split',
-        reconciled: true,
+        reconciled: false,
+        rawWebhookData: {
+          tradingAccountId: tradingAcc?.id,
+          accountNumber: tradingAcc?.accountNumber || accountId,
+          recipientName: traderFullName,
+          userEmail: user.email || '',
+          totalProfitNgn: (details as any).profitNgn || (requestedPayout > 0 ? Math.round(requestedPayout / 0.8) : undefined),
+          scheduledApprovalAt: scheduledApprovalAt.toISOString(),
+          requestedAt: new Date().toISOString(),
+          delayMinutes,
+          payoutNumber: details.payoutNumber || 1,
+          profitSplitRatio: details.profitSplitRatio || 'Tiered',
+        },
       },
     });
 
-    // Record Risk Event for audit and payout tier tracking
-    const tradingAcc = await prisma.tradingAccount.findFirst({
-      where: {
-        OR: [{ accountNumber: accountId }, { id: accountId }],
-      },
-    });
-
+    // Reset trading account balance to initial capital baseline immediately so user can restart trading
     if (tradingAcc) {
       const initialBal = Number(tradingAcc.initialBalance);
       await prisma.tradingAccount.update({
@@ -1075,6 +1155,12 @@ export class ChallengesService implements OnModuleInit {
           totalProfit: 0,
         },
       });
+
+      try {
+        await this.steraTraderService.resetAccountBalanceToInitial(tradingAcc.accountNumber, initialBal);
+      } catch (steraErr: any) {
+        this.logger.warn(`Could not sync balance reset on SteraTrader for ${tradingAcc.accountNumber}: ${steraErr.message}`);
+      }
 
       await prisma.riskEvent.create({
         data: {
@@ -1092,8 +1178,8 @@ export class ChallengesService implements OnModuleInit {
         data: {
           challengeId: tradingAcc.challengeId,
           tradingAccountId: tradingAcc.id,
-          eventType: 'AUTOMATED_PAYOUT_APPROVED',
-          description: `Profit payout #${details.payoutNumber || 1} of ₦${requestedPayout.toLocaleString()} (${details.profitSplitRatio || 'Tiered'} split) disbursed to Giants Vault. Balance reset to initial ₦${initialBal.toLocaleString()}.`,
+          eventType: 'PAYOUT_QUEUED',
+          description: `Profit payout #${details.payoutNumber || 1} of ₦${requestedPayout.toLocaleString()} queued for review. Scheduled automated approval in ${delayMinutes} minutes (${scheduledApprovalAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}). Trading account reset to initial ₦${initialBal.toLocaleString()}.`,
           severity: 'INFO',
           snapshotBalance: initialBal,
           snapshotEquity: initialBal,
@@ -1101,34 +1187,201 @@ export class ChallengesService implements OnModuleInit {
       });
     }
 
-        // Generate certified Payout Certificate & sync to WordPress Live Payout Tracker
+    this.logger.log(`Profit payout of ₦${requestedPayout.toLocaleString()} queued for user ${userId} (${reference}). Scheduled approval in ${delayMinutes} mins at ${scheduledApprovalAt.toISOString()}`);
+
+    return {
+      success: true,
+      status: 'QUEUED',
+      message: `Your payout request of ₦${requestedPayout.toLocaleString()} has been queued! Automated approval and disbursement to your Giants Vault is scheduled in approximately ${delayMinutes} minutes.`,
+      payoutAmountNgn: requestedPayout,
+      reference,
+      creditedToVault: false,
+      estimatedApprovalMinutes: delayMinutes,
+      scheduledApprovalAt: scheduledApprovalAt.toISOString(),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Background processor: Polls every minute to automatically approve queued payouts
+   * whose randomized approval timers (5 - 45 minutes) have elapsed.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async processQueuedPayouts() {
+    try {
+      const pendingDeposits = await prisma.deposit.findMany({
+        where: {
+          status: 'PENDING',
+          senderName: 'FundedGiants SteraTrader Profit Split',
+        },
+      });
+
+      if (pendingDeposits.length === 0) return;
+
+      const now = Date.now();
+      for (const dep of pendingDeposits) {
+        const raw = (dep.rawWebhookData as any) || {};
+        const scheduledTime = raw.scheduledApprovalAt ? new Date(raw.scheduledApprovalAt).getTime() : 0;
+        if (scheduledTime > 0 && scheduledTime <= now) {
+          await this.approveQueuedPayout(dep.id);
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Error in processQueuedPayouts: ${err.message}`);
+    }
+  }
+
+  /**
+   * Approves a queued payout: credits Giants Vault, stamps certificate, and notifies WordPress
+   */
+  async approveQueuedPayout(depositId: string) {
+    const dep = await prisma.deposit.findUnique({
+      where: { id: depositId },
+      include: { wallet: { include: { user: true } } },
+    });
+    if (!dep || dep.status !== 'PENDING') return;
+
+    const raw = (dep.rawWebhookData as any) || {};
+    const payoutAmount = Number(dep.amount);
+    const reference = dep.reference;
+
+    // 1. Mark deposit SUCCESSFUL (instantly credits customer wallet balance!)
+    await prisma.deposit.update({
+      where: { id: dep.id },
+      data: {
+        status: 'SUCCESSFUL',
+        reconciled: true,
+      },
+    });
+
+    // 1b. Post double-entry journal entry to financial ledger
+    try {
+      const entry = await prisma.journalEntry.create({
+        data: {
+          entryNumber: `JE-PAYOUT-${Date.now()}`,
+          transactionType: 'DEPOSIT_LENCO_VIRTUAL',
+          reference,
+          narration: `Queued automated payout approval & disbursement of ₦${payoutAmount.toLocaleString()} for account ${raw.accountNumber || 'FG-TRADER'}`,
+        },
+      });
+
+      const cashAccount = await prisma.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
+      const walletLiabilityAccount = await prisma.ledgerAccount.findFirst({
+        where: { code: '2000-WALLET-LIABILITY' },
+      });
+
+      if (cashAccount && walletLiabilityAccount) {
+        await prisma.journalLine.createMany({
+          data: [
+            { journalEntryId: entry.id, accountId: cashAccount.id, debit: payoutAmount, credit: 0 },
+            { journalEntryId: entry.id, accountId: walletLiabilityAccount.id, debit: 0, credit: payoutAmount },
+          ],
+        });
+      }
+    } catch (ledgerErr: any) {
+      this.logger.warn(`Could not post ledger journal entry for payout ${reference}: ${ledgerErr.message}`);
+    }
+
+    // 1c. Credit 3% recurring commission to referring affiliate (if referred)
+    try {
+      if (dep.wallet?.userId) {
+        const referral = await prisma.affiliateReferral.findUnique({
+          where: { referredUserId: dep.wallet.userId },
+          include: { affiliateProfile: true },
+        });
+
+        if (referral && referral.affiliateProfile) {
+          const payoutRate = Number(referral.affiliateProfile.payoutCommissionRate || 3.0);
+          const recurringCommissionNgn = Math.round((payoutAmount * payoutRate) / 100);
+
+          if (recurringCommissionNgn > 0) {
+            await prisma.$transaction([
+              prisma.affiliateCommission.create({
+                data: {
+                  affiliateProfileId: referral.affiliateProfileId,
+                  referralId: referral.id,
+                  orderNumber: reference,
+                  amount: recurringCommissionNgn,
+                  currency: 'NGN',
+                  status: 'SUCCESSFUL',
+                },
+              }),
+              prisma.affiliateProfile.update({
+                where: { id: referral.affiliateProfileId },
+                data: {
+                  totalCommissions: { increment: recurringCommissionNgn },
+                },
+              }),
+            ]);
+            this.logger.log(`3% recurring commission ₦${recurringCommissionNgn.toLocaleString()} credited to affiliate ${referral.affiliateProfile.referralCode} for payout ${reference}`);
+          }
+        }
+      }
+    } catch (affErr: any) {
+      this.logger.warn(`Error processing affiliate commission for payout ${reference}: ${affErr.message}`);
+    }
+
+    // 2. Generate Certified Payout Certificate
     let generatedCertificate: any = null;
     try {
-      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
       generatedCertificate = await this.certificatesService.generatePayoutCertificate({
-        recipientName: traderFullName,
-        amountNgn: requestedPayout,
-        accountNumber: tradingAcc?.accountNumber || accountId,
-        userEmail: user.email || '',
+        recipientName: raw.recipientName || 'Funded Giant',
+        amountNgn: payoutAmount,
+        accountNumber: raw.accountNumber || 'FG-TRADER',
+        userEmail: raw.userEmail || '',
         payoutReference: reference,
-        totalProfitNgn: (details as any).profitNgn || (requestedPayout > 0 ? Math.round(requestedPayout / 0.8) : undefined),
+        totalProfitNgn: raw.totalProfitNgn,
       });
-      this.logger.log(`Issued certified payout certificate ${generatedCertificate.certificateId} for trader ${traderFullName} (${reference})`);
+      this.logger.log(`Issued certified payout certificate ${generatedCertificate.certificateId} for ${raw.recipientName} (${reference})`);
     } catch (certErr: any) {
       this.logger.error(`Failed to generate payout certificate: ${certErr.message}`, certErr.stack);
     }
 
-    this.logger.log(`Profit payout of ₦${requestedPayout.toLocaleString()} credited to Giants Vault for user ${userId} (ref: ${reference})`);
+    // 3. Sync to WordPress Live Payout Tracker
+    try {
+      await this.certificatesService.syncPayoutToWordPress({
+        accountNumber: raw.accountNumber || 'FG-TRADER',
+        email: raw.userEmail || '',
+        name: raw.recipientName || 'Funded Giant',
+        approvedAmount: payoutAmount,
+        certificateId: generatedCertificate?.certificateId || reference,
+        certificateUrl: generatedCertificate?.publicUrl || '',
+      });
+    } catch (wpErr: any) {
+      this.logger.warn(`Could not sync to WordPress payout tracker: ${wpErr.message}`);
+    }
 
-    return {
-      success: true,
-      message: `₦${requestedPayout.toLocaleString()} successfully credited into your Giants Vault balance!`,
-      payoutAmountNgn: requestedPayout,
-      reference,
-      creditedToVault: true,
-      certificateId: generatedCertificate?.certificateId,
-      certificateUrl: generatedCertificate?.publicUrl,
-      timestamp: new Date().toISOString(),
-    };
+    // 4. Record RiskEvent
+    if (raw.tradingAccountId) {
+      const tradingAcc = await prisma.tradingAccount.findUnique({ where: { id: raw.tradingAccountId } });
+      if (tradingAcc) {
+        await prisma.riskEvent.create({
+          data: {
+            challengeId: tradingAcc.challengeId,
+            tradingAccountId: tradingAcc.id,
+            eventType: 'AUTOMATED_PAYOUT_APPROVED',
+            description: `Profit payout #${raw.payoutNumber || 1} of ₦${payoutAmount.toLocaleString()} (${raw.profitSplitRatio || 'Tiered'} split) approved and disbursed to Giants Vault. Certificate ID: ${generatedCertificate?.certificateId || 'PENDING'}.`,
+            severity: 'INFO',
+            snapshotBalance: Number(tradingAcc.initialBalance),
+            snapshotEquity: Number(tradingAcc.initialBalance),
+          },
+        });
+      }
+    }
+
+    // 5. User Notification
+    if (dep.wallet?.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: dep.wallet.userId,
+          title: `Payout Approved & Disbursed! ₦${payoutAmount.toLocaleString()}`,
+          message: `Your profit payout of ₦${payoutAmount.toLocaleString()} has been approved and credited to your Giants Vault. Official certificate ${generatedCertificate?.certificateId || ''} generated.`,
+          category: 'FINANCE',
+          priority: 'HIGH',
+        },
+      }).catch(() => {});
+    }
+
+    this.logger.log(`Successfully auto-approved queued payout ${reference} of ₦${payoutAmount.toLocaleString()} for user ${dep.wallet?.userId}`);
   }
 }

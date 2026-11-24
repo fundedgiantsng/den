@@ -254,18 +254,11 @@ export class SteraTraderService {
   }
 
   /**
-   * Credit / Deposit balance after creation (for resets, scaling, or withdrawal balance reset)
+   * Credit / Deposit balance after creation (for resets, scaling, or balance adjustment)
    * Sends amount in integer minor units (kobo) via SteraTrader /transactions API.
    */
   async creditAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Balance adjustment'): Promise<boolean> {
-    if (!this.apiKey) return false;
-
-    if (amountNgn < 0) {
-      // SteraTrader CRM keys with money.deposit scope cannot execute debit transactions.
-      // Do NOT call credit_out as it artificially decreases the credit facility rather than balance.
-      this.logger.log(`Skipping negative credit_out on SteraTrader for ${accountNumber} (balance reset is authoritative in CRM)`);
-      return true;
-    }
+    if (!this.apiKey || amountNgn <= 0) return false;
 
     const amountKobo = Math.abs(Math.round(amountNgn * 100));
     const kind = 'deposit';
@@ -282,20 +275,61 @@ export class SteraTraderService {
           kind,
           amount: amountKobo,
           currency: 'NGN',
-          external_transaction_id: `TX-${accountNumber}-${Date.now()}`,
+          external_transaction_id: `TX-CR-${accountNumber}-${Date.now()}`,
           reason: comment,
         }),
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        this.logger.error(`Failed SteraTrader transaction (HTTP ${response.status}): ${JSON.stringify(err)}`);
+        this.logger.error(`Failed SteraTrader credit transaction (HTTP ${response.status}): ${JSON.stringify(err)}`);
         return false;
       }
 
       return true;
     } catch (err: any) {
       this.logger.error(`Failed to credit SteraTrader balance for ${accountNumber}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Debit / Wipe excess profit or withdrawal balance on SteraTrader live balance
+   */
+  async debitAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Debit adjustment'): Promise<boolean> {
+    if (!this.apiKey || amountNgn <= 0) return true;
+
+    const amountKobo = Math.abs(Math.round(amountNgn * 100));
+    const kind = 'credit_out';
+    this.logger.log(`Executing SteraTrader debit for ${accountNumber}: ${kind} ₦${amountNgn.toLocaleString()} (${amountKobo} kobo) [${comment}]`);
+
+    try {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          kind,
+          amount: amountKobo,
+          currency: 'NGN',
+          external_transaction_id: `TX-DB-${accountNumber}-${Date.now()}`,
+          reason: comment,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        this.logger.error(`Failed SteraTrader debit transaction (HTTP ${response.status}): ${JSON.stringify(err)}`);
+        return false;
+      }
+
+      const resData = await response.json().catch(() => ({}));
+      this.logger.log(`SteraTrader debit success for ${accountNumber}: new balance kobo=${resData?.data?.balance}`);
+      return true;
+    } catch (err: any) {
+      this.logger.error(`Failed to debit SteraTrader balance for ${accountNumber}: ${err.message}`);
       return false;
     }
   }
@@ -318,11 +352,19 @@ export class SteraTraderService {
       return true;
     }
 
-    return this.creditAccountBalance(
-      accountNumber,
-      deltaNgn,
-      `Payout withdrawal balance reset to ₦${targetInitialBalanceNgn.toLocaleString()}`
-    );
+    if (deltaNgn < 0) {
+      return this.debitAccountBalance(
+        accountNumber,
+        Math.abs(deltaNgn),
+        `Balance reset to ₦${targetInitialBalanceNgn.toLocaleString()}`
+      );
+    } else {
+      return this.creditAccountBalance(
+        accountNumber,
+        deltaNgn,
+        `Balance reset to ₦${targetInitialBalanceNgn.toLocaleString()}`
+      );
+    }
   }
 
   /**

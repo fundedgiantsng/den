@@ -97,8 +97,19 @@ export default function AccountAnalyticsTerminalPage() {
       todayExcessProfitClearedAtResetNgn: number;
       cumulativeQualifiedProfitNgn: number;
       progressPercent: number;
+      tradingDays?: number;
+      minTradingDaysRequired?: number;
+      tradingDaysMet?: boolean;
       resetTime: string;
       excessNotice: string | null;
+    } | null,
+    queuedPayout: null as {
+      reference: string;
+      amountNgn: number;
+      scheduledApprovalAt: string;
+      delayMinutes: number;
+      remainingMinutes: number;
+      requestedAt: string;
     } | null,
     isPayoutEligible: false,
     payoutIneligibilityReason: undefined as string | undefined,
@@ -151,8 +162,9 @@ export default function AccountAnalyticsTerminalPage() {
             maxDrawdownLimitNgn: maxLimit,
             maxLossHeadroomNgn: maxHeadroom,
             targetEvaluation: riskData.targetEvaluation ?? prev.targetEvaluation,
-            isPayoutEligible: riskData.payoutEligibility?.eligible ?? false,
+            isPayoutEligible: (riskData.payoutEligibility?.eligible ?? false) && !(accData.queuedPayout || riskData.payoutEligibility?.queuedPayout),
             payoutIneligibilityReason: riskData.payoutEligibility?.reason,
+            queuedPayout: accData.queuedPayout ?? riskData.payoutEligibility?.queuedPayout ?? null,
             traderSplitPercent: riskData.payoutEligibility?.traderSplitPercent ?? accData.traderSplitPercent ?? prev.traderSplitPercent,
             traderProfitSplitNgn: riskData.payoutEligibility?.traderProfitSplitNgn ?? riskData.payoutEligibility?.traderProfitSplit ?? accData.traderProfitSplitNgn ?? prev.traderProfitSplitNgn,
             firmProfitSplitNgn: riskData.payoutEligibility?.firmProfitSplitNgn ?? riskData.payoutEligibility?.firmProfitSplit ?? accData.firmProfitSplitNgn ?? prev.firmProfitSplitNgn,
@@ -274,15 +286,17 @@ export default function AccountAnalyticsTerminalPage() {
                   <button
                     type="button"
                     onClick={handleRequestPayout}
-                    disabled={requestingPayout || !account.isPayoutEligible}
+                    disabled={requestingPayout || !account.isPayoutEligible || !!account.queuedPayout}
                     className="px-5 py-2.5 rounded-xl bg-[#00e575] hover:bg-[#00c966] text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
                     <Wallet className="w-3.5 h-3.5" />
                     <span>
-                      Request Payout ({formatNaira(account.traderProfitSplitNgn)})
+                      {account.queuedPayout
+                        ? `Payout Queued (~${account.queuedPayout.remainingMinutes}m)`
+                        : `Request Payout (${formatNaira(account.traderProfitSplitNgn)})`}
                     </span>
                   </button>
-                  {!account.isPayoutEligible && account.payoutIneligibilityReason && !account.payoutIneligibilityReason.toLowerCase().includes('identity verification') && !account.payoutIneligibilityReason.toLowerCase().includes('kyc') && (
+                  {!account.isPayoutEligible && !account.queuedPayout && account.payoutIneligibilityReason && !account.payoutIneligibilityReason.toLowerCase().includes('identity verification') && !account.payoutIneligibilityReason.toLowerCase().includes('kyc') && (
                     <span className="text-[10px] text-amber-400/90 font-mono">
                       {account.payoutIneligibilityReason}
                     </span>
@@ -293,6 +307,33 @@ export default function AccountAnalyticsTerminalPage() {
           </div>
         </div>
       </div>
+
+      {/* Queued Payout SLA Banner */}
+      {account.queuedPayout && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-transparent border border-amber-500/30 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-heading font-bold text-amber-400 uppercase tracking-wider">
+                  Payout Review in Progress
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Ref: {account.queuedPayout.reference}
+                </span>
+              </div>
+              <p className="text-xs text-fgText-secondary mt-0.5">
+                Profit disbursement of <strong className="text-white">{formatNaira(account.queuedPayout.amountNgn)}</strong> is queued. Automated approval is scheduled in approximately <strong className="text-emerald-400">~{account.queuedPayout.remainingMinutes} minutes</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="text-right text-[11px] font-mono text-fgText-muted shrink-0">
+            <span>Trading balance reset to initial baseline</span>
+          </div>
+        </div>
+      )}
 
       {payoutSuccessMessage && (
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[#00f59b] text-xs flex items-center gap-2.5">
@@ -473,6 +514,9 @@ export default function AccountAnalyticsTerminalPage() {
               </h3>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-black/40 border border-white/10 text-white font-bold">
+                Trading Days: {account.targetEvaluation?.tradingDays || 1}/5 Min Days
+              </span>
               <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
                 2% Max Daily Profit Cap
               </span>

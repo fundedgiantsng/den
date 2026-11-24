@@ -49,6 +49,14 @@ export interface PayoutEligibilityResult {
   profitSplitRatio: string;
   minRequiredPercent: number;
   openTradesCount: number;
+  queuedPayout?: {
+    reference: string;
+    amountNgn: number;
+    scheduledApprovalAt: string;
+    delayMinutes: number;
+    remainingMinutes: number;
+    requestedAt: string;
+  } | null;
   reason?: string;
   breakdown: {
     minimumProfitMet: boolean;
@@ -153,8 +161,8 @@ export class RiskEngineService {
         const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
         const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
         const dbBal = Number(account.currentBalance);
-        const currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? Number(account.initialBalance));
-        const currentEquity = currentBalance + floating;
+        let currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? Number(account.initialBalance));
+        let currentEquity = currentBalance + floating;
         const initialBal = Number(account.initialBalance);
 
         // Check 30-Day Inactivity Breach Rule
@@ -175,53 +183,76 @@ export class RiskEngineService {
         let sessionInfo: any = {};
 
         if (isRhinoRushEvaluation) {
-          // Retrieve prior snapshot to know the opening baseline of the session that just concluded
-          const lastSnapshot = await prisma.riskEvent.findFirst({
-            where: {
-              tradingAccountId: account.id,
-              eventType: 'DAILY_RESET_SNAPSHOT',
-            },
-            orderBy: { createdAt: 'desc' },
-          });
+          const sessionDateStr = new Date().toISOString().split('T')[0];
 
-          let sessionOpeningBaseline = initialBal;
-          if (lastSnapshot) {
-            const snapBal = Number(lastSnapshot.snapshotBalance || initialBal);
-            const snapEq = Number(lastSnapshot.snapshotEquity || snapBal);
-            sessionOpeningBaseline = Math.max(snapBal, snapEq);
-          }
-
-          const todayRawProfit = Math.max(0, currentEquity - sessionOpeningBaseline);
-          const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
-          const cappedCredit = Math.min(todayRawProfit, dailyCap);
-          const excessProfitCleared = Math.max(0, todayRawProfit - dailyCap);
-
-          // Previous banked
+          // Retrieve past session snapshots to compute banked profit from completed past sessions
           const previousSnapshots = await prisma.riskEvent.findMany({
             where: {
               tradingAccountId: account.id,
               eventType: 'DAILY_RESET_SNAPSHOT',
             },
+            orderBy: { createdAt: 'asc' },
           });
-          let bankedSoFar = 0;
+
+          // De-duplicate completed past sessions by sessionDate (excluding today's in-progress session)
+          const dailyBankedMap = new Map<string, number>();
           for (const snap of previousSnapshots) {
             try {
               const parsed = JSON.parse(snap.description);
-              bankedSoFar += Number(parsed.cappedCredit || 0);
+              if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
+                dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+              }
             } catch {}
           }
 
+          let bankedSoFar = 0;
+          for (const val of dailyBankedMap.values()) {
+            bankedSoFar += val;
+          }
+
+          const sessionOpeningBaseline = initialBal + bankedSoFar;
+          const todayRawProfit = Math.max(0, currentEquity - sessionOpeningBaseline);
+          const dailyCap = initialBal * 0.02; // 2% Max Daily Cap
+          const cappedCredit = Math.min(todayRawProfit, dailyCap);
+          const excessProfitCleared = Math.max(0, todayRawProfit - dailyCap);
           const cumulativeQualifiedProfit = bankedSoFar + cappedCredit;
           const profitTarget = initialBal * 0.10;
+          const openingBalanceTomorrow = sessionOpeningBaseline + cappedCredit;
 
-          // Record session reset snapshot banking the capped credit and discarding excess
+          // If there is excess profit above the 2% daily cap, wipe/clear it from SteraTrader
+          if (excessProfitCleared > 0) {
+            try {
+              await this.steraTraderService.debitAccountBalance(
+                account.accountNumber,
+                excessProfitCleared,
+                `Cleared ₦${excessProfitCleared.toLocaleString()} excess profit above 2% daily cap at midnight session reset`
+              );
+              this.logger.log(`Debited ₦${excessProfitCleared.toLocaleString()} excess profit from SteraTrader ${account.accountNumber}`);
+            } catch (steraErr: any) {
+              this.logger.error(`Failed to debit excess profit from SteraTrader ${account.accountNumber}: ${steraErr.message}`);
+            }
+
+            await prisma.riskEvent.create({
+              data: {
+                challengeId: account.challengeId,
+                tradingAccountId: account.id,
+                eventType: 'EXCESS_PROFIT_CLEARED',
+                description: `Cleared ₦${excessProfitCleared.toLocaleString()} excess profit above 2% daily cap for session ${sessionDateStr}. Opening balance for next session reset to ₦${openingBalanceTomorrow.toLocaleString()} (+2% capped gain).`,
+                severity: 'INFO',
+                snapshotBalance: openingBalanceTomorrow,
+                snapshotEquity: openingBalanceTomorrow,
+              },
+            });
+          }
+
+          // Record session reset snapshot banking the capped credit and resetting baseline
           await prisma.riskEvent.create({
             data: {
               challengeId: account.challengeId,
               tradingAccountId: account.id,
               eventType: 'DAILY_RESET_SNAPSHOT',
               description: JSON.stringify({
-                sessionDate: new Date().toISOString().split('T')[0],
+                sessionDate: sessionDateStr,
                 sessionOpeningBaseline,
                 todayRawProfit,
                 cappedCredit,
@@ -230,22 +261,33 @@ export class RiskEngineService {
                 profitTarget,
               }),
               severity: 'INFO',
-              snapshotBalance: currentBalance,
-              snapshotEquity: currentEquity,
+              snapshotBalance: openingBalanceTomorrow,
+              snapshotEquity: openingBalanceTomorrow,
             },
           });
+
+          // Reset balance and equity in DB to openingBalanceTomorrow
+          currentBalance = openingBalanceTomorrow;
+          currentEquity = openingBalanceTomorrow;
+
+          const totalTradingDays = await this.countTradingDays(account.id);
+          const canPromote = cumulativeQualifiedProfit >= profitTarget && totalTradingDays >= 5;
 
           sessionInfo = {
             todayRawProfit,
             cappedCredit,
             excessProfitCleared,
             cumulativeQualifiedProfit,
-            passed: cumulativeQualifiedProfit >= profitTarget,
+            totalTradingDays,
+            minTradingDaysRequired: 5,
+            passed: canPromote,
           };
 
-          // If reached 10% target with banked daily capped profits, promote to funded!
-          if (cumulativeQualifiedProfit >= profitTarget) {
-            await this.handlePromotion(account, cumulativeQualifiedProfit, currentEquity);
+          // Promotion requires 10% qualified profit AND minimum 5 trading days
+          if (canPromote) {
+            await this.handlePromotion(account, cumulativeQualifiedProfit, openingBalanceTomorrow);
+          } else if (cumulativeQualifiedProfit >= profitTarget && totalTradingDays < 5) {
+            this.logger.log(`Account ${account.accountNumber} has reached 10% target with ₦${cumulativeQualifiedProfit.toLocaleString()}, but has traded ${totalTradingDays}/5 required minimum trading days.`);
           }
         }
 
@@ -536,79 +578,37 @@ export class RiskEngineService {
       return Math.max(snapBal, snapEq, initialBal);
     }
 
-    // 3. Self-healing: If account existed before sessionStart but no snapshot was recorded yet for today
+    // 3. Fallback: If no snapshot was recorded yet for the current session
     if (!account.createdAt || new Date(account.createdAt) < sessionStart) {
       try {
-        const priorSnapshot = await prisma.riskEvent.findFirst({
+        const priorSnapshots = await prisma.riskEvent.findMany({
           where: {
             tradingAccountId: account.id,
             eventType: 'DAILY_RESET_SNAPSHOT',
             createdAt: { lt: sessionStart },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'asc' },
         });
 
-        const priorBaseline = priorSnapshot
-          ? Math.max(Number(priorSnapshot.snapshotBalance || initialBal), Number(priorSnapshot.snapshotEquity || initialBal))
-          : initialBal;
-
-        const sessionProfit = Math.max(0, currentBalance - priorBaseline);
-        const dailyCap = initialBal * 0.02;
-        const cappedCredit = Math.min(sessionProfit, dailyCap);
-        const excessProfitCleared = Math.max(0, sessionProfit - dailyCap);
-
-        const pastSnapshots = await prisma.riskEvent.findMany({
-          where: {
-            tradingAccountId: account.id,
-            eventType: 'DAILY_RESET_SNAPSHOT',
-          },
-        });
-        let bankedTotal = 0;
-        for (const s of pastSnapshots) {
+        const dailyBankedMap = new Map<string, number>();
+        for (const snap of priorSnapshots) {
           try {
-            const p = JSON.parse(s.description);
-            bankedTotal += Number(p.cappedCredit || 0);
+            const parsed = JSON.parse(snap.description);
+            if (parsed.sessionDate && parsed.cappedCredit !== undefined) {
+              dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+            }
           } catch {}
         }
-        const cumulativeQualifiedProfit = bankedTotal + cappedCredit;
 
-        const challengeId =
-          account.challengeId ||
-          priorSnapshot?.challengeId ||
-          (
-            await prisma.tradingAccount.findUnique({
-              where: { id: account.id },
-              select: { challengeId: true },
-            })
-          )?.challengeId ||
-          '';
-
-        if (challengeId) {
-          await prisma.riskEvent.create({
-            data: {
-              challengeId,
-              tradingAccountId: account.id,
-              eventType: 'DAILY_RESET_SNAPSHOT',
-              createdAt: sessionStart,
-              description: JSON.stringify({
-                sessionDate: sessionStart.toISOString().split('T')[0],
-                sessionOpeningBaseline: priorBaseline,
-                todayRawProfit: sessionProfit,
-                cappedCredit,
-                excessProfitCleared,
-                cumulativeQualifiedProfit,
-                profitTarget: initialBal * 0.10,
-              }),
-              severity: 'INFO',
-              snapshotBalance: currentBalance,
-              snapshotEquity: currentBalance,
-            },
-          });
+        let bankedTotal = 0;
+        for (const val of dailyBankedMap.values()) {
+          bankedTotal += val;
         }
 
-        return Math.max(currentBalance, initialBal);
+        const calculatedBaseline = initialBal + bankedTotal;
+        return Math.max(calculatedBaseline, initialBal);
       } catch (err: any) {
-        this.logger.warn(`Could not create self-healing reset snapshot: ${err.message}`);
+        this.logger.warn(`Could not calculate session baseline from prior snapshots: ${err.message}`);
       }
     }
 
@@ -713,34 +713,65 @@ export class RiskEngineService {
       const profitTarget = initialBal * 0.10; // 10% Profit Target
       const dailyCap = initialBal * 0.02; // 2% Max Daily Profit Cap
 
-      // Retrieve previously banked daily capped profit from completed session resets
+      // Retrieve previously banked daily capped profit from completed past sessions
+      const sessionDateStr = new Date().toISOString().split('T')[0];
       const sessionSnapshots = await prisma.riskEvent.findMany({
         where: {
           tradingAccountId: account.id,
           eventType: 'DAILY_RESET_SNAPSHOT',
         },
+        orderBy: { createdAt: 'asc' },
       });
 
-      let bankedQualifiedProfit = 0;
+      // De-duplicate completed past sessions by sessionDate (excluding today's in-progress session)
+      const dailyBankedMap = new Map<string, number>();
       for (const snap of sessionSnapshots) {
         try {
           const parsed = JSON.parse(snap.description);
-          bankedQualifiedProfit += Number(parsed.cappedCredit || 0);
+          if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
+            dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+          }
         } catch {}
       }
 
-      // Today's contribution: capped at 2% daily limit; excess above 2% will be cleared at 23:00 GMT+1 reset
-      const todayRawProfit = Math.max(0, currentEquity - startingDayBaseline);
+      let bankedQualifiedProfit = 0;
+      for (const val of dailyBankedMap.values()) {
+        bankedQualifiedProfit += val;
+      }
+
+      const todaySessionOpeningBaseline = initialBal + bankedQualifiedProfit;
+      const todayRawProfit = Math.max(0, currentEquity - todaySessionOpeningBaseline);
       const todayCreditedTowardsTarget = Math.min(todayRawProfit, dailyCap);
       const totalQualifiedProfit = bankedQualifiedProfit + todayCreditedTowardsTarget;
 
-      if (totalQualifiedProfit >= profitTarget) {
+      const totalTradingDays = await this.countTradingDays(account.id);
+      if (totalQualifiedProfit >= profitTarget && totalTradingDays >= 5) {
         await this.handlePromotion(account, totalQualifiedProfit, currentEquity);
         return { status: 'promoted', profit: totalQualifiedProfit };
       }
     }
 
     return { status: 'safe', currentEquity, currentProfit: currentEquity - initialBal };
+  }
+
+  /**
+   * Count distinct trading days for an account (calendar days with opened or closed trades)
+   */
+  async countTradingDays(tradingAccountId: string): Promise<number> {
+    try {
+      const trades = await prisma.tradeRecord.findMany({
+        where: { tradingAccountId },
+        select: { openedAt: true, closedAt: true },
+      });
+      const uniqueDays = new Set<string>();
+      for (const t of trades) {
+        if (t.openedAt) uniqueDays.add(new Date(t.openedAt).toISOString().split('T')[0]);
+        if (t.closedAt) uniqueDays.add(new Date(t.closedAt).toISOString().split('T')[0]);
+      }
+      return Math.max(1, uniqueDays.size);
+    } catch {
+      return 1;
+    }
   }
 
   /**
@@ -1142,13 +1173,41 @@ export class RiskEngineService {
 
     const noActiveBreachesMet = activeRiskEvents.length === 0;
 
-    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && netProfit > 0;
+    // Check if a payout request for this trading account or wallet is currently queued
+    const queuedDeposit = await prisma.deposit.findFirst({
+      where: {
+        wallet: { userId: account.challenge.userId },
+        status: 'PENDING',
+        senderName: 'FundedGiants SteraTrader Profit Split',
+      },
+    });
+
+    let queuedPayout: any = null;
+    if (queuedDeposit) {
+      const raw = (queuedDeposit.rawWebhookData as any) || {};
+      if (raw.tradingAccountId === account.id || raw.accountNumber === account.accountNumber) {
+        const remainingMs = Math.max(0, new Date(raw.scheduledApprovalAt).getTime() - Date.now());
+        const remainingMinutes = Math.ceil(remainingMs / 60000);
+        queuedPayout = {
+          reference: queuedDeposit.reference,
+          amountNgn: Number(queuedDeposit.amount),
+          scheduledApprovalAt: raw.scheduledApprovalAt,
+          delayMinutes: raw.delayMinutes,
+          remainingMinutes,
+          requestedAt: raw.requestedAt,
+        };
+      }
+    }
+
+    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && netProfit > 0 && !queuedPayout;
     const cycleTraderProfitNgn = isEligible && netProfit > 0 ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
     const cycleFirmProfitNgn = isEligible && netProfit > 0 ? Math.floor(netProfit * ((100 - traderSplitPercent) / 100)) : 0;
     const withdrawableProfitNgn = isEligible ? cycleTraderProfitNgn : 0;
 
     let failureReason: string | undefined;
-    if (!zeroOpenTradesMet) {
+    if (queuedPayout) {
+      failureReason = `A payout request of ₦${queuedPayout.amountNgn.toLocaleString()} is currently queued. Automated approval is scheduled in approximately ${queuedPayout.remainingMinutes} minutes.`;
+    } else if (!zeroOpenTradesMet) {
       failureReason = `Account has ${openTradesCount} open position(s). All positions must be closed before payout.`;
     } else if (!minimumProfitMet) {
       failureReason = isPhoenix && payoutNumber === 1
@@ -1180,6 +1239,7 @@ export class RiskEngineService {
       profitSplitRatio,
       minRequiredPercent: minThresholdPercent,
       openTradesCount,
+      queuedPayout,
       reason: failureReason,
       breakdown: {
         minimumProfitMet,
@@ -1255,7 +1315,8 @@ export class RiskEngineService {
       const profitTargetNgn = initialBal * 0.10; // 10% Target
       const dailyProfitCapNgn = initialBal * 0.02; // 2% Max Daily Profit Cap
 
-      // Retrieve previously banked daily capped profits from completed session resets
+      // Retrieve previously banked daily capped profits from completed past sessions
+      const sessionDateStr = new Date().toISOString().split('T')[0];
       const sessionSnapshots = await prisma.riskEvent.findMany({
         where: {
           tradingAccountId: account.id,
@@ -1264,19 +1325,30 @@ export class RiskEngineService {
         orderBy: { createdAt: 'asc' },
       });
 
-      let bankedTargetProfitNgn = 0;
+      // De-duplicate completed past sessions by sessionDate (excluding today's in-progress session)
+      const dailyBankedMap = new Map<string, number>();
       for (const snap of sessionSnapshots) {
         try {
           const parsed = JSON.parse(snap.description);
-          bankedTargetProfitNgn += Number(parsed.cappedCredit || 0);
+          if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
+            dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+          }
         } catch {}
       }
 
-      const todayRawProfitNgn = Math.max(0, currentEquity - startingDayHwm);
+      let bankedTargetProfitNgn = 0;
+      for (const val of dailyBankedMap.values()) {
+        bankedTargetProfitNgn += val;
+      }
+
+      const todaySessionOpeningBaseline = initialBal + bankedTargetProfitNgn;
+      const todayRawProfitNgn = Math.max(0, currentEquity - todaySessionOpeningBaseline);
       const todayCreditedTowardsTargetNgn = Math.min(todayRawProfitNgn, dailyProfitCapNgn);
       const todayExcessProfitClearedAtResetNgn = Math.max(0, todayRawProfitNgn - dailyProfitCapNgn);
       const cumulativeQualifiedProfitNgn = bankedTargetProfitNgn + todayCreditedTowardsTargetNgn;
       const progressPercent = Math.min(100, Math.round((cumulativeQualifiedProfitNgn / profitTargetNgn) * 100));
+
+      const tradingDays = await this.countTradingDays(account.id);
 
       targetEvaluation = {
         profitTargetNgn,
@@ -1289,6 +1361,9 @@ export class RiskEngineService {
         todayExcessProfitClearedAtResetNgn,
         cumulativeQualifiedProfitNgn,
         progressPercent,
+        tradingDays,
+        minTradingDaysRequired: 5,
+        tradingDaysMet: tradingDays >= 5,
         resetTime: '23:00 (GMT +1)',
         excessNotice:
           todayExcessProfitClearedAtResetNgn > 0
@@ -1339,8 +1414,8 @@ export class RiskEngineService {
 
   /**
    * Automated Payout Execution:
-   * Approves and instantly disburses trader profit split (80%) directly into Giants Vault.
-   * Eliminates manual administrative delays through real-time risk verification.
+   * Queues payout for randomized automated approval between 5 minutes and 45 minutes.
+   * Immediately resets trading account balance to initial capital baseline so trader cannot trade with queued profits.
    */
   async processAutomatedPayout(accountId: string, userId: string) {
     const eligibility = await this.checkPayoutEligibility(accountId);
@@ -1377,95 +1452,100 @@ export class RiskEngineService {
       throw new BadRequestException('Customer wallet not initialized');
     }
 
+    // Check if a payout request for this trading account or wallet is already in the queue
+    const existingQueuedPayout = await prisma.deposit.findFirst({
+      where: {
+        walletId: user.wallet.id,
+        status: 'PENDING',
+        senderName: 'FundedGiants SteraTrader Profit Split',
+      },
+    });
 
+    if (existingQueuedPayout) {
+      const raw = (existingQueuedPayout.rawWebhookData as any) || {};
+      if (raw.tradingAccountId === account.id || raw.accountNumber === account.accountNumber) {
+        const remainingMs = Math.max(0, new Date(raw.scheduledApprovalAt).getTime() - Date.now());
+        const remainingMinutes = Math.ceil(remainingMs / 60000);
+        throw new BadRequestException(
+          `A payout request of ₦${Number(existingQueuedPayout.amount).toLocaleString()} is already queued for this account. Automated approval is scheduled in approximately ${remainingMinutes} minutes.`
+        );
+      }
+    }
+
+    // Set timer random payout approved timing from 5 minutes (300,000 ms) to 45 minutes (2,700,000 ms)
+    const minDelayMs = 5 * 60 * 1000;
+    const maxDelayMs = 45 * 60 * 1000;
+    const delayMs = Math.floor(minDelayMs + Math.random() * (maxDelayMs - minDelayMs));
+    const scheduledApprovalAt = new Date(Date.now() + delayMs);
+    const delayMinutes = Math.max(5, Math.min(45, Math.round(delayMs / 60000)));
 
     const payoutAmount = eligibility.withdrawableProfitNgn;
-    const reference = `FG-PAYOUT-${Date.now()}`;
+    const reference = `FG-PAYOUT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const targetStartBalance = Number(
       account.challenge?.product?.accountSize ||
       (account.challenge as any)?.accountSizeNgn ||
       (account.initialBalance && Number(account.initialBalance) > 0 ? Number(account.initialBalance) : 50000000)
     );
+    const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
 
-    // Execute atomic disbursement transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Credit Giants Vault balance via Deposit record
-      const deposit = await tx.deposit.create({
-        data: {
-          walletId: user.wallet!.id,
-          reference,
-          amount: payoutAmount,
-          currency: 'NGN',
-          status: 'SUCCESSFUL',
-          senderName: `FundedGiants Risk Engine Auto-Payout (${account.accountNumber})`,
-          senderBank: 'FundedGiants Treasury',
-          senderAccount: 'CENTRAL-TREASURY-01',
-          reconciled: true,
-        },
-      });
-
-      // 2. Post double-entry journal entry to financial ledger
-      const entry = await tx.journalEntry.create({
-        data: {
-          entryNumber: `JE-PAYOUT-${Date.now()}`,
-          transactionType: 'DEPOSIT_LENCO_VIRTUAL',
-          reference,
-          narration: `Automated Risk Engine payout disbursement of ₦${payoutAmount.toLocaleString()} for account ${account.accountNumber}`,
-        },
-      });
-
-      const cashAccount = await tx.ledgerAccount.findFirst({ where: { code: '1000-CASH-LENCO' } });
-      const walletLiabilityAccount = await tx.ledgerAccount.findFirst({
-        where: { code: '2000-WALLET-LIABILITY' },
-      });
-
-      if (cashAccount && walletLiabilityAccount) {
-        await tx.journalLine.createMany({
-          data: [
-            { journalEntryId: entry.id, accountId: cashAccount.id, debit: payoutAmount, credit: 0 },
-            { journalEntryId: entry.id, accountId: walletLiabilityAccount.id, debit: 0, credit: payoutAmount },
-          ],
-        });
-      }
-
-      // 3. Reset account balance to starting capital (clearing all profits above start balance so user can restart trading)
-      await tx.tradingAccount.update({
-        where: { id: account.id },
-        data: {
-          initialBalance: targetStartBalance,
-          currentBalance: targetStartBalance,
-          currentEquity: targetStartBalance,
-          totalProfit: 0,
-        },
-      });
-
-      // Insert fresh baseline snapshot for drawdown monitoring from initial capital
-      await tx.riskEvent.create({
-        data: {
-          challengeId: account.challengeId,
+    // Queue payout via PENDING Deposit (amount is NOT credited to wallet until scheduled auto-approval)
+    await prisma.deposit.create({
+      data: {
+        walletId: user.wallet.id,
+        reference,
+        amount: payoutAmount,
+        currency: 'NGN',
+        status: 'PENDING',
+        senderName: 'FundedGiants SteraTrader Profit Split',
+        reconciled: false,
+        rawWebhookData: {
           tradingAccountId: account.id,
-          eventType: 'DAILY_RESET_SNAPSHOT',
-          description: `Post-payout reset to initial balance baseline of ₦${targetStartBalance.toLocaleString()}`,
-          severity: 'INFO',
-          snapshotBalance: targetStartBalance,
-          snapshotEquity: targetStartBalance,
+          accountNumber: account.accountNumber,
+          recipientName: traderFullName,
+          userEmail: user.email || '',
+          totalProfitNgn: eligibility.withdrawableProfitNgn > 0 ? Math.round(eligibility.withdrawableProfitNgn / (eligibility.traderSplitPercent / 100)) : undefined,
+          scheduledApprovalAt: scheduledApprovalAt.toISOString(),
+          requestedAt: new Date().toISOString(),
+          delayMinutes,
+          payoutNumber: eligibility.payoutNumber,
+          profitSplitRatio: eligibility.profitSplitRatio,
         },
-      });
+      },
+    });
 
-      // 4. Record Risk Engine audit event
-      await tx.riskEvent.create({
-        data: {
-          challengeId: account.challengeId,
-          tradingAccountId: account.id,
-          eventType: 'AUTOMATED_PAYOUT_APPROVED',
-          description: `Automated payout #${eligibility.payoutNumber} of ₦${payoutAmount.toLocaleString()} (${eligibility.profitSplitRatio} tiered split) approved by Risk Engine and credited to Giants Vault. Balance reset to initial ₦${targetStartBalance.toLocaleString()}.`,
-          severity: 'INFO',
-          snapshotBalance: targetStartBalance,
-          snapshotEquity: targetStartBalance,
-        },
-      });
+    // Reset trading account balance to initial capital baseline immediately so user can restart trading
+    await prisma.tradingAccount.update({
+      where: { id: account.id },
+      data: {
+        initialBalance: targetStartBalance,
+        currentBalance: targetStartBalance,
+        currentEquity: targetStartBalance,
+        totalProfit: 0,
+      },
+    });
 
-      return deposit;
+    await prisma.riskEvent.create({
+      data: {
+        challengeId: account.challengeId,
+        tradingAccountId: account.id,
+        eventType: 'DAILY_RESET_SNAPSHOT',
+        description: `Post-payout reset to initial balance baseline of ₦${targetStartBalance.toLocaleString()}`,
+        severity: 'INFO',
+        snapshotBalance: targetStartBalance,
+        snapshotEquity: targetStartBalance,
+      },
+    });
+
+    await prisma.riskEvent.create({
+      data: {
+        challengeId: account.challengeId,
+        tradingAccountId: account.id,
+        eventType: 'PAYOUT_QUEUED',
+        description: `Profit payout #${eligibility.payoutNumber} of ₦${payoutAmount.toLocaleString()} queued for review. Scheduled automated approval in ${delayMinutes} minutes (${scheduledApprovalAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}). Trading account reset to initial ₦${targetStartBalance.toLocaleString()}.`,
+        severity: 'INFO',
+        snapshotBalance: targetStartBalance,
+        snapshotEquity: targetStartBalance,
+      },
     });
 
     // Reset SteraTrader live balance back to starting capital by withdrawing/clearing all profits above starting balance
@@ -1476,102 +1556,23 @@ export class RiskEngineService {
       this.logger.error(`Failed to reset SteraTrader balance for ${account.accountNumber}: ${steraErr.message}`);
     }
 
-    this.totalAutomatedPayoutsApproved++;
     this.logger.log(
-      `AUTOMATED PAYOUT SUCCESS: ₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber}, ${eligibility.profitSplitRatio}) credited to user ${user.id} (${account.accountNumber}). Ref: ${reference}`
+      `Profit payout of ₦${payoutAmount.toLocaleString()} queued for user ${user.id} (${account.accountNumber}). Scheduled approval in ${delayMinutes} mins at ${scheduledApprovalAt.toISOString()}`
     );
-
-    // Stamped Payout Certificate Generation & WordPress Live Payout Tracker Sync
-    let generatedCertificate: any = null;
-    try {
-      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
-      generatedCertificate = await this.certificatesService.generatePayoutCertificate({
-        recipientName: traderFullName,
-        amountNgn: payoutAmount,
-        accountNumber: account.accountNumber,
-        userEmail: user.email || '',
-        payoutReference: reference,
-      });
-    } catch (err: any) {
-      this.logger.error(`Error auto-generating payout certificate: ${err.message}`);
-    }
-
-    // 5. Credit 3% recurring commission to referring affiliate (if trader was referred)
-    try {
-      const referral = await prisma.affiliateReferral.findUnique({
-        where: { referredUserId: user.id },
-        include: { affiliateProfile: true },
-      });
-
-      if (referral && referral.affiliateProfile) {
-        const payoutRate = Number(referral.affiliateProfile.payoutCommissionRate || 3.0);
-        const recurringCommissionNgn = Math.round((payoutAmount * payoutRate) / 100);
-
-        if (recurringCommissionNgn > 0) {
-          await prisma.$transaction([
-            prisma.affiliateCommission.create({
-              data: {
-                affiliateProfileId: referral.affiliateProfileId,
-                referralId: referral.id,
-                orderNumber: reference,
-                amount: recurringCommissionNgn,
-                currency: 'NGN',
-                status: 'SUCCESSFUL',
-              },
-            }),
-            prisma.affiliateProfile.update({
-              where: { id: referral.affiliateProfileId },
-              data: {
-                totalCommissions: { increment: recurringCommissionNgn },
-              },
-            }),
-          ]);
-
-          this.logger.log(
-            `3% Recurring Affiliate Commission of ₦${recurringCommissionNgn.toLocaleString()} credited to affiliate ${referral.affiliateProfile.referralCode} for payout ${reference}`
-          );
-
-          // 6. Notify WordPress Affiliate Platform Webhook
-          await this.woocommerceService.notifyAffiliatePayout({
-            payoutId: reference,
-            traderEmail: user.email || '',
-            amountNgn: payoutAmount,
-            referralCode: referral.affiliateProfile.referralCode,
-          });
-        }
-      }
-    } catch (affErr: any) {
-      this.logger.error(`Error processing recurring affiliate commission: ${affErr.message}`);
-    }
-
-    // 7. Sync to Public Payout Tracker on WordPress
-    try {
-      const traderFullName = `${user.firstName || 'John'} ${user.lastName || 'Doe'}`.trim();
-      await this.woocommerceService.syncPublicPayoutTracker({
-        payoutId: reference,
-        traderName: traderFullName,
-        amountNgn: payoutAmount,
-        certificateId: generatedCertificate?.certificateId || `FG-CERT-${Date.now()}`,
-        profitSplitRate: eligibility.traderSplitPercent,
-        programType: account.challenge ? 'Funded' : 'Trading',
-        timestamp: new Date().toISOString(),
-      });
-    } catch (wpErr: any) {
-      this.logger.warn(`Could not sync to WordPress payout tracker: ${wpErr.message}`);
-    }
 
     return {
       success: true,
+      status: 'QUEUED',
       reference,
       amountNgn: payoutAmount,
       payoutNumber: eligibility.payoutNumber,
       profitSplitRatio: eligibility.profitSplitRatio,
       traderSplitPercent: eligibility.traderSplitPercent,
-      depositedToWallet: true,
+      depositedToWallet: false,
+      estimatedApprovalMinutes: delayMinutes,
+      scheduledApprovalAt: scheduledApprovalAt.toISOString(),
       accountNumber: account.accountNumber,
-      certificateId: generatedCertificate?.certificateId || null,
-      certificateUrl: generatedCertificate?.publicUrl || null,
-      message: `₦${payoutAmount.toLocaleString()} (#${eligibility.payoutNumber} payout, ${eligibility.profitSplitRatio} split) has been approved and instantly disbursed to your Giants Vault. Payout certificate generated and synced to live tracker.`,
+      message: `Your payout request of ₦${payoutAmount.toLocaleString()} has been queued! Automated approval and disbursement to your Giants Vault is scheduled in approximately ${delayMinutes} minutes.`,
     };
   }
 
