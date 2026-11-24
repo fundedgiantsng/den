@@ -1,5 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dns from 'dns';
+
+// Enforce IPv4-first DNS resolution to avoid Cloudflare WAF IPv6 blocks on banking endpoints (Nomba API)
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
 
 // Load .env before NestJS bootstrap without requiring external dotenv package
 const envPaths = [

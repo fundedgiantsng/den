@@ -41,6 +41,15 @@ export default function BankAccountsPage() {
   // Form states
   const [selectedBankCode, setSelectedBankCode] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolvedAccount, setResolvedAccount] = useState<{
+    accountName: string;
+    accountNumber: string;
+    bankCode: string;
+    kycName: string;
+    isNameMatch: boolean;
+    matchWarning?: string;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -79,6 +88,51 @@ export default function BankAccountsPage() {
     fetchData();
   }, []);
 
+  // Automatic real-time bank account resolution as user completes 10 digits
+  useEffect(() => {
+    if (accountNumber.length === 10 && selectedBankCode) {
+      let isMounted = true;
+      setResolving(true);
+      setError(null);
+      setResolvedAccount(null);
+
+      fetch(
+        `${API_BASE_URL}/wallet/resolve-bank-account?accountNumber=${accountNumber}&bankCode=${selectedBankCode}`,
+        { credentials: 'include' }
+      )
+        .then(async (res) => {
+          const data = await res.json();
+          if (!isMounted) return;
+          if (!res.ok || !data.status) {
+            setError(data.message || 'Could not verify account with bank network');
+            setResolvedAccount(null);
+          } else {
+            setResolvedAccount(data);
+            if (!data.isNameMatch && data.matchWarning) {
+              setError(data.matchWarning);
+            }
+          }
+        })
+        .catch((err) => {
+          if (!isMounted) return;
+          setError('Failed to reach banking resolution gateway. Please try again.');
+          setResolvedAccount(null);
+        })
+        .finally(() => {
+          if (isMounted) setResolving(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    } else {
+      setResolvedAccount(null);
+      if (accountNumber.length > 0 && accountNumber.length < 10) {
+        setError(null);
+      }
+    }
+  }, [accountNumber, selectedBankCode]);
+
   const handleBindAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -91,6 +145,11 @@ export default function BankAccountsPage() {
 
     if (!accountNumber || accountNumber.length !== 10) {
       setError('Account number must be exactly 10 digits');
+      return;
+    }
+
+    if (!resolvedAccount || !resolvedAccount.isNameMatch) {
+      setError('Account name must be verified and match your legal KYC profile before binding.');
       return;
     }
 
@@ -117,6 +176,7 @@ export default function BankAccountsPage() {
 
       setSuccess(`Bank account successfully verified and bound: ${data.account.accountName}`);
       setAccountNumber('');
+      setResolvedAccount(null);
       fetchData();
       setTimeout(() => {
         setIsModalOpen(false);
@@ -334,16 +394,71 @@ export default function BankAccountsPage() {
                 />
               </div>
 
+              {/* Real-time Account Name Resolution Status */}
+              {resolving && (
+                <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.1] text-xs flex items-center gap-2 text-fgText-secondary">
+                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-400 shrink-0" />
+                  <span>Resolving account name via Interbank NIBSS Network...</span>
+                </div>
+              )}
+
+              {resolvedAccount && (
+                <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                  resolvedAccount.isNameMatch
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider text-fgText-muted font-medium">
+                        Resolved Account Holder Name
+                      </p>
+                      <p className="text-sm font-heading font-extrabold text-white mt-0.5">
+                        {resolvedAccount.accountName}
+                      </p>
+                    </div>
+                    {resolvedAccount.isNameMatch ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold shrink-0">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>KYC Match</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-bold shrink-0">
+                        <AlertCircle className="w-3 h-3" />
+                        <span>Mismatch</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.08] flex items-center justify-between text-[11px] text-fgText-secondary">
+                    <span>Verified KYC Profile:</span>
+                    <span className="font-semibold text-white">{resolvedAccount.kycName}</span>
+                  </div>
+
+                  {resolvedAccount.isNameMatch ? (
+                    <p className="text-[11px] text-emerald-400 flex items-center gap-1.5 pt-0.5">
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      <span>Account name successfully verified. You can now confirm and bind this account.</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-400 flex items-start gap-1.5 pt-0.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{resolvedAccount.matchWarning || 'Third-party bank accounts are strictly prohibited under regulatory AML requirements.'}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="p-3 rounded-xl bg-black/50 border border-white/[0.06] text-[11px] text-fgText-muted flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  The account holder name on this NUBAN will be resolved via the Interbank NIBSS Network and validated against your verified KYC name.
+                  The account holder name on this NUBAN is resolved via the Interbank NIBSS Network and validated against your verified KYC name.
                 </span>
               </div>
 
               <button
                 type="submit"
-                disabled={submitting || accountNumber.length !== 10 || !selectedBankCode}
+                disabled={submitting || resolving || !resolvedAccount || !resolvedAccount.isNameMatch}
                 className="w-full py-3 rounded-xl bg-[#00e575] hover:bg-[#00c966] disabled:opacity-50 text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
               >
                 {submitting ? (
@@ -351,7 +466,17 @@ export default function BankAccountsPage() {
                 ) : (
                   <Check className="w-4 h-4" />
                 )}
-                <span>{submitting ? 'Verifying with Interbank Network...' : 'Verify & Bind Account'}</span>
+                <span>
+                  {submitting
+                    ? 'Binding Verified Account...'
+                    : resolving
+                    ? 'Verifying Account Name...'
+                    : !resolvedAccount
+                    ? 'Enter 10-Digit Account Number'
+                    : !resolvedAccount.isNameMatch
+                    ? 'Name Mismatch - Binding Prohibited'
+                    : 'Confirm & Bind Bank Account'}
+                </span>
               </button>
             </form>
           </div>

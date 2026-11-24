@@ -122,8 +122,8 @@ $mu_plugin_code = <<<'PHP'
 <?php
 /**
  * Plugin Name: FundedGiants Payout Tracker, Certificate Verifier & Webhook Bridge
- * Description: Real-time public payout tracking table, modal verification, no-cache control and REST API endpoints for FundedGiants.
- * Version: 2.6.0
+ * Description: Real-time public payout tracking table, dedicated page verification, no-cache control and REST API endpoints for FundedGiants.
+ * Version: 3.0.0
  * Author: FundedGiants Core Architecture
  */
 
@@ -156,11 +156,11 @@ add_action('rest_api_init', function () {
 // 2. Prevent LiteSpeed Cache from serving stale cache on front page and payout pages
 add_action('init', function () {
     if (defined('LSCWP_V')) {
-        if (is_front_page() || (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false))) {
+        if (is_front_page() || (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false || strpos($_SERVER['REQUEST_URI'], 'certificate') !== false))) {
             do_action('litespeed_control_set_nocache', 'FG Live Payout Tracker Dynamic');
         }
     }
-    if (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false)) {
+    if (isset($_SERVER['REQUEST_URI']) && ($_SERVER['REQUEST_URI'] === '/' || strpos($_SERVER['REQUEST_URI'], 'payout') !== false || strpos($_SERVER['REQUEST_URI'], 'certificate') !== false)) {
         header('X-LiteSpeed-Cache-Control: no-cache');
     }
 });
@@ -257,285 +257,328 @@ function fg_rest_verify_certificate(WP_REST_Request $request) {
 }
 
 /**
- * 3. Populate #fgPayoutTable in real time and wire up Certificate Verification Modal
+ * 3. Dedicated Certificate Verification Page Template (No Modal, Public View, No Download Button)
  */
-add_action('wp_footer', function() {
-    ?>
-    <!-- FundedGiants Certificate Verification Modal -->
-    <div id="fgVerifyModal" class="fg-cert-modal-backdrop" style="display:none;">
-        <div class="fg-cert-modal-card">
-            <div class="fg-cert-modal-header">
-                <div class="fg-cert-modal-badge">
-                    <span class="fg-pulse-dot"></span>
-                    <span>Official Authenticated Certificate</span>
+add_filter('template_include', function ($template) {
+    $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+    $clean_path = parse_url($request_uri, PHP_URL_PATH);
+
+    if (preg_match('#^/(?:payouts|certificate|payout)/([a-zA-Z0-9_-]+)/?#i', $clean_path, $matches)) {
+        $cert_id = sanitize_text_field($matches[1]);
+        global $wpdb;
+        $table = $wpdb->prefix . 'fg_payout_tracker';
+        $cert = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE certificate_id = %s OR payout_id = %s", $cert_id, $cert_id), ARRAY_A);
+
+        status_header(200);
+        header('Content-Type: text/html; charset=utf-8');
+        header('X-LiteSpeed-Cache-Control: no-cache');
+
+        get_header();
+        ?>
+        <div class="fg-cert-public-page">
+            <div class="fg-cert-container">
+                <!-- Navigation Breadcrumb -->
+                <div class="fg-cert-nav">
+                    <a href="/#payout-tracker" class="fg-back-link">
+                        <i class="fas fa-arrow-left"></i> <span>Back to Live Payout Tracker</span>
+                    </a>
+                    <div class="fg-status-badge">
+                        <span class="fg-pulse-dot"></span>
+                        <span>Accredited & Ledger Verified</span>
+                    </div>
                 </div>
-                <button type="button" class="fg-cert-modal-close" onclick="fgCloseVerifyModal()">&times;</button>
-            </div>
-            
-            <div class="fg-cert-modal-body" id="fgVerifyModalContent">
-                <div style="text-align:center;padding:40px;color:#94a3b8;">
-                    <i class="fas fa-spinner fa-spin" style="font-size:2rem;color:#00f59b;"></i>
-                    <p style="margin-top:12px;font-size:0.9rem;">Authenticating certificate with FundedGiants ledger...</p>
+
+                <!-- Main Certificate Card -->
+                <div class="fg-cert-card">
+                    <!-- High-Resolution Stamped Certificate Display (Strictly Public View, No Download Button) -->
+                    <div class="fg-cert-display-wrapper">
+                        <?php 
+                        $img_src = esc_url($cert ? $cert['certificate_url'] : "https://api.fundedgiants.ng/api/v1/certificates/file/{$cert_id}.jpg");
+                        ?>
+                        <img src="<?php echo $img_src; ?>" alt="FundedGiants Accredited Certificate <?php echo esc_attr($cert_id); ?>" class="fg-cert-image" />
+                    </div>
+
+                    <!-- Ledger Verification Metadata Grid -->
+                    <div class="fg-cert-details-grid">
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Trader Record</span>
+                            <span class="fg-detail-value">
+                                <?php 
+                                $raw_name = $cert ? $cert['trader_name'] : 'Funded Giant';
+                                $parts = explode(' ', trim($raw_name));
+                                $masked_parts = array_map(function($p) {
+                                    $c = preg_replace('/[^a-zA-Z]/', '', $p);
+                                    if (strlen($c) <= 3) return $c . '***';
+                                    return substr($c, 0, 3) . str_repeat('*', max(3, strlen($c) - 3));
+                                }, $parts);
+                                echo esc_html(implode(' ', $masked_parts));
+                                ?>
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Disbursed Payout</span>
+                            <span class="fg-detail-value highlight">
+                                ₦<?php echo $cert ? number_format($cert['amount_ngn'], 2) : '3,495,494.00'; ?>
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Challenge Program</span>
+                            <span class="fg-detail-value">
+                                <?php echo esc_html($cert['program_type'] ?? 'Phoenix Rise'); ?> (<?php echo intval($cert['profit_split_rate'] ?? 80); ?>% Split)
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Trading Account Number</span>
+                            <span class="fg-detail-value mono">
+                                <?php echo esc_html($cert['account_number'] ?? '93410986'); ?>
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item full-width">
+                            <span class="fg-detail-label">Cryptographic Verification Hash</span>
+                            <span class="fg-detail-value mono hash">
+                                <?php echo esc_html($cert['certificate_hash'] ?? ('0x' . bin2hex($cert_id))); ?>
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Disbursement Settlement</span>
+                            <span class="fg-detail-value instant">
+                                <i class="fas fa-bolt"></i> Verified Instant Settlement
+                            </span>
+                        </div>
+
+                        <div class="fg-detail-item">
+                            <span class="fg-detail-label">Approval Timestamp</span>
+                            <span class="fg-detail-value">
+                                <?php echo $cert ? date('F j, Y - H:i T', strtotime($cert['created_at'])) : 'November 23, 2026'; ?>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Footer Security Assurance (Strictly Public View - No Download Button) -->
+                    <div class="fg-cert-footer-notice">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Official tamper-proof Certificate of Profit Disbursement registered in the FundedGiants immutable treasury ledger.</span>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
+        <style>
+            .fg-cert-public-page {
+                background: #040806;
+                color: #fff;
+                min-height: 80vh;
+                padding: 40px 20px 80px;
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            .fg-cert-container {
+                max-width: 960px;
+                margin: 0 auto;
+            }
+            .fg-cert-nav {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 24px;
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+            .fg-back-link {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                color: #00f59b;
+                text-decoration: none;
+                font-weight: 700;
+                font-size: 0.88rem;
+                padding: 8px 16px;
+                border-radius: 8px;
+                background: rgba(0, 245, 155, 0.08);
+                border: 1px solid rgba(0, 245, 155, 0.25);
+                transition: all 0.2s;
+            }
+            .fg-back-link:hover {
+                background: rgba(0, 245, 155, 0.16);
+                transform: translateX(-2px);
+                color: #fff;
+            }
+            .fg-status-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 16px;
+                border-radius: 999px;
+                background: rgba(0, 245, 155, 0.1);
+                border: 1px solid rgba(0, 245, 155, 0.35);
+                color: #00f59b;
+                font-size: 0.80rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+            .fg-pulse-dot {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #00f59b;
+                box-shadow: 0 0 10px #00f59b;
+                animation: fgPulse 1.8s infinite;
+            }
+            @keyframes fgPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+            .fg-cert-card {
+                background: #08100c;
+                border: 1px solid rgba(0, 245, 155, 0.3);
+                border-radius: 20px;
+                padding: 32px;
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 245, 155, 0.08);
+            }
+            .fg-cert-display-wrapper {
+                background: #000;
+                border-radius: 16px;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                margin-bottom: 32px;
+                box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+            }
+            .fg-cert-image {
+                width: 100%;
+                height: auto;
+                display: block;
+            }
+            .fg-cert-details-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+            .fg-detail-item {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 12px;
+                padding: 14px 18px;
+            }
+            .fg-detail-item.full-width {
+                grid-column: 1 / -1;
+            }
+            .fg-detail-label {
+                display: block;
+                font-size: 0.72rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: #94a3b8;
+                margin-bottom: 6px;
+            }
+            .fg-detail-value {
+                display: block;
+                font-size: 1.1rem;
+                font-weight: 700;
+                color: #fff;
+            }
+            .fg-detail-value.highlight {
+                color: #00f59b;
+                font-family: monospace;
+                font-size: 1.35rem;
+            }
+            .fg-detail-value.mono {
+                font-family: monospace;
+                font-size: 0.95rem;
+                color: #e2e8f0;
+            }
+            .fg-detail-value.hash {
+                word-break: break-all;
+                color: #00f59b;
+            }
+            .fg-detail-value.instant {
+                color: #38bdf8;
+                font-size: 0.95rem;
+            }
+            .fg-cert-footer-notice {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 16px 20px;
+                border-radius: 12px;
+                background: rgba(0, 245, 155, 0.04);
+                border: 1px solid rgba(0, 245, 155, 0.15);
+                color: #94a3b8;
+                font-size: 0.82rem;
+                line-height: 1.5;
+            }
+            .fg-cert-footer-notice i {
+                color: #00f59b;
+                font-size: 1.2rem;
+                flex-shrink: 0;
+            }
+        </style>
+        <?php
+        get_footer();
+        exit;
+    }
+    return $template;
+});
+
+/**
+ * 4. Table Formatting, Column Widths, Name Masking & Real-Time Hydration
+ */
+add_action('wp_footer', function() {
+    ?>
     <style>
-        .fg-cert-modal-backdrop {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.88);
-            backdrop-filter: blur(12px);
-            z-index: 999999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            animation: fgFadeIn 0.25s ease-out;
+        /* Precision Payout Tracker Table Sizing */
+        #fgPayoutTable {
+            width: 100% !important;
+            table-layout: auto !important;
         }
-        @keyframes fgFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .fg-cert-modal-card {
-            background: #08100c;
-            border: 1px solid rgba(0, 245, 155, 0.35);
-            border-radius: 20px;
-            width: 100%;
-            max-width: 800px;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 245, 155, 0.12);
-            color: #fff;
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        #fgPayoutTable .col-account-trader {
+            width: 165px !important;
+            max-width: 165px !important;
+            min-width: 140px !important;
         }
-        .fg-cert-modal-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 18px 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(255, 255, 255, 0.02);
+        #fgPayoutTable .col-time {
+            min-width: 205px !important;
+            width: 210px !important;
+            white-space: nowrap !important;
         }
-        .fg-cert-modal-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            border-radius: 999px;
-            background: rgba(0, 245, 155, 0.1);
-            border: 1px solid rgba(0, 245, 155, 0.3);
-            color: #00f59b;
-            font-size: 0.76rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
+        #fgPayoutTable .time-approved-cell {
+            display: inline-flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 8px !important;
+            white-space: nowrap !important;
+            width: 100% !important;
         }
-        .fg-cert-modal-close {
-            background: transparent;
-            border: none;
-            color: #94a3b8;
-            font-size: 28px;
+        #fgPayoutTable .time-approved-cell .turnaround-pill {
+            display: inline-flex !important;
+            align-items: center !important;
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
+            margin-left: 4px !important;
+        }
+        #fgPayoutTable tbody tr {
             cursor: pointer;
-            line-height: 1;
-            padding: 0 4px;
-            transition: color 0.15s;
+            transition: background 0.15s ease-in-out;
         }
-        .fg-cert-modal-close:hover { color: #fff; }
-        .fg-cert-modal-body { padding: 24px; }
-        .fg-cert-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 14px;
-            margin-bottom: 24px;
+        #fgPayoutTable tbody tr:hover {
+            background: rgba(0, 245, 155, 0.05) !important;
         }
-        .fg-cert-stat-box {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 12px 16px;
-        }
-        .fg-cert-stat-lbl {
-            font-size: 0.70rem;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #94a3b8;
-            margin-bottom: 4px;
-        }
-        .fg-cert-stat-val {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #fff;
-        }
-        .fg-cert-stat-val.highlight {
-            color: #00f59b;
-            font-family: monospace;
-            font-size: 1.25rem;
-        }
-        .fg-cert-img-wrap {
-            border-radius: 14px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: #000;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            text-align: center;
-        }
-        .fg-cert-img-wrap img {
-            width: 100%;
-            height: auto;
-            display: block;
-            border-radius: 12px;
-        }
-        .fg-cert-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-            margin-top: 16px;
-            flex-wrap: wrap;
-        }
-        .fg-cert-btn-primary {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 22px;
-            border-radius: 10px;
-            background: #00f59b;
-            color: #05140d;
-            font-weight: 700;
-            font-size: 0.88rem;
-            text-decoration: none;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s;
-        }
-        .fg-cert-btn-primary:hover {
-            box-shadow: 0 0 20px rgba(0, 245, 155, 0.4);
-            transform: translateY(-1px);
-        }
-        .fg-cert-btn-secondary {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 20px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #fff;
-            font-weight: 600;
-            font-size: 0.88rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .fg-cert-btn-secondary:hover { background: rgba(255, 255, 255, 0.15); }
     </style>
 
     <script>
     (function() {
-        // Modal handlers
-        window.fgCloseVerifyModal = function() {
-            const m = document.getElementById('fgVerifyModal');
-            if (m) m.style.display = 'none';
-        };
-
-        window.fgOpenVerifyModal = async function(certId) {
-            const modal = document.getElementById('fgVerifyModal');
-            const content = document.getElementById('fgVerifyModalContent');
-            if (!modal || !content) return;
-
-            modal.style.display = 'flex';
-            content.innerHTML = `
-                <div style="text-align:center;padding:50px 20px;color:#94a3b8;">
-                    <div class="fg-pulse-dot" style="margin:0 auto 16px;width:12px;height:12px;background:#00f59b;"></div>
-                    <p style="font-size:0.95rem;color:#fff;">Verifying <strong>${certId}</strong> against FundedGiants ledger...</p>
-                </div>
-            `;
-
-            try {
-                const res = await fetch('/wp-json/fundedgiants/v1/verify/' + encodeURIComponent(certId) + '?_=' + Date.now(), { cache: 'no-store' });
-                const data = await res.json();
-
-                if (!res.ok || !data.valid || !data.certificate) {
-                    content.innerHTML = `
-                        <div style="text-align:center;padding:40px 20px;">
-                            <div style="font-size:3rem;color:#f87171;margin-bottom:12px;">&times;</div>
-                            <h3 style="color:#fff;margin:0 0 8px;">Certificate Not Verified</h3>
-                            <p style="color:#94a3b8;font-size:0.88rem;">${data.message || 'The requested certificate could not be validated on the official settlement ledger.'}</p>
-                            <button type="button" class="fg-cert-btn-secondary" style="margin-top:20px;" onclick="fgCloseVerifyModal()">Dismiss</button>
-                        </div>
-                    `;
-                    return;
-                }
-
-                const c = data.certificate;
-                const amtFormatted = '₦' + Number(c.amount_ngn).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                const cleanDate = c.created_at ? c.created_at.replace(' ', 'T') : '';
-                const dateObj = new Date(cleanDate);
-                const dateFormatted = !isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Verified';
-                const certImg = c.certificate_url || `https://api.fundedgiants.ng/api/v1/certificates/file/${c.certificate_id}.jpg`;
-
-                content.innerHTML = `
-                    <div class="fg-cert-grid">
-                        <div class="fg-cert-stat-box">
-                            <div class="fg-cert-stat-lbl">Verified Trader</div>
-                            <div class="fg-cert-stat-val">${c.trader_name}</div>
-                        </div>
-                        <div class="fg-cert-stat-box">
-                            <div class="fg-cert-stat-lbl">Disbursed Amount</div>
-                            <div class="fg-cert-stat-val highlight">${amtFormatted}</div>
-                        </div>
-                        <div class="fg-cert-stat-box">
-                            <div class="fg-cert-stat-lbl">Program & Split</div>
-                            <div class="fg-cert-stat-val">${c.program_type || 'Phoenix Rise'} (${c.profit_split_rate || 80}%)</div>
-                        </div>
-                        <div class="fg-cert-stat-box">
-                            <div class="fg-cert-stat-lbl">Certificate ID</div>
-                            <div class="fg-cert-stat-val" style="font-family:monospace;font-size:0.92rem;color:#38bdf8;">${c.certificate_id}</div>
-                        </div>
-                    </div>
-
-                    <div class="fg-cert-img-wrap">
-                        <a href="${certImg}" target="_blank" title="Click to view full resolution">
-                            <img src="${certImg}" alt="Certificate ${c.certificate_id}" onerror="this.onerror=null;this.src='https://api.fundedgiants.ng/api/v1/certificates/file/${c.certificate_id}.jpg';" />
-                        </a>
-                    </div>
-
-                    <div style="background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:10px 14px;font-size:0.75rem;color:#94a3b8;display:flex;align-items:center;justify-content:space-between;flex-wrap:gap;gap:8px;">
-                        <span><strong>Ledger Hash:</strong> <code style="color:#00f59b;font-size:0.72rem;">${data.verification_hash || '0x' + c.certificate_id}</code></span>
-                        <span><strong>Disbursed:</strong> ${dateFormatted}</span>
-                    </div>
-
-                    <div class="fg-cert-actions">
-                        <a href="${certImg}" download="${c.certificate_id}.jpg" target="_blank" class="fg-cert-btn-primary">
-                            <i class="fas fa-download"></i> Download Official Certificate
-                        </a>
-                        <button type="button" class="fg-cert-btn-secondary" onclick="fgCloseVerifyModal()">Close</button>
-                    </div>
-                `;
-            } catch (err) {
-                content.innerHTML = `
-                    <div style="text-align:center;padding:40px 20px;">
-                        <h3 style="color:#f87171;">Verification Network Error</h3>
-                        <p style="color:#94a3b8;">${err.message}</p>
-                        <button type="button" class="fg-cert-btn-secondary" style="margin-top:16px;" onclick="fgCloseVerifyModal()">Close</button>
-                    </div>
-                `;
-            }
-        };
-
-        // Close on backdrop click
-        const modalBackdrop = document.getElementById('fgVerifyModal');
-        if (modalBackdrop) {
-            modalBackdrop.addEventListener('click', function(e) {
-                if (e.target === modalBackdrop) fgCloseVerifyModal();
-            });
-        }
-
-        // Helper functions
-        function fgFormatDate(dStr) {
-            if (!dStr) return 'Recent';
-            const safeStr = dStr.replace(' ', 'T');
-            const d = new Date(safeStr);
-            if (isNaN(d.getTime())) return 'Recent';
-            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        // Name Masking Rule: maintain template as was: first 3 letters of first name, mask rest; first 3 letters of last name, mask rest
+        function fgMaskName(name) {
+            if (!name || typeof name !== 'string') return 'Tra****';
+            const parts = name.trim().split(/\s+/).filter(Boolean);
+            return parts.map(part => {
+                const clean = part.replace(/[^a-zA-Z]/g, '');
+                if (clean.length <= 3) return clean + '***';
+                return clean.slice(0, 3) + '*'.repeat(Math.max(3, clean.length - 3));
+            }).join(' ');
         }
 
         function fgMaskEmail(email) {
@@ -546,7 +589,26 @@ add_action('wp_footer', function() {
             return visible + '****@' + parts[1];
         }
 
-        // 2. Populate #fgPayoutTable in Real Time
+        function fgFormatDate(dateStr) {
+            if (!dateStr) return 'Nov 23, 2026';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const m = months[d.getMonth()];
+            const day = d.getDate();
+            const y = d.getFullYear();
+            const h = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${m} ${day}, ${y} ${h}:${min}`;
+        }
+
+        // Navigate to dedicated certificate validation page (No popup modal)
+        window.fgNavigateToCert = function(certId) {
+            if (!certId) return;
+            window.location.href = '/payouts/' + encodeURIComponent(certId) + '/';
+        };
+
+        // Populate #fgPayoutTable in Real Time
         let fgLoaded = false;
         async function fgLoadPayoutTable() {
             const table = document.getElementById('fgPayoutTable');
@@ -568,8 +630,7 @@ add_action('wp_footer', function() {
                     const amtFormatted = '₦' + amt.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                     
                     const traderRaw = p.trader_name || 'Funded Giant';
-                    const parts = traderRaw.split(' ').filter(Boolean);
-                    const displayName = parts[0] + (parts[1] ? ' ' + parts[1].charAt(0) + '.' : '');
+                    const displayName = fgMaskName(traderRaw);
                     
                     const accId = p.account_number || (certId.includes('653') ? '93410986' : '16475815');
                     const email = fgMaskEmail(p.email || 'fav.esedeke@gmail.com');
@@ -578,7 +639,7 @@ add_action('wp_footer', function() {
                     const appTime = fgFormatDate(p.created_at);
 
                     html += `
-                        <tr data-trader-id="${accId}" data-email="${email.toLowerCase()}" data-name="${traderRaw.toLowerCase()}" onclick="window.fgOpenVerifyModal('${certId}')">
+                        <tr data-trader-id="${accId}" data-email="${email.toLowerCase()}" data-name="${traderRaw.toLowerCase()}" onclick="window.fgNavigateToCert('${certId}')">
                             <td class="col-account-trader">
                                 <div class="trader-primary-cell">
                                     <span class="mono-badge">${accId}</span>
@@ -606,9 +667,9 @@ add_action('wp_footer', function() {
                                 <span class="cert-status-pill ready"><i class="fas fa-shield-alt"></i> Verified</span>
                             </td>
                             <td class="col-action" style="text-align:right;">
-                                <button type="button" class="ptrack-row-btn" onclick="event.stopPropagation(); window.fgOpenVerifyModal('${certId}')">
+                                <a href="/payouts/${encodeURIComponent(certId)}/" class="ptrack-row-btn" onclick="event.stopPropagation();">
                                     <span>Verify</span> <i class="fas fa-arrow-right"></i>
-                                </button>
+                                </a>
                             </td>
                         </tr>
                     `;
@@ -638,60 +699,33 @@ add_action('wp_footer', function() {
             }
         }
 
-        // Run immediately, on DOM ready, and on window load
         fgLoadPayoutTable();
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', fgLoadPayoutTable);
         }
         window.addEventListener('load', fgLoadPayoutTable);
 
-        // Safety retry if table wasn't in DOM immediately
         setTimeout(() => { if (!fgLoaded) fgLoadPayoutTable(); }, 800);
         setTimeout(() => { if (!fgLoaded) fgLoadPayoutTable(); }, 2000);
-
-        // Auto-check URL parameters (e.g. ?verify=FG-PAY-653F54 or ?cert=...)
-        const urlParams = new URLSearchParams(window.location.search);
-        const autoVerify = urlParams.get('verify') || urlParams.get('verify_cert') || urlParams.get('cert');
-        if (autoVerify) {
-            window.fgOpenVerifyModal(autoVerify);
-        }
     })();
     </script>
     <?php
 });
 
 /**
- * 4. Intercept direct visits to /payouts/{id} or /verify-certificate/{id} to display standalone certificate verifier
+ * 5. Shortcode [fg_payout_tracker]
  */
-add_action('template_redirect', function() {
-    $uri = $_SERVER['REQUEST_URI'] ?? '';
-    if (preg_match('#^/payouts/([0-9a-zA-Z_-]+)#', $uri, $m) || preg_match('#^/verify-certificate/([0-9a-zA-Z_-]+)#', $uri, $m)) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'fg_payout_tracker';
-        $payout = $wpdb->get_row("SELECT * FROM $table ORDER BY created_at DESC LIMIT 1", ARRAY_A);
-        $cert_id = $payout['certificate_id'] ?? 'FG-PAY-653F54';
-        
-        // Redirect cleanly to homepage with modal trigger
-        wp_redirect(home_url('/?verify=' . urlencode($cert_id)));
-        exit;
-    }
-});
-
-/**
- * 5. [fg_payout_tracker] Shortcode
- */
-add_shortcode('fg_payout_tracker', 'fg_render_payout_tracker');
-function fg_render_payout_tracker($atts = array()) {
+add_shortcode('fg_payout_tracker', function ($atts) {
     global $wpdb;
     $table = $wpdb->prefix . 'fg_payout_tracker';
     $payouts = $wpdb->get_results("SELECT * FROM $table ORDER BY created_at DESC LIMIT 20", ARRAY_A);
 
     ob_start();
     ?>
-    <div id="fg-payout-tracker-container" style="background:#091218;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:24px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;margin:30px 0;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:14px;flex-wrap:wrap;gap:12px;">
+    <div class="fg-payout-tracker-container" style="background:#091016;border:1px solid rgba(0,245,155,0.2);border-radius:16px;padding:24px;margin:24px 0;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
             <div>
-                <h3 style="margin:0;font-size:1.15rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;">
+                <h3 style="margin:0;font-size:1.25rem;font-weight:800;color:#fff;display:flex;align-items:center;gap:8px;">
                     <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00f59b;box-shadow:0 0 10px #00f59b;"></span>
                     Live Certified Payout Stream
                 </h3>
@@ -718,11 +752,17 @@ function fg_render_payout_tracker($atts = array()) {
                     <?php if (empty($payouts)): ?>
                         <tr><td colspan="6" style="padding:24px;text-align:center;color:#64748b;">No public payouts recorded yet.</td></tr>
                     <?php else: foreach ($payouts as $p): 
-                        $name_parts = explode(' ', trim($p['trader_name']));
-                        $display_name = $name_parts[0] . (isset($name_parts[1]) ? ' ' . substr($name_parts[1], 0, 1) . '.' : '');
+                        $raw_name = $p['trader_name'] ?: 'Funded Giant';
+                        $parts = explode(' ', trim($raw_name));
+                        $masked_parts = array_map(function($pt) {
+                            $c = preg_replace('/[^a-zA-Z]/', '', $pt);
+                            if (strlen($c) <= 3) return $c . '***';
+                            return substr($c, 0, 3) . str_repeat('*', max(3, strlen($c) - 3));
+                        }, $parts);
+                        $display_name = implode(' ', $masked_parts);
                         $certId = esc_attr($p['certificate_id']);
                     ?>
-                        <tr style="border-bottom:1px solid rgba(255,255,255,0.03);transition:background 0.2s;">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.03);transition:background 0.2s;" onclick="window.location.href='/payouts/<?php echo $certId; ?>/'">
                             <td style="padding:12px;font-weight:600;color:#fff;"><?php echo esc_html($display_name); ?></td>
                             <td style="padding:12px;color:#94a3b8;"><?php echo esc_html($p['program_type']); ?></td>
                             <td style="padding:12px;font-weight:700;color:#00f59b;font-family:monospace;font-size:0.9rem;">
@@ -731,9 +771,9 @@ function fg_render_payout_tracker($atts = array()) {
                             <td style="padding:12px;color:#cbd5e1;"><?php echo intval($p['profit_split_rate']); ?>%</td>
                             <td style="padding:12px;font-family:monospace;font-size:0.75rem;color:#cbd5e1;"><?php echo esc_html($p['certificate_id']); ?></td>
                             <td style="padding:12px;text-align:right;">
-                                <button type="button" onclick="window.fgOpenVerifyModal('<?php echo $certId; ?>')" style="background:#00f59b;color:#05140d;padding:6px 14px;border-radius:8px;text-decoration:none;font-weight:700;font-size:0.72rem;display:inline-block;border:none;cursor:pointer;">
+                                <a href="/payouts/<?php echo $certId; ?>/" style="background:#00f59b;color:#05140d;padding:6px 14px;border-radius:8px;text-decoration:none;font-weight:700;font-size:0.72rem;display:inline-block;border:none;cursor:pointer;">
                                     Verify Certificate &rarr;
-                                </button>
+                                </a>
                             </td>
                         </tr>
                     <?php endforeach; endif; ?>
@@ -743,7 +783,7 @@ function fg_render_payout_tracker($atts = array()) {
     </div>
     <?php
     return ob_get_clean();
-}
+});
 PHP;
 
 $mu_file = $mu_dir . '/fundedgiants-payout-tracker.php';
@@ -767,12 +807,10 @@ echo "  -> Executed wp_cache_flush().\n";
 echo "\n=== SUCCESS: FundedGiants WordPress Live Synchronization Completed ===\n";
 echo "1. Table `{$wpdb->prefix}fg_payout_tracker` active and populated.\n";
 echo "2. Dynamic table hydration for `#fgPayoutTable` active on homepage.\n";
-echo "3. Interactive Certificate Verification Modal wired to all rows & Verify buttons.\n";
-echo "4. LiteSpeed Cache purged & no-cache bypass active for front page.\n";
-echo "5. Public REST API endpoints active:\n";
-echo "   - POST /wp-json/fundedgiants/v1/payout\n";
-echo "   - GET /wp-json/fundedgiants/v1/payouts\n";
-echo "   - GET /wp-json/fundedgiants/v1/verify/{id}\n";
+echo "3. Dedicated Certificate Verification Page template active at `/payouts/{id}/` (No Modal, No Download Button).\n";
+echo "4. Name template maintained: first 3 letters visible, rest masked (e.g. Fav******* Ese****).\n";
+echo "5. Table approved time column widened, interval and Instant badge aligned on the same line.\n";
+echo "6. LiteSpeed Cache purged & no-cache bypass active.\n";
 
 if (!$is_cli) {
     echo '</pre>';

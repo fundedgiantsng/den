@@ -223,6 +223,78 @@ export class WalletService {
   }
 
   /**
+   * Automatically resolve Nigerian bank account name via Nomba & verify KYC name match
+   */
+  async resolveBankAccount(params: {
+    userId: string;
+    accountNumber: string;
+    bankCode: string;
+  }) {
+    if (!params.accountNumber || params.accountNumber.length !== 10) {
+      throw new BadRequestException('Account number must be exactly 10 digits.');
+    }
+    if (!params.bankCode) {
+      throw new BadRequestException('Please select a valid bank.');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: params.userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // 1. Resolve account details via Nomba Bank Lookup API
+    let resolveResult: { status: boolean; message?: string; data?: { accountName: string; accountNumber: string; bankCode: string } } = { status: false };
+    try {
+      resolveResult = await this.nombaService.resolveAccount(params.accountNumber, params.bankCode);
+    } catch (err: any) {
+      this.logger.warn(`Nomba resolution attempt failed: ${err.message}`);
+    }
+
+    if (!resolveResult.status || !resolveResult.data) {
+      try {
+        const lencoRes = await this.lencoService.resolveAccount(params.accountNumber, params.bankCode);
+        if (lencoRes && lencoRes.status && lencoRes.data) {
+          resolveResult = lencoRes;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lenco fallback resolution failed: ${err.message}`);
+      }
+    }
+
+    if (!resolveResult.status || !resolveResult.data) {
+      const errMsg = resolveResult.message || '';
+      if (errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('403') || errMsg.toLowerCase().includes('credential')) {
+        this.logger.error(`Banking gateway auth error during account lookup: ${errMsg}`);
+        throw new BadRequestException('Banking network verification service is currently synchronizing. Please check the account number and bank, or try again shortly.');
+      }
+      throw new BadRequestException(resolveResult.message || 'Could not verify bank account with banking network. Please check the account number and bank selected.');
+    }
+
+    const resolvedName = (resolveResult.data.accountName || '').toUpperCase().trim();
+    const kycName = `${user.firstName || ''} ${user.lastName || ''}`.toUpperCase().trim();
+
+    // 2. Strict name matching rule: Name on account MUST match KYC
+    const kycParts = kycName.split(/\s+/).filter(Boolean);
+    const isMatching = kycParts.length > 0 && kycParts.every((part) => resolvedName.includes(part));
+
+    return {
+      status: true,
+      accountName: resolvedName,
+      accountNumber: params.accountNumber,
+      bankCode: params.bankCode,
+      kycName,
+      isKycApproved: user.kycStatus === 'APPROVED',
+      isNameMatch: isMatching,
+      matchWarning: isMatching
+        ? undefined
+        : `Account name '${resolvedName}' does not match your verified legal name '${kycName}'. Under regulatory AML guidelines, withdrawals can only be bound to an account registered in your own name.`,
+    };
+  }
+
+  /**
    * Bind a bank account for withdrawals (Max 3 accounts, name MUST match KYC)
    */
   async bindBankAccount(params: {

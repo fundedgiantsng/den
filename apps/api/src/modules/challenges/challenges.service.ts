@@ -816,12 +816,12 @@ export class ChallengesService implements OnModuleInit {
       // Tiered payout split & eligibility
       const payoutNumber = riskStatus?.payoutEligibility?.payoutNumber ?? 1;
       const traderSplitPercent = riskStatus?.payoutEligibility?.traderSplitPercent ?? (isPhoenix ? 60 : 50);
-      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false);
-      const traderProfitSplitNgn = isFundedPhase
-        ? (riskStatus?.payoutEligibility?.traderProfitSplitNgn ?? Math.floor(profitNgn * (traderSplitPercent / 100)))
+      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0;
+      const traderProfitSplitNgn = isPayoutEligible
+        ? (riskStatus?.payoutEligibility?.traderProfitSplitNgn ?? riskStatus?.payoutEligibility?.traderProfitSplit ?? Math.floor(profitNgn * (traderSplitPercent / 100)))
         : 0;
-      const firmProfitSplitNgn = isFundedPhase
-        ? (riskStatus?.payoutEligibility?.firmProfitSplitNgn ?? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)))
+      const firmProfitSplitNgn = isPayoutEligible
+        ? (riskStatus?.payoutEligibility?.firmProfitSplitNgn ?? riskStatus?.payoutEligibility?.firmProfitSplit ?? Math.floor(profitNgn * ((100 - traderSplitPercent) / 100)))
         : 0;
 
       // Fetch payout withdrawal events for this account to include in trade execution log
@@ -1064,15 +1064,37 @@ export class ChallengesService implements OnModuleInit {
     });
 
     if (tradingAcc) {
+      const initialBal = Number(tradingAcc.initialBalance);
+      await prisma.tradingAccount.update({
+        where: { id: tradingAcc.id },
+        data: {
+          currentBalance: initialBal,
+          currentEquity: initialBal,
+          totalProfit: 0,
+        },
+      });
+
+      await prisma.riskEvent.create({
+        data: {
+          challengeId: tradingAcc.challengeId,
+          tradingAccountId: tradingAcc.id,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+          description: `Post-payout reset to initial balance baseline of ₦${initialBal.toLocaleString()}`,
+          severity: 'INFO',
+          snapshotBalance: initialBal,
+          snapshotEquity: initialBal,
+        },
+      });
+
       await prisma.riskEvent.create({
         data: {
           challengeId: tradingAcc.challengeId,
           tradingAccountId: tradingAcc.id,
           eventType: 'AUTOMATED_PAYOUT_APPROVED',
-          description: `Profit payout #${details.payoutNumber || 1} of ₦${requestedPayout.toLocaleString()} (${details.profitSplitRatio || 'Tiered'} split) disbursed to Giants Vault.`,
+          description: `Profit payout #${details.payoutNumber || 1} of ₦${requestedPayout.toLocaleString()} (${details.profitSplitRatio || 'Tiered'} split) disbursed to Giants Vault. Balance reset to initial ₦${initialBal.toLocaleString()}.`,
           severity: 'INFO',
-          snapshotBalance: tradingAcc.currentBalance,
-          snapshotEquity: tradingAcc.currentEquity,
+          snapshotBalance: initialBal,
+          snapshotEquity: initialBal,
         },
       });
     }

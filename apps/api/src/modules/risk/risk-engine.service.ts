@@ -151,8 +151,10 @@ export class RiskEngineService {
     for (const account of activeAccounts) {
       try {
         const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
-        const currentBalance = metrics?.balance ?? Number(account.currentBalance);
-        const currentEquity = metrics?.equity ?? Number(account.currentEquity);
+        const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
+        const dbBal = Number(account.currentBalance);
+        const currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? Number(account.initialBalance));
+        const currentEquity = currentBalance + floating;
         const initialBal = Number(account.initialBalance);
 
         // Check 30-Day Inactivity Breach Rule
@@ -1041,7 +1043,10 @@ export class RiskEngineService {
 
     const initialBal = Number(account.initialBalance);
     const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
-    const currentEquity = metrics?.equity ?? Number(account.currentEquity);
+    const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
+    const dbBal = Number(account.currentBalance);
+    const currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? initialBal);
+    const currentEquity = currentBalance + floating;
     const openTradesCount = metrics?.openTradesCount ?? 0;
     const netProfit = Math.max(0, currentEquity - initialBal);
     const profitPercent = (netProfit / initialBal) * 100;
@@ -1137,9 +1142,9 @@ export class RiskEngineService {
 
     const noActiveBreachesMet = activeRiskEvents.length === 0;
 
-    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet;
-    const cycleTraderProfitNgn = netProfit > 0 ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
-    const cycleFirmProfitNgn = netProfit > 0 ? Math.floor(netProfit * ((100 - traderSplitPercent) / 100)) : 0;
+    const isEligible = minimumProfitMet && zeroOpenTradesMet && noActiveBreachesMet && netProfit > 0;
+    const cycleTraderProfitNgn = isEligible && netProfit > 0 ? Math.floor(netProfit * (traderSplitPercent / 100)) : 0;
+    const cycleFirmProfitNgn = isEligible && netProfit > 0 ? Math.floor(netProfit * ((100 - traderSplitPercent) / 100)) : 0;
     const withdrawableProfitNgn = isEligible ? cycleTraderProfitNgn : 0;
 
     let failureReason: string | undefined;

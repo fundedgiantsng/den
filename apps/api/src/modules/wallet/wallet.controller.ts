@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  Query,
   Req,
   UnauthorizedException,
   HttpCode,
@@ -37,6 +38,21 @@ export class WalletController {
   @ApiOperation({ summary: 'List verified Nigerian commercial banks and fintechs' })
   getBanks() {
     return this.walletService.getNigerianBanks();
+  }
+
+  @Get('resolve-bank-account')
+  @ApiOperation({ summary: 'Automatically lookup Nigerian bank account name and check KYC name match' })
+  async resolveBankAccount(
+    @Query('accountNumber') accountNumber: string,
+    @Query('bankCode') bankCode: string,
+    @Req() req: Request
+  ) {
+    const userId = await this.resolveUserId(req);
+    return this.walletService.resolveBankAccount({
+      userId,
+      accountNumber,
+      bankCode,
+    });
   }
 
   @Post('bind-bank-account')
