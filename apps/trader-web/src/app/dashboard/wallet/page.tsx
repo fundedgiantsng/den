@@ -58,12 +58,62 @@ interface VaultData {
 
 interface TransactionItem {
   id: string;
-  type: 'Deposit' | 'Trading Payout' | 'Withdrawal (NGN)' | 'Commission' | 'Deposit (USDT)';
+  type: string;
   amountNgn: number;
   isCredit: boolean;
-  status: 'Completed' | 'Pending' | 'Processing';
+  status: string;
   date: string;
   reference: string;
+}
+
+function formatTxStatus(rawStatus?: string): { label: string; color: string; bg: string; border: string } {
+  const s = (rawStatus || '').toUpperCase();
+  if (s === 'PAID' || s === 'SUCCESSFUL' || s === 'COMPLETED') {
+    return {
+      label: 'Completed',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+      border: 'border-emerald-500/25',
+    };
+  }
+  if (s === 'REQUESTED' || s === 'PENDING' || s === 'PENDING_APPROVAL' || s === 'PENDING_REVIEW') {
+    return {
+      label: 'Pending Approval',
+      color: 'text-amber-400',
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/25',
+    };
+  }
+  if (s === 'PROCESSING' || s === 'APPROVED') {
+    return {
+      label: 'Processing',
+      color: 'text-sky-400',
+      bg: 'bg-sky-500/10',
+      border: 'border-sky-500/25',
+    };
+  }
+  if (s === 'REJECTED' || s === 'DECLINED') {
+    return {
+      label: 'Rejected',
+      color: 'text-rose-400',
+      bg: 'bg-rose-500/10',
+      border: 'border-rose-500/25',
+    };
+  }
+  if (s === 'FAILED') {
+    return {
+      label: 'Failed',
+      color: 'text-rose-400',
+      bg: 'bg-rose-500/10',
+      border: 'border-rose-500/25',
+    };
+  }
+  return {
+    label: rawStatus || 'Pending',
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/25',
+  };
 }
 
 export default function GiantsVaultPage() {
@@ -166,7 +216,7 @@ export default function GiantsVaultPage() {
                 : 'Withdrawal (NGN)',
               amountNgn: t.amountNgn,
               isCredit: t.isCredit,
-              status: 'Completed',
+              status: t.status || 'PENDING',
               date: t.date ? new Date(t.date).toLocaleDateString() : 'Recent',
               reference: t.ref || `FG-TRX-${t.id.slice(0, 8)}`,
             }))
@@ -532,9 +582,16 @@ export default function GiantsVaultPage() {
 
                       {/* Status */}
                       <td className="py-3.5 px-3 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/10 border border-emerald-500/25 text-emerald-400">
-                          {tx.status}
-                        </span>
+                        {(() => {
+                          const badge = formatTxStatus(tx.status);
+                          return (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-medium border ${badge.bg} ${badge.border} ${badge.color}`}
+                            >
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Date */}

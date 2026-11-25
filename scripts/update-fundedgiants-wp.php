@@ -713,6 +713,59 @@ add_action('wp_footer', function() {
         #fgPayoutTable tbody tr:hover {
             background: rgba(0, 245, 155, 0.05) !important;
         }
+
+        /* Payout Tracker Pagination Controls */
+        .fg-payout-pagination-wrapper {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            flex-wrap: wrap !important;
+            gap: 12px !important;
+            margin-top: 16px !important;
+            padding: 12px 18px !important;
+            background: rgba(15, 23, 42, 0.7) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 12px !important;
+            font-family: inherit !important;
+        }
+        .fg-pagination-info {
+            color: #94a3b8 !important;
+            font-size: 0.78rem !important;
+            font-weight: 500 !important;
+        }
+        .fg-pagination-controls {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+        }
+        .fg-pg-btn {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            color: #e2e8f0 !important;
+            padding: 6px 12px !important;
+            border-radius: 8px !important;
+            font-size: 0.76rem !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease-in-out !important;
+            outline: none !important;
+        }
+        .fg-pg-btn:hover:not(:disabled) {
+            background: rgba(0, 245, 155, 0.15) !important;
+            border-color: rgba(0, 245, 155, 0.4) !important;
+            color: #00f59b !important;
+        }
+        .fg-pg-btn:disabled {
+            opacity: 0.35 !important;
+            cursor: not-allowed !important;
+        }
+        .fg-pg-btn.active {
+            background: #00f59b !important;
+            border-color: #00f59b !important;
+            color: #05140d !important;
+            font-weight: 800 !important;
+            box-shadow: 0 0 10px rgba(0, 245, 155, 0.35) !important;
+        }
     </style>
 
     <script>
@@ -755,8 +808,163 @@ add_action('wp_footer', function() {
             window.location.href = '/payouts/' + encodeURIComponent(certId) + '/';
         };
 
-        // Populate #fgPayoutTable in Real Time
+        // Populate #fgPayoutTable in Real Time with Max 10 Entries Per Page Pagination
         let fgLoaded = false;
+        const PAGE_SIZE = 10;
+        let currentPage = 1;
+        let allPayouts = [];
+        let filteredPayouts = [];
+
+        function renderPaginationControls() {
+            let pagWrapper = document.getElementById('fgPayoutPagination');
+            const table = document.getElementById('fgPayoutTable');
+            if (!table) return;
+
+            if (!pagWrapper) {
+                pagWrapper = document.createElement('div');
+                pagWrapper.id = 'fgPayoutPagination';
+                pagWrapper.className = 'fg-payout-pagination-wrapper';
+                const tableContainer = table.closest('.table-responsive') || table.parentElement;
+                if (tableContainer && tableContainer.parentElement) {
+                    tableContainer.parentElement.insertBefore(pagWrapper, tableContainer.nextSibling);
+                } else {
+                    table.parentElement.appendChild(pagWrapper);
+                }
+            }
+
+            const total = filteredPayouts.length;
+            if (total === 0) {
+                pagWrapper.style.display = 'none';
+                return;
+            }
+            pagWrapper.style.display = 'flex';
+
+            const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIdx = (currentPage - 1) * PAGE_SIZE + 1;
+            const endIdx = Math.min(currentPage * PAGE_SIZE, total);
+
+            let buttonsHtml = '';
+
+            // Previous Button
+            buttonsHtml += `<button class="fg-pg-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="window.fgSetPayoutPage(${currentPage - 1})">&larr; Prev</button>`;
+
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (totalPages <= 7 || i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    buttonsHtml += `<button class="fg-pg-btn ${i === currentPage ? 'active' : ''}" onclick="window.fgSetPayoutPage(${i})">${i}</button>`;
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    buttonsHtml += `<span style="color:#64748b;padding:0 4px;">...</span>`;
+                }
+            }
+
+            // Next Button
+            buttonsHtml += `<button class="fg-pg-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="window.fgSetPayoutPage(${currentPage + 1})">Next &rarr;</button>`;
+
+            pagWrapper.innerHTML = `
+                <div class="fg-pagination-info">
+                    Showing <strong style="color:#fff;">${startIdx}-${endIdx}</strong> of <strong style="color:#00f59b;">${total}</strong> verified payouts
+                </div>
+                <div class="fg-pagination-controls">
+                    ${buttonsHtml}
+                </div>
+            `;
+        }
+
+        window.fgSetPayoutPage = function(page) {
+            currentPage = page;
+            renderCurrentPage();
+            renderPaginationControls();
+            const table = document.getElementById('fgPayoutTable');
+            if (table) {
+                table.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+
+        function renderCurrentPage() {
+            const table = document.getElementById('fgPayoutTable');
+            if (!table) return;
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            const total = filteredPayouts.length;
+            if (total === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:#64748b;">No matching payouts found.</td></tr>`;
+                return;
+            }
+
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const pageData = filteredPayouts.slice(start, start + PAGE_SIZE);
+
+            let html = '';
+            pageData.forEach(p => {
+                const certId = p.certificate_id || p.payout_id;
+                const amt = Number(p.amount_ngn || 0);
+                const amtFormatted = '₦' + amt.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                
+                const traderRaw = p.trader_name || 'Funded Giant';
+                const displayName = fgMaskName(traderRaw);
+                
+                const accId = p.account_number || (certId.includes('653') ? '93410986' : '16475815');
+                const email = fgMaskEmail(p.email || 'fav.esedeke@gmail.com');
+                
+                const appDate = new Date(p.created_at || Date.now());
+                const turnaroundMins = p.turnaround_minutes && Number(p.turnaround_minutes) > 0
+                    ? Number(p.turnaround_minutes)
+                    : (8 + (parseInt((certId || 'PAY').slice(-2), 16) || 16) % 30);
+
+                let reqDate;
+                if (p.requested_at && p.requested_at !== p.created_at) {
+                    reqDate = new Date(p.requested_at);
+                } else {
+                    reqDate = new Date(appDate.getTime() - (turnaroundMins * 60000));
+                }
+
+                const reqTime = fgFormatDate(reqDate.toISOString());
+                const appTime = fgFormatDate(appDate.toISOString());
+
+                html += `
+                    <tr data-trader-id="${accId}" data-email="${email.toLowerCase()}" data-name="${traderRaw.toLowerCase()}" onclick="window.fgNavigateToCert('${certId}')">
+                        <td class="col-account-trader">
+                            <div class="trader-primary-cell">
+                                <span class="mono-badge">${accId}</span>
+                                <span class="trader-full-name">${displayName}</span>
+                            </div>
+                        </td>
+                        <td class="col-email"><span class="masked-email">${email}</span></td>
+                        <td class="col-amt">
+                            <div class="payout-amt-cell">
+                                <span class="amt-main">${amtFormatted}</span>
+                                <span class="amt-sub">${p.program_type || 'Phoenix Rise'} (${p.profit_split_rate || 80}%)</span>
+                            </div>
+                        </td>
+                        <td class="col-method">
+                            <span class="method-tag"><i class="fas fa-university"></i> NGN Bank Transfer</span>
+                        </td>
+                        <td class="col-time"><span class="mono-date">${reqTime}</span></td>
+                        <td class="col-time">
+                            <div class="time-approved-cell">
+                                <span class="mono-date">${appTime}</span>
+                                <span class="turnaround-pill" title="Approved in ${turnaroundMins} minutes"><i class="fas fa-bolt"></i> ${turnaroundMins}m</span>
+                            </div>
+                        </td>
+                        <td class="col-cert">
+                            <span class="cert-status-pill ready"><i class="fas fa-shield-alt"></i> Verified</span>
+                        </td>
+                        <td class="col-action" style="text-align:right;">
+                            <a href="/payouts/${encodeURIComponent(certId)}/" class="ptrack-row-btn" onclick="event.stopPropagation();">
+                                <span>Verify</span> <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        }
+
         async function fgLoadPayoutTable() {
             const table = document.getElementById('fgPayoutTable');
             if (!table) return;
@@ -767,91 +975,46 @@ add_action('wp_footer', function() {
                 const result = await res.json();
                 if (!result.success || !Array.isArray(result.data) || result.data.length === 0) return;
 
-                const tbody = table.querySelector('tbody');
-                if (!tbody) return;
-
-                let html = '';
-                result.data.forEach(p => {
-                    const certId = p.certificate_id || p.payout_id;
-                    const amt = Number(p.amount_ngn || 0);
-                    const amtFormatted = '₦' + amt.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-                    
-                    const traderRaw = p.trader_name || 'Funded Giant';
-                    const displayName = fgMaskName(traderRaw);
-                    
-                    const accId = p.account_number || (certId.includes('653') ? '93410986' : '16475815');
-                    const email = fgMaskEmail(p.email || 'fav.esedeke@gmail.com');
-                    
-                    const appDate = new Date(p.created_at || Date.now());
-                    const turnaroundMins = p.turnaround_minutes && Number(p.turnaround_minutes) > 0
-                        ? Number(p.turnaround_minutes)
-                        : (8 + (parseInt((certId || 'PAY').slice(-2), 16) || 16) % 30);
-
-                    let reqDate;
-                    if (p.requested_at && p.requested_at !== p.created_at) {
-                        reqDate = new Date(p.requested_at);
-                    } else {
-                        reqDate = new Date(appDate.getTime() - (turnaroundMins * 60000));
-                    }
-
-                    const reqTime = fgFormatDate(reqDate.toISOString());
-                    const appTime = fgFormatDate(appDate.toISOString());
-
-                    html += `
-                        <tr data-trader-id="${accId}" data-email="${email.toLowerCase()}" data-name="${traderRaw.toLowerCase()}" onclick="window.fgNavigateToCert('${certId}')">
-                            <td class="col-account-trader">
-                                <div class="trader-primary-cell">
-                                    <span class="mono-badge">${accId}</span>
-                                    <span class="trader-full-name">${displayName}</span>
-                                </div>
-                            </td>
-                            <td class="col-email"><span class="masked-email">${email}</span></td>
-                            <td class="col-amt">
-                                <div class="payout-amt-cell">
-                                    <span class="amt-main">${amtFormatted}</span>
-                                    <span class="amt-sub">${p.program_type || 'Phoenix Rise'} (${p.profit_split_rate || 80}%)</span>
-                                </div>
-                            </td>
-                            <td class="col-method">
-                                <span class="method-tag"><i class="fas fa-university"></i> NGN Bank Transfer</span>
-                            </td>
-                            <td class="col-time"><span class="mono-date">${reqTime}</span></td>
-                            <td class="col-time">
-                                <div class="time-approved-cell">
-                                    <span class="mono-date">${appTime}</span>
-                                    <span class="turnaround-pill" title="Approved in ${turnaroundMins} minutes"><i class="fas fa-bolt"></i> ${turnaroundMins}m</span>
-                                </div>
-                            </td>
-                            <td class="col-cert">
-                                <span class="cert-status-pill ready"><i class="fas fa-shield-alt"></i> Verified</span>
-                            </td>
-                            <td class="col-action" style="text-align:right;">
-                                <a href="/payouts/${encodeURIComponent(certId)}/" class="ptrack-row-btn" onclick="event.stopPropagation();">
-                                    <span>Verify</span> <i class="fas fa-arrow-right"></i>
-                                </a>
-                            </td>
-                        </tr>
-                    `;
-                });
-
-                tbody.innerHTML = html;
+                allPayouts = result.data;
+                filteredPayouts = [...allPayouts];
+                currentPage = 1;
+                renderCurrentPage();
+                renderPaginationControls();
                 fgLoaded = true;
 
                 // Wire search input
                 const input = document.getElementById('fgPayoutSearch');
                 const clearBtn = document.getElementById('fgPayoutClear');
                 if (input) {
-                    const rows = Array.from(tbody.querySelectorAll('tr'));
                     input.oninput = function() {
                         const q = (input.value || '').trim().toLowerCase();
                         if (clearBtn) clearBtn.style.display = q ? 'inline-block' : 'none';
-                        rows.forEach(r => {
-                            const tId = (r.getAttribute('data-trader-id') || '').toLowerCase();
-                            const em = (r.getAttribute('data-email') || '').toLowerCase();
-                            const nm = (r.getAttribute('data-name') || '').toLowerCase();
-                            r.style.display = (!q || tId.includes(q) || em.includes(q) || nm.includes(q)) ? '' : 'none';
-                        });
+                        if (!q) {
+                            filteredPayouts = [...allPayouts];
+                        } else {
+                            filteredPayouts = allPayouts.filter(p => {
+                                const acc = (p.account_number || '').toLowerCase();
+                                const em = (p.email || '').toLowerCase();
+                                const nm = (p.trader_name || '').toLowerCase();
+                                const cid = (p.certificate_id || '').toLowerCase();
+                                return acc.includes(q) || em.includes(q) || nm.includes(q) || cid.includes(q);
+                            });
+                        }
+                        currentPage = 1;
+                        renderCurrentPage();
+                        renderPaginationControls();
                     };
+
+                    if (clearBtn) {
+                        clearBtn.onclick = function() {
+                            input.value = '';
+                            clearBtn.style.display = 'none';
+                            filteredPayouts = [...allPayouts];
+                            currentPage = 1;
+                            renderCurrentPage();
+                            renderPaginationControls();
+                        };
+                    }
                 }
             } catch (e) {
                 console.warn('FundedGiants live payout tracker sync:', e);
