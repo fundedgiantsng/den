@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Coins, X, AlertTriangle, Loader2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { ArrowDownLeft, X, AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
 import { formatNaira } from '@/lib/formatters';
 import { fetchAdminApi } from '@/lib/api';
 
@@ -25,17 +25,15 @@ export function AdjustBalanceModal({
   onClose,
   onSuccess,
 }: AdjustBalanceModalProps) {
-  const [type, setType] = useState<'deposit' | 'withdrawal'>('deposit');
   const [amount, setAmount] = useState<string>('');
-  const [reason, setReason] = useState('Demo / withdrawal testing balance adjustment');
+  const [reason, setReason] = useState('Manual debit adjustment');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (account) {
-      setType('deposit');
       setAmount('');
-      setReason('Demo / withdrawal testing balance adjustment');
+      setReason('Manual debit adjustment');
       setError(null);
     }
   }, [account, isOpen]);
@@ -44,7 +42,7 @@ export function AdjustBalanceModal({
 
   const currentBal = account.currentBalanceNgn || 0;
   const numAmount = Number(amount) || 0;
-  const projectedBal = type === 'deposit' ? currentBal + numAmount : Math.max(0, currentBal - numAmount);
+  const projectedBal = Math.max(0, currentBal - numAmount);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +52,7 @@ export function AdjustBalanceModal({
     }
 
     if (!reason.trim()) {
-      setError('Please provide a reason for the adjustment.');
+      setError('Please provide a reason for the deduction.');
       return;
     }
 
@@ -66,19 +64,19 @@ export function AdjustBalanceModal({
         method: 'POST',
         body: JSON.stringify({
           amountNgn: numAmount,
-          type,
+          type: 'withdrawal',
           reason: reason.trim(),
         }),
       });
 
       if (!res.success) {
-        throw new Error(res.message || 'Balance adjustment failed.');
+        throw new Error(res.message || 'Balance debit failed.');
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to adjust balance. Please try again.');
+      setError(err.message || 'Failed to debit balance. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -96,17 +94,25 @@ export function AdjustBalanceModal({
         </button>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="p-2.5 rounded-xl border bg-amber-500/10 border-amber-500/30 text-amber-400">
-            <Coins className="w-5 h-5" />
+          <div className="p-2.5 rounded-xl border bg-rose-500/10 border-rose-500/30 text-rose-400">
+            <ArrowDownLeft className="w-5 h-5" />
           </div>
           <div>
             <h3 className="text-base font-bold text-white">
-              Adjust Balance — #{account.accountNumber}
+              Debit Balance — #{account.accountNumber}
             </h3>
             <p className="text-xs text-slate-400">
               {account.customerName} • Current: {formatNaira(currentBal)}
             </p>
           </div>
+        </div>
+
+        {/* Anti-inflation Notice */}
+        <div className="mb-4 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-300 flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            <strong>Trading balances can only increase via live trading.</strong> Manual balance credits are strictly disabled. Only genuine debits / deductions are supported.
+          </span>
         </div>
 
         {error && (
@@ -117,38 +123,10 @@ export function AdjustBalanceModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Action Type Toggle */}
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#070a08] border border-[#1b3322]">
-            <button
-              type="button"
-              onClick={() => setType('deposit')}
-              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                type === 'deposit'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>Credit / Add Funds</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setType('withdrawal')}
-              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                type === 'withdrawal'
-                  ? 'bg-rose-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ArrowDownLeft className="w-3.5 h-3.5" />
-              <span>Debit / Deduct</span>
-            </button>
-          </div>
-
           {/* Quick Amount Presets */}
           <div>
             <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">
-              Quick Amount Presets
+              Quick Deduction Presets
             </label>
             <div className="grid grid-cols-4 gap-1.5">
               {['20000', '50000', '100000', '500000'].map((preset) => (
@@ -158,11 +136,11 @@ export function AdjustBalanceModal({
                   onClick={() => setAmount(preset)}
                   className={`py-1.5 px-2 rounded-lg text-[11px] font-mono font-semibold border transition-colors ${
                     amount === preset
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                      ? 'bg-rose-500/20 border-rose-500 text-rose-300'
                       : 'bg-[#070a08] border-[#1b3322] text-slate-400 hover:text-white'
                   }`}
                 >
-                  +{formatNaira(Number(preset))}
+                  -{formatNaira(Number(preset))}
                 </button>
               ))}
             </div>
@@ -171,7 +149,7 @@ export function AdjustBalanceModal({
           {/* Amount Input */}
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-400 mb-1.5">
-              Adjustment Amount (NGN) <span className="text-emerald-400">*</span>
+              Deduction Amount (NGN) <span className="text-rose-400">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm">₦</span>
@@ -183,15 +161,15 @@ export function AdjustBalanceModal({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="e.g. 50000"
                 required
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-[#070a08] border border-[#1b3322] text-sm font-mono text-white focus:outline-none focus:border-emerald-500"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-[#070a08] border border-[#1b3322] text-sm font-mono text-white focus:outline-none focus:border-rose-500"
               />
             </div>
           </div>
 
           {/* Projected Balance Preview */}
           <div className="p-3 rounded-xl bg-[#070a08] border border-[#1b3322] flex items-center justify-between text-xs">
-            <span className="text-slate-400">Projected Balance:</span>
-            <span className={`font-mono font-bold text-sm ${type === 'deposit' ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <span className="text-slate-400">Projected Balance After Deduction:</span>
+            <span className="font-mono font-bold text-sm text-amber-400">
               {formatNaira(projectedBal)}
             </span>
           </div>
@@ -205,9 +183,9 @@ export function AdjustBalanceModal({
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Demo / withdrawal testing balance adjustment"
+              placeholder="e.g. Manual balance debit"
               required
-              className="w-full px-3 py-2 rounded-xl bg-[#070a08] border border-[#1b3322] text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 rounded-xl bg-[#070a08] border border-[#1b3322] text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500"
             />
           </div>
 
@@ -224,7 +202,7 @@ export function AdjustBalanceModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition-colors disabled:opacity-50 shadow-lg shadow-emerald-600/20"
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white transition-colors disabled:opacity-50 shadow-lg shadow-rose-600/20"
             >
               {loading ? (
                 <>
@@ -233,8 +211,8 @@ export function AdjustBalanceModal({
                 </>
               ) : (
                 <>
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>Apply Balance</span>
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>Deduct Balance</span>
                 </>
               )}
             </button>

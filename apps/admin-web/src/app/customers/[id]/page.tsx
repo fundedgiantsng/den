@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Coins,
+  ArrowDownLeft,
   Sparkles,
   PlusCircle,
   Eye,
@@ -414,10 +415,10 @@ export default function CustomerDetailPage() {
                               },
                             })
                           }
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-colors text-xs font-semibold"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500 hover:text-white transition-colors text-xs font-semibold"
                         >
-                          <Coins className="w-3.5 h-3.5" />
-                          <span>Adjust Balance</span>
+                          <ArrowDownLeft className="w-3.5 h-3.5" />
+                          <span>Debit Balance</span>
                         </button>
 
                         {ch.tradingStatus !== 'ACTIVE' && (

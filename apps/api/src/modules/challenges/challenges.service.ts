@@ -1154,30 +1154,9 @@ export class ChallengesService implements OnModuleInit {
     // Reset trading account balance to initial capital baseline immediately so user can restart trading
     if (tradingAcc) {
       const initialBal = Number(tradingAcc.initialBalance);
-      let newAccountNumber = tradingAcc.accountNumber;
-      let newMasterPassword = tradingAcc.masterPassword;
-      let newInvestorPassword = tradingAcc.investorPassword;
 
       try {
-        const resetRes = await this.steraTraderService.resetAccountBalanceToInitial(
-          tradingAcc.accountNumber,
-          initialBal,
-          {
-            userId: user.id,
-            userEmail: user.email || '',
-            userFullName: traderFullName,
-            planType: ((tradingAcc.challenge as any)?.product?.skuPrefix || (tradingAcc.challenge?.type === 'PHOENIX_RISE_INSTANT' ? 'phoenix-rise' : 'rhino-rush')) as any,
-            stage: 'funded',
-            groupSlug: tradingAcc.groupSlug as any || undefined,
-          }
-        );
-
-        if (resetRes?.newLogin) {
-          newAccountNumber = String(resetRes.newLogin);
-          newMasterPassword = resetRes.newPassword || newMasterPassword;
-          newInvestorPassword = resetRes.newInvestorPassword || newInvestorPassword;
-          this.logger.log(`Account ${tradingAcc.accountNumber} reset via clean SteraTrader provisioned account ${newAccountNumber} with ₦${initialBal.toLocaleString()}`);
-        }
+        await this.steraTraderService.resetAccountBalanceToInitial(tradingAcc.accountNumber, initialBal);
       } catch (steraErr: any) {
         this.logger.warn(`Could not sync balance reset on SteraTrader for ${tradingAcc.accountNumber}: ${steraErr.message}`);
       }
@@ -1185,9 +1164,6 @@ export class ChallengesService implements OnModuleInit {
       await prisma.tradingAccount.update({
         where: { id: tradingAcc.id },
         data: {
-          accountNumber: newAccountNumber,
-          masterPassword: newMasterPassword,
-          investorPassword: newInvestorPassword,
           currentBalance: initialBal,
           currentEquity: initialBal,
           totalProfit: 0,

@@ -1723,30 +1723,9 @@ export class RiskEngineService {
     });
 
     // Reset SteraTrader live balance back to starting capital by withdrawing/clearing all profits above starting balance
-    let newAccountNumber = account.accountNumber;
-    let newMasterPassword = account.masterPassword;
-    let newInvestorPassword = account.investorPassword;
-
     try {
-      const resetRes = await this.steraTraderService.resetAccountBalanceToInitial(
-        account.accountNumber,
-        targetStartBalance,
-        {
-          userId: user.id,
-          userEmail: user.email || '',
-          userFullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Funded Giant',
-          planType: (account.challenge?.product?.skuPrefix || account.challenge?.type || 'phoenix-rise') as any,
-          stage: 'funded',
-          groupSlug: (account.groupSlug as any) || undefined,
-        }
-      );
-
-      if (resetRes?.newLogin) {
-        newAccountNumber = String(resetRes.newLogin);
-        newMasterPassword = resetRes.newPassword || newMasterPassword;
-        newInvestorPassword = resetRes.newInvestorPassword || newInvestorPassword;
-        this.logger.log(`Account ${account.accountNumber} reset via clean SteraTrader provisioned account ${newAccountNumber} with ₦${targetStartBalance.toLocaleString()}`);
-      }
+      await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetStartBalance);
+      this.logger.log(`Reset SteraTrader balance for ${account.accountNumber} back to starting balance ₦${targetStartBalance.toLocaleString()}`);
     } catch (steraErr: any) {
       this.logger.error(`Failed to reset SteraTrader balance for ${account.accountNumber}: ${steraErr.message}`);
     }
@@ -1755,9 +1734,6 @@ export class RiskEngineService {
     await prisma.tradingAccount.update({
       where: { id: account.id },
       data: {
-        accountNumber: newAccountNumber,
-        masterPassword: newMasterPassword,
-        investorPassword: newInvestorPassword,
         initialBalance: targetStartBalance,
         currentBalance: targetStartBalance,
         currentEquity: targetStartBalance,

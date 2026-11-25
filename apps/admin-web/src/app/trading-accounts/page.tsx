@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Activity, ShieldAlert, Power, RefreshCw, RotateCcw, Coins } from 'lucide-react';
+import { Search, Activity, ShieldAlert, Power, RefreshCw, RotateCcw, ArrowDownLeft } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ActionModal } from '@/components/ActionModal';
@@ -181,11 +181,11 @@ export default function TradingAccountsPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => setAdjustModal({ isOpen: true, account: acc })}
-                            title="Adjust balance for demo / withdrawal testing"
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-colors text-xs font-semibold"
+                            title="Debit / deduct balance"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500 hover:text-white transition-colors text-xs font-semibold"
                           >
-                            <Coins className="w-3.5 h-3.5" />
-                            <span>Adjust</span>
+                            <ArrowDownLeft className="w-3.5 h-3.5" />
+                            <span>Debit</span>
                           </button>
 
                           {acc.status === 'ACTIVE' ? (

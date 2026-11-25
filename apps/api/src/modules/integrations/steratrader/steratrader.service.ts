@@ -300,100 +300,17 @@ export class SteraTraderService {
   }
 
   /**
-   * Debit / Wipe excess profit or withdrawal balance on SteraTrader live balance
+   * Debit / Withdraw excess profit or payout balance on SteraTrader live balance.
+   * Sends kind: 'withdrawal' transaction to SteraTrader CRM v1 API.
    */
-  async debitAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Debit adjustment'): Promise<boolean> {
+  async debitAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Withdrawal debit'): Promise<boolean> {
     if (!this.apiKey || amountNgn <= 0) return true;
 
-    // Do NOT send 'credit_out' transactions to SteraTrader. SteraTrader treats credit_out
-    // as broker credit facility reduction rather than balance deduction, which pushes broker
-    // credit negative and distorts broker equity.
-    // Authoritative balance debit is tracked and enforced securely in the FundedGiants CRM ledger.
-    this.logger.log(`Debit adjustment recorded for ${accountNumber}: ₦${amountNgn.toLocaleString()} [${comment}]. Clean broker equity preserved.`);
-    return true;
-  }
+    const amountKobo = Math.round(amountNgn * 100);
+    this.logger.log(`Executing SteraTrader withdrawal transaction for ${accountNumber}: ₦${amountNgn.toLocaleString()} (${amountKobo} kobo) [${comment}]`);
 
-  /**
-   * Reset trader account balance back to starting capital upon payout withdrawal or admin reinstatement.
-   * Universal implementation:
-   * 1. If account is already at target, returns success.
-   * 2. If target > current, credits the delta.
-   * 3. If target < current (debit needed):
-   *    Attempts debit via SteraTrader transactions API (kind: 'withdrawal').
-   *    If debit is not permitted by API key scopes (e.g. 403 Forbidden on withdrawal),
-   *    it provisions a clean SteraTrader account in the same group with initial_balance = targetInitialBalanceNgn,
-   *    disables the old account, and returns the new credentials so the platform tradingAccount
-   *    is updated with the clean broker account.
-   */
-  async resetAccountBalanceToInitial(
-    accountNumber: string,
-    targetInitialBalanceNgn: number,
-    accountContext?: {
-      userId?: string;
-      userEmail?: string;
-      userFullName?: string;
-      planType?: string;
-      stage?: 'evaluation' | 'funded';
-      groupSlug?: SteraTraderGroupSlug;
-      leverage?: string;
-    }
-  ): Promise<{
-    success: boolean;
-    debitedInPlace?: boolean;
-    newLogin?: string;
-    newPassword?: string;
-    newInvestorPassword?: string;
-    server?: string;
-    error?: string;
-  }> {
-    if (!this.apiKey) {
-      return { success: false, error: 'STERATRADER_API_KEY is not configured' };
-    }
-
-    // 1. Fetch current account details & metrics from SteraTrader
-    let accDetails: any = null;
     try {
-      const accRes = await fetch(`${this.apiUrl}/accounts/${accountNumber}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-      });
-      if (accRes.ok) {
-        const json = await accRes.json();
-        accDetails = json.data || json;
-      }
-    } catch (err: any) {
-      this.logger.warn(`Could not fetch account details for ${accountNumber}: ${err.message}`);
-    }
-
-    const currentBalanceKobo = Number(accDetails?.balance ?? 0);
-    const currentBalanceNgn = currentBalanceKobo / 100;
-    const deltaNgn = targetInitialBalanceNgn - currentBalanceNgn;
-
-    if (Math.abs(deltaNgn) < 1) {
-      this.logger.log(`Account ${accountNumber} is already at starting balance ₦${targetInitialBalanceNgn.toLocaleString()}`);
-      return { success: true, debitedInPlace: true };
-    }
-
-    // If account balance needs to be credited up to starting balance
-    if (deltaNgn > 0) {
-      const credited = await this.creditAccountBalance(
-        accountNumber,
-        deltaNgn,
-        `Balance reset to ₦${targetInitialBalanceNgn.toLocaleString()}`
-      );
-      return { success: credited, debitedInPlace: true };
-    }
-
-    // Account balance needs to be debited (e.g. post-payout reset from 74.5M down to 50M)
-    const debitAmountNgn = Math.abs(deltaNgn);
-    const debitAmountKobo = Math.round(debitAmountNgn * 100);
-
-    // Attempt direct withdrawal debit if permitted by broker API
-    try {
-      const debitRes = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {
+      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -401,70 +318,54 @@ export class SteraTraderService {
         },
         body: JSON.stringify({
           kind: 'withdrawal',
-          amount: debitAmountKobo,
+          amount: amountKobo,
           currency: 'NGN',
           external_transaction_id: `TX-WDR-${accountNumber}-${Date.now()}`,
-          reason: `Post-payout reset to ₦${targetInitialBalanceNgn.toLocaleString()}`,
+          reason: comment,
         }),
       });
 
-      if (debitRes.ok) {
-        this.logger.log(`Successfully debited in-place ₦${debitAmountNgn.toLocaleString()} from SteraTrader account ${accountNumber}`);
-        return { success: true, debitedInPlace: true };
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        this.logger.warn(`SteraTrader withdrawal transaction returned HTTP ${response.status} for ${accountNumber}: ${JSON.stringify(err)}`);
+        return false;
       }
 
-      const errData = await debitRes.json().catch(() => ({}));
-      this.logger.warn(`SteraTrader withdrawal transaction returned HTTP ${debitRes.status} (${JSON.stringify(errData)}). Provisioning clean replacement account...`);
-    } catch (txErr: any) {
-      this.logger.warn(`Failed withdrawal request to SteraTrader for ${accountNumber}: ${txErr.message}`);
+      this.logger.log(`Successfully executed SteraTrader withdrawal of ₦${amountNgn.toLocaleString()} on account ${accountNumber}`);
+      return true;
+    } catch (err: any) {
+      this.logger.error(`Failed to execute SteraTrader withdrawal for ${accountNumber}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Reset trader account balance back to starting capital upon payout withdrawal.
+   * Keeps the same account cleanly and uses SteraTrader withdrawal API to debit excess balance.
+   */
+  async resetAccountBalanceToInitial(accountNumber: string, targetInitialBalanceNgn: number): Promise<boolean> {
+    const metrics = await this.fetchAccountMetrics(accountNumber);
+    if (!metrics) {
+      this.logger.warn(`Could not fetch metrics for ${accountNumber} to calculate reset delta`);
+      return false;
     }
 
-    // When direct in-place debit is not supported by broker API key scopes (HTTP 403 / withdrawal disabled):
-    // Provision a clean SteraTrader replacement account with initial_balance = targetInitialBalanceNgn
-    try {
-      const email = accountContext?.userEmail || accDetails?.email || 'trader@fundedgiants.ng';
-      const fullName = accountContext?.userFullName || `${accDetails?.first_name || ''} ${accDetails?.last_name || ''}`.trim() || 'Funded Giant';
-      const planType = (accountContext?.planType || (accDetails?.group_name?.toLowerCase().includes('rhino') ? 'rhino-rush' : 'phoenix-rise')) as any;
-      const stage = accountContext?.stage || 'funded';
-      const groupSlug = (accountContext?.groupSlug || this.resolveGroupSlug(planType, stage)) as SteraTraderGroupSlug;
-      const leverage = accountContext?.leverage || (accDetails?.leverage ? `1:${accDetails.leverage}` : '1:30');
+    const currentBalanceNgn = metrics.balance;
+    const deltaNgn = targetInitialBalanceNgn - currentBalanceNgn;
 
-      const steraRes = await this.provisionAccount({
-        userEmail: email,
-        userFullName: fullName,
-        accountSizeNgn: targetInitialBalanceNgn,
-        planType,
-        stage,
-        group: groupSlug,
-        leverage,
-        reference: `FG-RESET-${accountNumber}-${Date.now()}`,
-      });
+    if (Math.abs(deltaNgn) < 1) {
+      this.logger.log(`Account ${accountNumber} is already at starting balance ₦${targetInitialBalanceNgn.toLocaleString()}`);
+      return true;
+    }
 
-      if (steraRes.success && steraRes.login) {
-        this.logger.log(
-          `Successfully provisioned fresh clean SteraTrader account ${steraRes.login} with initial balance ₦${targetInitialBalanceNgn.toLocaleString()} for post-payout reset (old account: ${accountNumber}).`
-        );
-
-        // Disable old account so no further trades are executed on it
-        try {
-          await this.updateAccountStatus(accountNumber, 'disabled', 'Account replaced by clean provisioned account upon payout reset');
-        } catch {}
-
-        return {
-          success: true,
-          debitedInPlace: false,
-          newLogin: steraRes.login,
-          newPassword: steraRes.password,
-          newInvestorPassword: steraRes.investorPassword,
-          server: steraRes.server,
-        };
-      } else {
-        this.logger.error(`Failed to provision clean replacement account on SteraTrader: ${steraRes.error}`);
-        return { success: false, error: steraRes.error };
-      }
-    } catch (provErr: any) {
-      this.logger.error(`Exception while provisioning clean replacement account for ${accountNumber}: ${provErr.message}`);
-      return { success: false, error: provErr.message };
+    if (deltaNgn < 0) {
+      return this.debitAccountBalance(
+        accountNumber,
+        Math.abs(deltaNgn),
+        `Post-payout balance reset to initial capital ₦${targetInitialBalanceNgn.toLocaleString()}`
+      );
+    } else {
+      return true;
     }
   }
 
