@@ -955,16 +955,32 @@ export class AdminService {
           : initialCap)
       : Number(account.currentBalance);
 
+    let activeAccountNumber = account.accountNumber;
+    let activeMasterPw = account.masterPassword;
+    let activeInvPw = account.investorPassword;
+
     if (shouldResetBalance) {
       this.logger.log(`Resetting SteraTrader balance for account #${account.accountNumber} to initial capital ₦${targetBaseBalance.toLocaleString()}`);
-      await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetBaseBalance);
+      const resetRes = await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetBaseBalance, {
+        userId: account.userId,
+        userEmail: account.user?.email || undefined,
+        userFullName: account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : undefined,
+        planType: account.challenge?.product?.skuPrefix as any,
+        stage: account.challenge?.status === 'PASSED' || account.challenge?.status === 'COMPLETED' ? 'funded' : 'evaluation',
+        groupSlug: account.groupSlug as any,
+      });
+      if (resetRes?.newLogin) {
+        activeAccountNumber = String(resetRes.newLogin);
+        activeMasterPw = resetRes.newPassword || activeMasterPw;
+        activeInvPw = resetRes.newInvestorPassword || activeInvPw;
+      }
     }
 
     const addAmount = Number(options?.addBalanceNgn || 0);
     if (!isNaN(addAmount) && addAmount > 0) {
-      this.logger.log(`Adding test balance of ₦${addAmount.toLocaleString()} to account #${account.accountNumber}`);
+      this.logger.log(`Adding test balance of ₦${addAmount.toLocaleString()} to account #${activeAccountNumber}`);
       await this.steraTraderService.creditAccountBalance(
-        account.accountNumber,
+        activeAccountNumber,
         addAmount,
         `Reinstatement demo test balance: ${reason}`
       );
@@ -972,7 +988,7 @@ export class AdminService {
     }
 
     // Query live metrics from SteraTrader if available
-    const liveMetrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
+    const liveMetrics = await this.steraTraderService.fetchAccountMetrics(activeAccountNumber);
     // If admin explicitly requested reset balance or added balance, admin target is authoritative
     const finalBalance = shouldResetBalance || addAmount > 0 ? targetBaseBalance : (liveMetrics ? liveMetrics.balance : targetBaseBalance);
     const floating = Number(liveMetrics?.floating ?? 0);
@@ -983,6 +999,9 @@ export class AdminService {
       await tx.tradingAccount.update({
         where: { id: account.id },
         data: {
+          accountNumber: activeAccountNumber,
+          masterPassword: activeMasterPw,
+          investorPassword: activeInvPw,
           status: 'ACTIVE',
           currentBalance: finalBalance,
           currentEquity: finalEquity,
@@ -1671,23 +1690,46 @@ export class AdminService {
           include: { challenge: true },
         });
 
+        const trader = await prisma.user.findUnique({ where: { id: withdrawal.wallet.userId } });
+
         for (const fAcc of fundedAccounts) {
           const initBal = Number(fAcc.initialBalance);
+          let newAccNum = fAcc.accountNumber;
+          let newPw = fAcc.masterPassword;
+          let newInvPw = fAcc.investorPassword;
+
           // Reset balance back to initial capital on SteraTrader
-          await this.steraTraderService.resetAccountBalanceToInitial(fAcc.accountNumber, initBal);
+          const resetRes = await this.steraTraderService.resetAccountBalanceToInitial(fAcc.accountNumber, initBal, {
+            userId: withdrawal.wallet.userId,
+            userEmail: trader?.email || undefined,
+            userFullName: trader ? `${trader.firstName || ''} ${trader.lastName || ''}`.trim() : undefined,
+            planType: ((fAcc.challenge as any)?.product?.skuPrefix || (fAcc.challenge?.type === 'PHOENIX_RISE_INSTANT' ? 'phoenix-rise' : 'rhino-rush')) as any,
+            stage: 'funded',
+            groupSlug: fAcc.groupSlug as any,
+          });
+
+          if (resetRes?.newLogin) {
+            newAccNum = String(resetRes.newLogin);
+            newPw = resetRes.newPassword || newPw;
+            newInvPw = resetRes.newInvestorPassword || newInvPw;
+          }
 
           // Update local database balance & equity
           await prisma.tradingAccount.update({
             where: { id: fAcc.id },
             data: {
+              accountNumber: newAccNum,
+              masterPassword: newPw,
+              investorPassword: newInvPw,
               currentBalance: initBal,
               currentEquity: initBal,
               totalProfit: 0,
+              status: 'ACTIVE',
+              lastSyncedAt: new Date(),
             },
           });
 
           // Dispatch payout confirmation and account reset email
-          const trader = await prisma.user.findUnique({ where: { id: withdrawal.wallet.userId } });
           if (trader?.email) {
             await this.notificationsService.sendAccountResetWithdrawalEmail({
               toEmail: trader.email,

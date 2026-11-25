@@ -14,6 +14,7 @@ export interface SteraTraderAccountMetrics {
   startingDayEquity: number;
   openTradesCount: number;
   openTradesProfit: number;
+  lastTradeAt?: string;
 }
 
 export interface TradeEventPayload {
@@ -659,12 +660,35 @@ export class RiskEngineService {
       return { status: 'metrics_unavailable' };
     }
 
-    // Authoritative balance in CRM syncs with live SteraTrader broker metrics
+    // Authoritative balance in CRM syncs with live SteraTrader broker metrics,
+    // with strict post-payout reset baseline protection to prevent historical unwithdrawn profits from refilling.
     const floating = Number((metrics as any).floating ?? metrics.openTradesProfit ?? 0);
     const openTradesCount = Number(metrics?.openTradesCount ?? 0);
-    const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
-      ? metrics.balance
-      : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
+    const dbBalance = Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal;
+
+    // Check if account has an active post-payout reset snapshot
+    const latestPayoutReset = await prisma.riskEvent.findFirst({
+      where: {
+        tradingAccountId: account.id,
+        eventType: { in: ['DAILY_RESET_SNAPSHOT', 'PAYOUT_QUEUED', 'AUTOMATED_PAYOUT_APPROVED'] },
+        description: { contains: 'Post-payout reset' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let currentBalance: number;
+    if (latestPayoutReset && metrics?.balance != null && metrics.balance > initialBal) {
+      const hasTradesAfterReset = openTradesCount > 0 || (metrics.lastTradeAt && new Date(metrics.lastTradeAt) > latestPayoutReset.createdAt);
+      if (!hasTradesAfterReset) {
+        currentBalance = initialBal;
+      } else {
+        currentBalance = metrics.balance;
+      }
+    } else {
+      currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
+        ? metrics.balance
+        : dbBalance;
+    }
     // In prop firm risk management, trading equity is strictly current balance + floating open trades P&L.
     // Broker credit facilities or negative broker credit adjustments must never distort trading equity.
     const currentEquity = currentBalance + floating;
@@ -1410,12 +1434,34 @@ export class RiskEngineService {
     const initialBal = Number(account.initialBalance);
     const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
     const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
-    const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
-      ? metrics.balance
-      : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
+    const openTradesCount = metrics?.openTradesCount ?? 0;
+    const dbBalance = Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal;
+
+    // Check if account has an active post-payout reset snapshot
+    const latestPayoutReset = await prisma.riskEvent.findFirst({
+      where: {
+        tradingAccountId: account.id,
+        eventType: { in: ['DAILY_RESET_SNAPSHOT', 'PAYOUT_QUEUED', 'AUTOMATED_PAYOUT_APPROVED'] },
+        description: { contains: 'Post-payout reset' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let currentBalance: number;
+    if (latestPayoutReset && metrics?.balance != null && metrics.balance > initialBal) {
+      const hasTradesAfterReset = openTradesCount > 0 || (metrics.lastTradeAt && new Date(metrics.lastTradeAt) > latestPayoutReset.createdAt);
+      if (!hasTradesAfterReset) {
+        currentBalance = initialBal;
+      } else {
+        currentBalance = metrics.balance;
+      }
+    } else {
+      currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
+        ? metrics.balance
+        : dbBalance;
+    }
     // In prop firm risk management, trading equity is strictly current balance + floating open trades P&L.
     const currentEquity = currentBalance + floating;
-    const openTradesCount = metrics?.openTradesCount ?? 0;
 
     // Keep database balance and equity in continuous sync with live broker metrics
     try {
@@ -1676,14 +1722,48 @@ export class RiskEngineService {
       },
     });
 
+    // Reset SteraTrader live balance back to starting capital by withdrawing/clearing all profits above starting balance
+    let newAccountNumber = account.accountNumber;
+    let newMasterPassword = account.masterPassword;
+    let newInvestorPassword = account.investorPassword;
+
+    try {
+      const resetRes = await this.steraTraderService.resetAccountBalanceToInitial(
+        account.accountNumber,
+        targetStartBalance,
+        {
+          userId: user.id,
+          userEmail: user.email || '',
+          userFullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Funded Giant',
+          planType: (account.challenge?.product?.skuPrefix || account.challenge?.type || 'phoenix-rise') as any,
+          stage: 'funded',
+          groupSlug: (account.groupSlug as any) || undefined,
+        }
+      );
+
+      if (resetRes?.newLogin) {
+        newAccountNumber = String(resetRes.newLogin);
+        newMasterPassword = resetRes.newPassword || newMasterPassword;
+        newInvestorPassword = resetRes.newInvestorPassword || newInvestorPassword;
+        this.logger.log(`Account ${account.accountNumber} reset via clean SteraTrader provisioned account ${newAccountNumber} with ₦${targetStartBalance.toLocaleString()}`);
+      }
+    } catch (steraErr: any) {
+      this.logger.error(`Failed to reset SteraTrader balance for ${account.accountNumber}: ${steraErr.message}`);
+    }
+
     // Reset trading account balance to initial capital baseline immediately so user can restart trading
     await prisma.tradingAccount.update({
       where: { id: account.id },
       data: {
+        accountNumber: newAccountNumber,
+        masterPassword: newMasterPassword,
+        investorPassword: newInvestorPassword,
         initialBalance: targetStartBalance,
         currentBalance: targetStartBalance,
         currentEquity: targetStartBalance,
         totalProfit: 0,
+        status: 'ACTIVE',
+        lastSyncedAt: new Date(),
       },
     });
 
@@ -1710,14 +1790,6 @@ export class RiskEngineService {
         snapshotEquity: targetStartBalance,
       },
     });
-
-    // Reset SteraTrader live balance back to starting capital by withdrawing/clearing all profits above starting balance
-    try {
-      await this.steraTraderService.resetAccountBalanceToInitial(account.accountNumber, targetStartBalance);
-      this.logger.log(`Reset SteraTrader balance for ${account.accountNumber} back to starting balance ₦${targetStartBalance.toLocaleString()}`);
-    } catch (steraErr: any) {
-      this.logger.error(`Failed to reset SteraTrader balance for ${account.accountNumber}: ${steraErr.message}`);
-    }
 
     this.logger.log(
       `Profit payout of ₦${payoutAmount.toLocaleString()} queued for user ${user.id} (${account.accountNumber}). Scheduled approval in ${delayMinutes} mins at ${scheduledApprovalAt.toISOString()}`
