@@ -160,10 +160,13 @@ export class RiskEngineService {
       try {
         const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
         const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
-        const dbBal = Number(account.currentBalance);
-        let currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? Number(account.initialBalance));
-        let currentEquity = currentBalance + floating;
         const initialBal = Number(account.initialBalance);
+        let currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
+          ? metrics.balance
+          : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
+        let currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
+          ? metrics.equity
+          : (currentBalance + floating);
 
         // Check 30-Day Inactivity Breach Rule
         const isInactive = await this.checkInactivityBreach(account, currentBalance, currentEquity);
@@ -657,11 +660,14 @@ export class RiskEngineService {
       return { status: 'metrics_unavailable' };
     }
 
-    // Authoritative balance in CRM persists (protects against broker external credit facility distortions)
+    // Authoritative balance in CRM syncs with live SteraTrader broker metrics
     const floating = Number((metrics as any).floating ?? metrics.openTradesProfit ?? 0);
-    const dbBal = Number(account.currentBalance);
-    const currentBalance = dbBal > 0 ? dbBal : metrics.balance;
-    const currentEquity = currentBalance + floating;
+    const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
+      ? metrics.balance
+      : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
+    const currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
+      ? metrics.equity
+      : (currentBalance + floating);
 
     // 1. Calculate Daily Drawdown (Open & Closed Trades Inclusive):
     // Evaluated against 23:00 GMT+1 baseline: higher of starting day balance or equity.
@@ -749,6 +755,24 @@ export class RiskEngineService {
             dailyBankedMap.set(parsed.sessionDate, Math.min(dailyCap, Math.max(0, Number(parsed.cappedCredit || 0))));
           }
         } catch {}
+      }
+
+      // Also cross-reference past trade records by calendar day to ensure all legitimately traded past days are credited
+      const trades = await prisma.tradeRecord.findMany({
+        where: { tradingAccountId: account.id, closedAt: { not: null } },
+      });
+      const pastTradesByDate = new Map<string, number>();
+      for (const t of trades) {
+        if (!t.closedAt) continue;
+        const dStr = new Date(t.closedAt).toISOString().split('T')[0];
+        if (dStr !== sessionDateStr) {
+          pastTradesByDate.set(dStr, (pastTradesByDate.get(dStr) || 0) + Number(t.profit || 0));
+        }
+      }
+      for (const [dStr, netDayProfit] of pastTradesByDate.entries()) {
+        const cappedFromTrades = Math.min(dailyCap, Math.max(0, netDayProfit));
+        const existingSnapshotCredit = dailyBankedMap.get(dStr) || 0;
+        dailyBankedMap.set(dStr, Math.max(existingSnapshotCredit, cappedFromTrades));
       }
 
       let bankedQualifiedProfit = 0;
@@ -1383,10 +1407,26 @@ export class RiskEngineService {
     const initialBal = Number(account.initialBalance);
     const metrics = await this.steraTraderService.fetchAccountMetrics(account.accountNumber);
     const floating = Number((metrics as any)?.floating ?? metrics?.openTradesProfit ?? 0);
-    const dbBal = Number(account.currentBalance);
-    const currentBalance = dbBal > 0 ? dbBal : (metrics?.balance ?? initialBal);
-    const currentEquity = currentBalance + floating;
+    const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
+      ? metrics.balance
+      : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
+    const currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
+      ? metrics.equity
+      : (currentBalance + floating);
     const openTradesCount = metrics?.openTradesCount ?? 0;
+
+    // Keep database balance and equity in continuous sync with live broker metrics
+    try {
+      await prisma.tradingAccount.update({
+        where: { id: account.id },
+        data: {
+          currentBalance,
+          currentEquity,
+          totalProfit: currentEquity - initialBal,
+          lastSyncedAt: new Date(),
+        },
+      });
+    } catch {}
 
     const isPhoenix = account.challenge.product.skuPrefix === 'phoenix-rise';
     const isFunded = account.challenge.status === 'PASSED' || account.challenge.status === 'COMPLETED';
@@ -1432,9 +1472,27 @@ export class RiskEngineService {
         try {
           const parsed = JSON.parse(snap.description);
           if (parsed.sessionDate && parsed.sessionDate !== sessionDateStr && parsed.cappedCredit !== undefined) {
-            dailyBankedMap.set(parsed.sessionDate, Number(parsed.cappedCredit || 0));
+            dailyBankedMap.set(parsed.sessionDate, Math.min(dailyProfitCapNgn, Math.max(0, Number(parsed.cappedCredit || 0))));
           }
         } catch {}
+      }
+
+      // Also cross-reference past trade records by calendar day to ensure all legitimately traded past days are credited
+      const trades = await prisma.tradeRecord.findMany({
+        where: { tradingAccountId: account.id, closedAt: { not: null } },
+      });
+      const pastTradesByDate = new Map<string, number>();
+      for (const t of trades) {
+        if (!t.closedAt) continue;
+        const dStr = new Date(t.closedAt).toISOString().split('T')[0];
+        if (dStr !== sessionDateStr) {
+          pastTradesByDate.set(dStr, (pastTradesByDate.get(dStr) || 0) + Number(t.profit || 0));
+        }
+      }
+      for (const [dStr, netDayProfit] of pastTradesByDate.entries()) {
+        const cappedFromTrades = Math.min(dailyProfitCapNgn, Math.max(0, netDayProfit));
+        const existingSnapshotCredit = dailyBankedMap.get(dStr) || 0;
+        dailyBankedMap.set(dStr, Math.max(existingSnapshotCredit, cappedFromTrades));
       }
 
       let bankedTargetProfitNgn = 0;

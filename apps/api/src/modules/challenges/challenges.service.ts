@@ -803,10 +803,11 @@ export class ChallengesService implements OnModuleInit {
       }
 
       const isPhoenix = acc.challenge.type === 'PHOENIX_RISE_INSTANT';
+      const isEvaluation = acc.groupSlug?.includes('eval') || (acc.challenge.status !== 'PASSED' && acc.challenge.status !== 'COMPLETED' && !isPhoenix);
       const initialSize = Number(acc.initialBalance);
       const balance = riskStatus?.currentBalanceNgn ?? Number(acc.currentBalance);
       const equity = riskStatus?.currentEquityNgn ?? Number(acc.currentEquity);
-      const isFundedPhase = isPhoenix || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED';
+      const isFundedPhase = !isEvaluation && (isPhoenix || acc.groupSlug === 'fg-rr-funded' || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED');
       const profitNgn = Math.max(0, equity - initialSize);
       const profitPercent = ((profitNgn / initialSize) * 100);
 
@@ -843,12 +844,14 @@ export class ChallengesService implements OnModuleInit {
         }
       }
 
-      // Tiered payout split & eligibility
+      // Tiered payout split & eligibility (Evaluation accounts strictly ineligible)
       const payoutNumber = riskStatus?.payoutEligibility?.payoutNumber ?? 1;
       const traderSplitPercent = riskStatus?.payoutEligibility?.traderSplitPercent ?? (isPhoenix ? 60 : 50);
-      const isPayoutEligible = isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0 && !queuedPayout;
+      const isPayoutEligible = !isEvaluation && isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0 && !queuedPayout;
       const payoutIneligibilityReason = queuedPayout
         ? `A payout request of ₦${queuedPayout.amountNgn.toLocaleString()} is currently queued. Automated approval is scheduled in approximately ${queuedPayout.remainingMinutes} minutes.`
+        : isEvaluation
+        ? 'Evaluation challenge accounts are not eligible for profit withdrawals. You must reach the 10% profit target to pass into the funded stage.'
         : !isPayoutEligible
         ? (riskStatus?.payoutEligibility?.reason || (profitNgn <= 0 ? 'Account has no withdrawable profits.' : undefined))
         : undefined;
@@ -1058,8 +1061,11 @@ export class ChallengesService implements OnModuleInit {
   async requestAccountPayout(accountId: string, userId: string, amountNgn?: number) {
     const details = await this.getAccountDetails(accountId, userId);
 
-    if (!details.isPayoutEligible) {
-      throw new BadRequestException('Account does not meet minimum profit payout threshold yet.');
+    if (details.currentPhase === 'Evaluation' || !details.isPayoutEligible) {
+      throw new BadRequestException(
+        details.payoutIneligibilityReason ||
+        'Evaluation challenge accounts are not eligible for profit withdrawals. You must reach the 10% profit target to pass into the funded stage.'
+      );
     }
 
     const availableTraderProfit = details.traderProfitSplitNgn;

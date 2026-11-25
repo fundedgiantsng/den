@@ -1235,21 +1235,64 @@ export class WebhooksController {
       throw new UnauthorizedException('Invalid Ninja KYC signature or unverified session');
     }
 
-    const outcome =
+    const rawOutcome = String(
       apiVerification?.outcome ||
       payload.data?.outcome ||
       payload.outcome ||
+      ''
+    ).toLowerCase();
+
+    const rawStatus = String(
       apiVerification?.status ||
       payload.data?.status ||
-      payload.status;
+      payload.status ||
+      ''
+    ).toLowerCase();
 
-    const isApproved =
-      outcome === 'verified' ||
-      outcome === 'completed' ||
-      outcome === 'approved' ||
-      outcome === 'success' ||
-      payload.event === 'verification.completed' ||
-      payload.event === 'verification.approved';
+    // Parse field-level verification matches (first_name, last_name, date_of_birth)
+    const fields: any[] =
+      apiVerification?.data?.fields ||
+      apiVerification?.fields ||
+      payload.data?.fields ||
+      payload.fields ||
+      [];
+
+    const mismatchReasons: string[] = [];
+
+    for (const f of fields) {
+      const fieldName = String(f.field || '').toLowerCase();
+      const matchType = String(f.match || '').toLowerCase();
+      const score = f.score !== undefined && f.score !== null ? Number(f.score) : undefined;
+
+      if (fieldName === 'date_of_birth' || fieldName === 'dob') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 1)) {
+          mismatchReasons.push('Date of birth does not match government identity record');
+        }
+      } else if (fieldName === 'first_name' || fieldName === 'firstname') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 0.85)) {
+          const pct = score !== undefined ? ` (${Math.round(score * 100)}% match)` : '';
+          mismatchReasons.push(`First name does not match government identity record${pct}`);
+        }
+      } else if (fieldName === 'last_name' || fieldName === 'lastname') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 0.85)) {
+          const pct = score !== undefined ? ` (${Math.round(score * 100)}% match)` : '';
+          mismatchReasons.push(`Last name does not match government identity record${pct}`);
+        }
+      }
+    }
+
+    // Explicit outcome checks - NEVER treat 'verification.completed' event as approval
+    const isExplicitMismatch =
+      rawOutcome === 'mismatch' ||
+      rawOutcome === 'failed' ||
+      rawOutcome === 'rejected' ||
+      rawStatus === 'failed';
+
+    const isExplicitVerified =
+      (rawOutcome === 'verified' || rawOutcome === 'approved' || rawOutcome === 'matched' || rawOutcome === 'success') ||
+      (rawStatus === 'completed' && !isExplicitMismatch && mismatchReasons.length === 0);
+
+    const isApproved = isExplicitVerified && !isExplicitMismatch && mismatchReasons.length === 0;
 
     const rawRef =
       apiVerification?.customer_ref ||
@@ -1386,6 +1429,73 @@ export class WebhooksController {
           });
         } catch (e) {
           this.logger.warn(`Failed to dispatch KYC notification: ${(e as any).message}`);
+        }
+      }
+    } else {
+      // Rejection / mismatch handling
+      let user = rawRef
+        ? await prisma.user.findUnique({
+            where: { id: rawRef },
+          })
+        : null;
+
+      if (!user && customerEmail) {
+        user = await prisma.user.findUnique({
+          where: { email: customerEmail },
+        });
+      }
+
+      const rejectionReason = mismatchReasons.length > 0
+        ? mismatchReasons.join('. ')
+        : (isExplicitMismatch ? 'Identity verification details (names or date of birth) do not match government database.' : 'Identity verification incomplete or rejected.');
+
+      this.logger.warn(`Ninja KYC verification rejected for user ${user?.email || customerEmail || rawRef}: ${rejectionReason}`);
+
+      if (user) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            kycStatus: 'REJECTED',
+          },
+        });
+
+        await prisma.kycRecord.upsert({
+          where: { externalReference: reference },
+          update: {
+            status: 'REJECTED',
+            rejectionReason,
+            providerPayload: {
+              rawPayload: payload,
+              rejectionReason,
+              mismatchReasons,
+              rejectedAt: new Date().toISOString(),
+            },
+          },
+          create: {
+            userId: user.id,
+            provider: 'NinjaKYC',
+            externalReference: reference,
+            status: 'REJECTED',
+            rejectionReason,
+            providerPayload: {
+              rawPayload: payload,
+              rejectionReason,
+              mismatchReasons,
+              rejectedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        try {
+          await this.notificationsService.createNotification({
+            userId: user.id,
+            title: 'Identity Verification Failed',
+            message: `Your identity verification was rejected: ${rejectionReason}. Please ensure your details match your government identity record exactly and try again.`,
+            category: 'SECURITY' as any,
+            priority: 'HIGH' as any,
+          });
+        } catch (e) {
+          this.logger.warn(`Failed to dispatch KYC rejection notification: ${(e as any).message}`);
         }
       }
     }
