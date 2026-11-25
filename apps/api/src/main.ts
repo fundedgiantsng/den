@@ -52,6 +52,11 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
 
+  // Disable Express signature in response headers for security hardening
+  try {
+    app.getHttpAdapter().getInstance().disable('x-powered-by');
+  } catch {}
+
   // Input validation with strict class-validator
   app.useGlobalPipes(
     new ValidationPipe({
@@ -61,9 +66,10 @@ async function bootstrap() {
     })
   );
 
-  // CORS configuration
+  // Hardened CORS configuration
   app.enableCors({
     origin: (requestOrigin, callback) => {
+      // Allow non-browser requests (mobile apps, server-to-server webhooks, curl)
       if (!requestOrigin) return callback(null, true);
       const allowedOrigins = [
         'https://fundedgiants.ng',
@@ -82,22 +88,24 @@ async function bootstrap() {
       ) {
         callback(null, true);
       } else {
-        callback(null, true); // Permissive for production webhooks and custom origins
+        callback(new Error('Origin blocked by CORS policy'));
       }
     },
     credentials: true,
   });
 
-  // OpenAPI Swagger Documentation
-  const config = new DocumentBuilder()
-    .setTitle('FundedGiants Platform API')
-    .setDescription('Production-grade REST API for FundedGiants trading, wallet, and risk platform')
-    .setVersion('1.0')
-    .addCookieAuth('fg_session')
-    .build();
+  // OpenAPI Swagger Documentation (Protected / Disabled in live production unless explicitly enabled)
+  if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('FundedGiants Platform API')
+      .setDescription('Production-grade REST API for FundedGiants trading, wallet, and risk platform')
+      .setVersion('1.0')
+      .addCookieAuth('fg_session')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
