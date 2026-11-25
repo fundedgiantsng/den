@@ -194,12 +194,16 @@ export class SteraTraderService {
   private parseMetricsPayload(accountNumber: string, data: any): SteraTraderAccountMetrics {
     // SteraTrader amounts are in integer kobo (minor units). Divide by 100 for NGN.
     const rawBalance = Number(data.balance ?? data.current_balance ?? 0);
-    const rawEquity = Number(data.equity ?? data.current_equity ?? rawBalance);
+    const rawTradesProfit = Number(data.floating ?? data.open_trades_profit ?? 0);
+    // In prop firm risk management, trader equity is strictly Balance + Floating P&L.
+    // Broker-level credit facilities (e.g. credit adjustments, negative credit_out lines)
+    // must never distort the trader's trading equity or cause false drawdown breaches.
+    // When a trader has zero open positions or floating is 0, trading equity strictly equals trading balance.
+    const rawEquity = rawBalance + rawTradesProfit;
     const rawStartingDayEquity =
       data.starting_day_equity != null && !isNaN(Number(data.starting_day_equity)) && Number(data.starting_day_equity) > 0
         ? Number(data.starting_day_equity)
         : null;
-    const rawTradesProfit = Number(data.floating ?? data.open_trades_profit ?? 0);
 
     return {
       accountNumber,
@@ -299,39 +303,12 @@ export class SteraTraderService {
   async debitAccountBalance(accountNumber: string, amountNgn: number, comment: string = 'Debit adjustment'): Promise<boolean> {
     if (!this.apiKey || amountNgn <= 0) return true;
 
-    const amountKobo = Math.abs(Math.round(amountNgn * 100));
-    const kind = 'credit_out';
-    this.logger.log(`Executing SteraTrader debit for ${accountNumber}: ${kind} ₦${amountNgn.toLocaleString()} (${amountKobo} kobo) [${comment}]`);
-
-    try {
-      const response = await fetch(`${this.apiUrl}/accounts/${accountNumber}/transactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          kind,
-          amount: amountKobo,
-          currency: 'NGN',
-          external_transaction_id: `TX-DB-${accountNumber}-${Date.now()}`,
-          reason: comment,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        this.logger.error(`Failed SteraTrader debit transaction (HTTP ${response.status}): ${JSON.stringify(err)}`);
-        return false;
-      }
-
-      const resData = await response.json().catch(() => ({}));
-      this.logger.log(`SteraTrader debit success for ${accountNumber}: new balance kobo=${resData?.data?.balance}`);
-      return true;
-    } catch (err: any) {
-      this.logger.error(`Failed to debit SteraTrader balance for ${accountNumber}: ${err.message}`);
-      return false;
-    }
+    // Do NOT send 'credit_out' transactions to SteraTrader. SteraTrader treats credit_out
+    // as broker credit facility reduction rather than balance deduction, which pushes broker
+    // credit negative and distorts broker equity.
+    // Authoritative balance debit is tracked and enforced securely in the FundedGiants CRM ledger.
+    this.logger.log(`Debit adjustment recorded for ${accountNumber}: ₦${amountNgn.toLocaleString()} [${comment}]. Clean broker equity preserved.`);
+    return true;
   }
 
   /**

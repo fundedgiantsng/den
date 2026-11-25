@@ -109,23 +109,12 @@ $payouts_to_seed = [
         'created_at' => '2026-11-24 10:35:07',
         'requested_at' => '2026-11-24 10:14:07',
         'turnaround_minutes' => 21,
-    ],
-    [
-        'payout_id' => 'FG-PAY-974060',
-        'account_number' => '16475815',
-        'email' => 'trader.phoenix@fundedgiants.ng',
-        'trader_name' => 'Favourable Esedeke',
-        'amount_ngn' => 13981978.00,
-        'certificate_id' => 'FG-PAY-974060',
-        'certificate_url' => 'https://api.fundedgiants.ng/api/v1/certificates/file/FG-PAY-974060.jpg',
-        'certificate_hash' => '0x46472d5041592d393734303630',
-        'profit_split_rate' => 80,
-        'program_type' => 'Phoenix Rise',
-        'created_at' => '2026-11-23 16:53:23',
-        'requested_at' => '2026-11-23 16:25:23',
-        'turnaround_minutes' => 28,
     ]
 ];
+
+// Purge removed payouts (specifically 16475815 / FG-PAY-974060)
+$wpdb->query("DELETE FROM $table_name WHERE account_number = '16475815' OR payout_id = 'FG-PAY-974060' OR certificate_id = 'FG-PAY-974060'");
+echo "  -> Purged payout 16475815 / FG-PAY-974060 from tracker table.\n";
 
 foreach ($payouts_to_seed as $p) {
     $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM $table_name WHERE certificate_id = %s OR payout_id = %s", $p['certificate_id'], $p['payout_id']));
@@ -907,7 +896,7 @@ add_action('wp_footer', function() {
                 const traderRaw = p.trader_name || 'Funded Giant';
                 const displayName = fgMaskName(traderRaw);
                 
-                const accId = p.account_number || (certId.includes('653') ? '93410986' : '16475815');
+                const accId = p.account_number || (certId.includes('653') ? '93410986' : '96445139');
                 const email = fgMaskEmail(p.email || 'fav.esedeke@gmail.com');
                 
                 const appDate = new Date(p.created_at || Date.now());

@@ -164,9 +164,8 @@ export class RiskEngineService {
         let currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
           ? metrics.balance
           : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
-        let currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
-          ? metrics.equity
-          : (currentBalance + floating);
+        // In prop firm risk management, trader equity is strictly Balance + Floating P&L.
+        let currentEquity = currentBalance + floating;
 
         // Check 30-Day Inactivity Breach Rule
         const isInactive = await this.checkInactivityBreach(account, currentBalance, currentEquity);
@@ -662,19 +661,23 @@ export class RiskEngineService {
 
     // Authoritative balance in CRM syncs with live SteraTrader broker metrics
     const floating = Number((metrics as any).floating ?? metrics.openTradesProfit ?? 0);
+    const openTradesCount = Number(metrics?.openTradesCount ?? 0);
     const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
       ? metrics.balance
       : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
-    const currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
-      ? metrics.equity
-      : (currentBalance + floating);
+    // In prop firm risk management, trading equity is strictly current balance + floating open trades P&L.
+    // Broker credit facilities or negative broker credit adjustments must never distort trading equity.
+    const currentEquity = currentBalance + floating;
 
     // 1. Calculate Daily Drawdown (Open & Closed Trades Inclusive):
     // Evaluated against 23:00 GMT+1 baseline: higher of starting day balance or equity.
     // Current equity = current balance (all closed trades) + floating PnL (all open trades).
     const startingDayBaseline = await this.getStartingDayBaseline(account, currentBalance, metrics.startingDayEquity);
     const dailyLimit = startingDayBaseline * 0.04;
-    const dailyLoss = Math.max(0, startingDayBaseline - currentEquity);
+    // When no trades are open (openTradesCount === 0 and floating === 0) and balance >= baseline, dailyLoss is strictly 0.
+    const dailyLoss = (openTradesCount === 0 && floating === 0 && currentBalance >= startingDayBaseline)
+      ? 0
+      : Math.max(0, startingDayBaseline - currentEquity);
 
     // 2. Calculate Maximum Loss (100% Static Floor - Zero Trailing):
     // Rhino Rush: permanently fixed at 90% of initial balance (10% max DD)
@@ -1410,9 +1413,8 @@ export class RiskEngineService {
     const currentBalance = (metrics?.balance != null && !isNaN(metrics.balance))
       ? metrics.balance
       : (Number(account.currentBalance) > 0 ? Number(account.currentBalance) : initialBal);
-    const currentEquity = (metrics?.equity != null && !isNaN(metrics.equity))
-      ? metrics.equity
-      : (currentBalance + floating);
+    // In prop firm risk management, trading equity is strictly current balance + floating open trades P&L.
+    const currentEquity = currentBalance + floating;
     const openTradesCount = metrics?.openTradesCount ?? 0;
 
     // Keep database balance and equity in continuous sync with live broker metrics
@@ -1438,7 +1440,9 @@ export class RiskEngineService {
     const startingDayHwm = await this.getStartingDayBaseline(account, currentBalance, metrics?.startingDayEquity);
     const dailyLimitAmount = startingDayHwm * 0.04;
     const dailyBreachFloor = startingDayHwm - dailyLimitAmount;
-    const dailyLossCurrent = Math.max(0, startingDayHwm - currentEquity);
+    const dailyLossCurrent = (openTradesCount === 0 && floating === 0 && currentBalance >= startingDayHwm)
+      ? 0
+      : Math.max(0, startingDayHwm - currentEquity);
     const dailyHeadroom = Math.max(0, currentEquity - dailyBreachFloor);
 
     // 2. 100% Static Max Drawdown Floor (Zero Trailing)
