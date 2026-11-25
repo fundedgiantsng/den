@@ -1540,11 +1540,11 @@ export class AdminService {
   }
 
   /**
-   * Process Withdrawal Manual Approval (Nomba Transfer) or Rejection
+   * Process Withdrawal Manual Approval (Nomba Transfer / Manual Settlement) or Rejection
    */
   async processWithdrawal(
     withdrawalId: string,
-    dto: { action: 'APPROVE' | 'REJECT'; reason?: string },
+    dto: { action: 'APPROVE' | 'APPROVE_MANUAL' | 'REJECT'; reason?: string; manualNote?: string },
     context: AdminActionContext,
   ) {
     const withdrawal = await prisma.withdrawal.findUnique({
@@ -1563,23 +1563,35 @@ export class AdminService {
       throw new BadRequestException(`Withdrawal is already in ${withdrawal.status} state`);
     }
 
-    if (dto.action === 'APPROVE') {
+    if (dto.action === 'APPROVE' || dto.action === 'APPROVE_MANUAL') {
       if (!withdrawal.bankAccount) {
         throw new BadRequestException('Withdrawal does not have an attached destination bank account.');
       }
 
-      // Execute transfer via Nomba API
-      const disbursementRes = await this.nombaService.createTransfer({
-        amountNgn: Number(withdrawal.netAmount),
-        accountNumber: withdrawal.bankAccount.accountNumber,
-        bankCode: withdrawal.bankAccount.bankCode,
-        accountName: withdrawal.bankAccount.accountName,
-        narration: `FundedGiants Payout ${withdrawal.reference}`,
-        reference: withdrawal.reference,
-      });
+      let disbursementRef = dto.manualNote ? `MANUAL-${dto.manualNote}` : `MANUAL-SETTLED-${Date.now()}`;
 
-      if (!disbursementRes.status) {
-        throw new BadRequestException(`Nomba transfer failed: ${disbursementRes.message || 'Unknown provider error'}`);
+      if (dto.action === 'APPROVE') {
+        // Execute automated transfer via Nomba API
+        const disbursementRes = await this.nombaService.createTransfer({
+          amountNgn: Number(withdrawal.netAmount),
+          accountNumber: withdrawal.bankAccount.accountNumber,
+          bankCode: withdrawal.bankAccount.bankCode,
+          accountName: withdrawal.bankAccount.accountName,
+          narration: `FundedGiants Payout ${withdrawal.reference}`,
+          reference: withdrawal.reference,
+        });
+
+        if (!disbursementRes.status) {
+          const errMsg = disbursementRes.message || '';
+          if (errMsg.toLowerCase().includes('ip address') || errMsg.toLowerCase().includes('whitelisted') || errMsg.includes('403')) {
+            throw new BadRequestException(
+              `Nomba automated transfer rejected: Server IP (149.56.211.246) is not whitelisted in your Nomba dashboard. Please whitelist 149.56.211.246 under Nomba Dashboard -> Settings -> API Keys & Webhooks -> IP Whitelist, or use 'Approve (Paid Manually)' to approve settlement.`
+            );
+          }
+          throw new BadRequestException(`Nomba transfer failed: ${errMsg || 'Unknown provider error'}`);
+        }
+
+        disbursementRef = disbursementRes?.data?.reference || `NOMBA-DISB-${Date.now()}`;
       }
 
       // Record to Double-Entry Ledger (Debit 2000-WALLET-LIABILITY, Credit 1000-CASH-NOMBA)
@@ -1596,7 +1608,7 @@ export class AdminService {
               entryNumber: `JE-PAYOUT-${Date.now()}`,
               transactionType: TransactionType.TRADER_EARNINGS_PAYOUT,
               reference: withdrawal.reference,
-              narration: `Disbursed payout ₦${Number(withdrawal.netAmount).toLocaleString()} to ${withdrawal.bankAccount.bankName} (${withdrawal.bankAccount.accountNumber}) via Nomba`,
+              narration: `Disbursed payout ₦${Number(withdrawal.netAmount).toLocaleString()} to ${withdrawal.bankAccount.bankName} (${withdrawal.bankAccount.accountNumber}) via ${dto.action === 'APPROVE' ? 'Nomba Automated Rail' : 'Manual Bank Transfer'}`,
             },
           });
           await prisma.journalLine.createMany({
@@ -1617,7 +1629,7 @@ export class AdminService {
             status: 'PAID',
             approvedBy: context.adminId || 'STAFF_ADMIN',
             approvedAt: new Date(),
-            nombaDisbursementRef: disbursementRes?.data?.reference || `NOMBA-DISB-${Date.now()}`,
+            nombaDisbursementRef: disbursementRef,
           },
         });
 
@@ -1625,13 +1637,14 @@ export class AdminService {
           data: {
             userId: withdrawal.wallet.userId,
             adminId: context.adminId,
-            action: 'ADMIN_WITHDRAWAL_APPROVED',
+            action: dto.action === 'APPROVE' ? 'ADMIN_WITHDRAWAL_APPROVED' : 'ADMIN_WITHDRAWAL_APPROVED_MANUAL',
             resource: 'Withdrawal',
             resourceId: withdrawal.id,
             details: {
               reference: withdrawal.reference,
               amount: Number(withdrawal.amount),
-              nombaRef: w.nombaDisbursementRef,
+              disbursementRef,
+              method: dto.action === 'APPROVE' ? 'NOMBA_API' : 'MANUAL_DISBURSEMENT',
             },
             ipAddress: context.ipAddress,
             userAgent: context.userAgent,
@@ -1705,7 +1718,10 @@ export class AdminService {
 
       return {
         success: true,
-        message: `Withdrawal ${withdrawal.reference} approved and disbursed successfully via Nomba.`,
+        message:
+          dto.action === 'APPROVE'
+            ? `Withdrawal ${withdrawal.reference} approved and disbursed successfully via Nomba.`
+            : `Withdrawal ${withdrawal.reference} approved and recorded as paid manually.`,
         data: updated,
       };
     } else {

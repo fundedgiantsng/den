@@ -46,18 +46,28 @@ export default function WithdrawalsLogPage() {
     }
   };
 
-  const handleProcess = async (id: string, action: 'APPROVE' | 'REJECT', reason?: string) => {
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const handleProcess = async (
+    id: string,
+    action: 'APPROVE' | 'APPROVE_MANUAL' | 'REJECT',
+    reason?: string,
+    manualNote?: string,
+  ) => {
     setProcessingId(id);
     setActionError(null);
     try {
-      const res = await fetchAdminApi(`/admin/withdrawals/${id}/process`, {
+      const res = await fetchAdminApi(`/admin/finance/withdrawals/${id}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, reason }),
+        body: JSON.stringify({ action, reason, manualNote }),
       });
       if (res.success) {
         await loadWithdrawals();
         setSelectedWithdrawal(null);
+        setRejecting(false);
+        setRejectReason('');
       } else {
         setActionError(res.message || 'Operation failed');
       }
@@ -355,31 +365,79 @@ export default function WithdrawalsLogPage() {
                 </div>
 
                 {actionError && (
-                  <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
-                    {actionError}
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
+                    <p className="font-semibold text-rose-400">Processing Error:</p>
+                    <p>{actionError}</p>
                   </div>
                 )}
 
                 {/* Manual Approval Action Buttons */}
                 {(selectedWithdrawal.status === 'REQUESTED' || selectedWithdrawal.status === 'PENDING_REVIEW') && (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <button
-                      onClick={() => handleProcess(selectedWithdrawal.id, 'APPROVE')}
-                      disabled={processingId === selectedWithdrawal.id}
-                      className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-extrabold text-xs transition shadow-emeraldGlow disabled:opacity-50"
-                    >
-                      {processingId === selectedWithdrawal.id ? 'Sending to Nomba...' : 'Approve & Pay via Nomba'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        const reason = prompt('Please enter rejection reason:');
-                        if (reason) handleProcess(selectedWithdrawal.id, 'REJECT', reason);
-                      }}
-                      disabled={processingId === selectedWithdrawal.id}
-                      className="py-2.5 px-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition disabled:opacity-50"
-                    >
-                      Reject Payout
-                    </button>
+                  <div className="space-y-3 pt-2">
+                    {!rejecting ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            onClick={() => handleProcess(selectedWithdrawal.id, 'APPROVE')}
+                            disabled={processingId === selectedWithdrawal.id}
+                            className="py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-extrabold text-xs transition shadow-emeraldGlow disabled:opacity-50 text-center"
+                          >
+                            {processingId === selectedWithdrawal.id ? 'Connecting to Nomba...' : '⚡ Pay via Nomba API'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const note = prompt('Enter payment transaction note or ref (optional):', 'Direct Bank Settlement');
+                              handleProcess(selectedWithdrawal.id, 'APPROVE_MANUAL', undefined, note || undefined);
+                            }}
+                            disabled={processingId === selectedWithdrawal.id}
+                            className="py-2.5 px-3 rounded-xl bg-teal-500/20 border border-teal-500/40 text-teal-300 hover:bg-teal-500/30 font-heading font-bold text-xs transition disabled:opacity-50 text-center"
+                          >
+                            ✓ Approve (Paid Manually)
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setRejecting(true);
+                            setRejectReason('Withdrawal declined by compliance verification');
+                          }}
+                          disabled={processingId === selectedWithdrawal.id}
+                          className="w-full py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition disabled:opacity-50"
+                        >
+                          ✕ Reject Payout & Refund Vault
+                        </button>
+                      </>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 space-y-2">
+                        <label className="text-[11px] font-bold text-rose-300 uppercase tracking-wider block">
+                          Reason for Rejection (Will be emailed to trader):
+                        </label>
+                        <textarea
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="e.g. Bank account name mismatch or compliance check"
+                          className="w-full p-2.5 rounded-lg bg-black/60 border border-rose-500/30 text-white text-xs focus:outline-none focus:border-rose-400 resize-none h-18"
+                        />
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            onClick={() => handleProcess(selectedWithdrawal.id, 'REJECT', rejectReason)}
+                            disabled={processingId === selectedWithdrawal.id || !rejectReason.trim()}
+                            className="py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition disabled:opacity-50"
+                          >
+                            {processingId === selectedWithdrawal.id ? 'Rejecting...' : 'Confirm Rejection'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRejecting(false);
+                              setActionError(null);
+                            }}
+                            disabled={processingId === selectedWithdrawal.id}
+                            className="py-2 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 text-xs font-bold transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

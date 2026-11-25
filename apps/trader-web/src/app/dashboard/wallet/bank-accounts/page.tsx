@@ -32,6 +32,43 @@ interface BankOption {
   name: string;
 }
 
+const POPULAR_QUICK_BANKS = [
+  { code: '305', name: 'OPay' },
+  { code: '090405', name: 'Moniepoint' },
+  { code: '100033', name: 'PalmPay' },
+  { code: '011', name: 'First Bank' },
+  { code: '058', name: 'GTBank' },
+  { code: '044', name: 'Access Bank' },
+  { code: '057', name: 'Zenith Bank' },
+  { code: '033', name: 'UBA' },
+  { code: '090267', name: 'Kuda' },
+  { code: '090645', name: 'Nomba' },
+];
+
+const BANK_SEARCH_ALIASES: Record<string, string[]> = {
+  '011': ['firstbank', 'first bank', 'fbn', 'first bank of nigeria'],
+  '305': ['opay', 'paycom', 'pay com'],
+  '090405': ['moniepoint', 'monie point', 'moniepoint mfb', 'moniepoint bank'],
+  '100033': ['palmpay', 'palm pay'],
+  '058': ['gtb', 'gtbank', 'guaranty trust', 'guaranty trust bank', 'gt bank'],
+  '044': ['access', 'access bank', 'diamond'],
+  '057': ['zenith', 'zenith bank'],
+  '033': ['uba', 'united bank for africa'],
+  '090267': ['kuda', 'kuda bank', 'kuda mfb'],
+  '090645': ['nomba', 'nombank', 'nomba mfb'],
+  '221': ['stanbic', 'stanbic ibtc'],
+  '214': ['fcmb', 'first city monument bank'],
+  '070': ['fidelity', 'fidelity bank'],
+  '035': ['wema', 'alat', 'wema bank'],
+  '232': ['sterling', 'sterling bank'],
+  '032': ['union', 'union bank'],
+  '101': ['providus', 'providus bank'],
+  '076': ['polaris', 'polaris bank', 'skye'],
+  '082': ['keystone', 'keystone bank'],
+  '301': ['jaiz', 'jaiz bank'],
+  '566': ['vfd', 'vfd mfb', 'vbank'],
+};
+
 export default function BankAccountsPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [availableBanks, setAvailableBanks] = useState<BankOption[]>([]);
@@ -73,9 +110,6 @@ export default function BankAccountsPage() {
       if (resBanks.ok) {
         const banks = await resBanks.json();
         setAvailableBanks(banks || []);
-        if (banks?.length > 0 && !selectedBankCode) {
-          setSelectedBankCode(banks[0].code);
-        }
       }
     } catch (err) {
       console.error('Failed to load bank account settings:', err);
@@ -189,9 +223,20 @@ export default function BankAccountsPage() {
     }
   };
 
-  const filteredBanks = availableBanks.filter((b) =>
-    b.name.toLowerCase().includes(bankSearch.toLowerCase())
-  );
+  const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const searchNorm = normalize(bankSearch);
+  const filteredBanks = availableBanks.filter((b) => {
+    if (!bankSearch.trim()) return true;
+    const nameNorm = normalize(b.name);
+    if (nameNorm.includes(searchNorm)) return true;
+    const aliases = BANK_SEARCH_ALIASES[b.code] || [];
+    return aliases.some(
+      (a) => normalize(a).includes(searchNorm) || searchNorm.includes(normalize(a))
+    );
+  });
+
+  const selectedBank = availableBanks.find((b) => b.code === selectedBankCode);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-16">
@@ -348,34 +393,95 @@ export default function BankAccountsPage() {
 
             <form onSubmit={handleBindAccount} className="space-y-4 text-xs">
               <div>
-                <label className="block text-fgText-secondary font-medium mb-1">
+                <label className="block text-fgText-secondary font-medium mb-1.5">
                   Select Bank / Fintech
                 </label>
+
+                {/* Popular Quick-Select Bank Pills */}
+                <div className="mb-2.5">
+                  <span className="text-[10px] uppercase tracking-wider text-fgText-muted font-bold block mb-1">
+                    Quick Select:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR_QUICK_BANKS.map((qb) => {
+                      const isSelected = selectedBankCode === qb.code;
+                      return (
+                        <button
+                          key={qb.code}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBankCode(qb.code);
+                            setError(null);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                            isSelected
+                              ? 'bg-emerald-500 text-black shadow-sm'
+                              : 'bg-white/[0.05] text-slate-300 hover:bg-white/[0.1] hover:text-white border border-white/[0.08]'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 text-black" />}
+                          <span>{qb.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Normalized Bank Search */}
                 <div className="mb-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-fgText-muted absolute left-3 top-2.5" />
                     <input
                       type="text"
-                      placeholder="Search bank name..."
+                      placeholder="Search bank name (e.g. First Bank, OPay, Moniepoint)..."
                       value={bankSearch}
                       onChange={(e) => setBankSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.1] text-white text-xs placeholder:text-fgText-muted focus:outline-none focus:border-emerald-500"
+                      className="w-full pl-8 pr-8 py-1.5 rounded-lg bg-black/40 border border-white/[0.1] text-white text-xs placeholder:text-fgText-muted focus:outline-none focus:border-emerald-500"
                     />
+                    {bankSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setBankSearch('')}
+                        className="absolute right-2.5 top-2 text-fgText-muted hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Dropdown Select */}
                 <select
                   value={selectedBankCode}
-                  onChange={(e) => setSelectedBankCode(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedBankCode(e.target.value);
+                    setError(null);
+                  }}
                   className="w-full p-2.5 rounded-xl bg-black/40 border border-white/[0.1] text-white focus:outline-none focus:border-emerald-500 text-xs"
                   required
                 >
-                  <option value="" disabled>-- Select CBN Bank --</option>
+                  <option value="" disabled>
+                    -- {filteredBanks.length > 0 ? `Select from ${filteredBanks.length} available institutions` : 'No banks match search'} --
+                  </option>
                   {filteredBanks.map((b) => (
                     <option key={b.code} value={b.code} className="bg-neutral-900 text-white">
                       {b.name}
                     </option>
                   ))}
                 </select>
+
+                {/* Active Selected Bank Badge */}
+                {selectedBank && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                      <Building2 className="w-4 h-4 shrink-0" />
+                      <span>Resolving with: <strong className="text-white">{selectedBank.name}</strong></span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Code: {selectedBank.code}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -261,10 +261,11 @@ export class AdminController {
 
   // Process Withdrawal (Approve / Reject)
   @Post('finance/withdrawals/:id/process')
+  @Post('withdrawals/:id/process')
   @HttpCode(HttpStatus.OK)
   processWithdrawal(
     @Param('id') id: string,
-    @Body() body: { action: 'APPROVE' | 'REJECT'; reason?: string },
+    @Body() body: { action: 'APPROVE' | 'APPROVE_MANUAL' | 'REJECT'; reason?: string; manualNote?: string },
     @Req() req: any,
   ) {
     const context = this.extractContext(req, body);
