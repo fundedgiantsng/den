@@ -259,9 +259,8 @@ export class AdminController {
     });
   }
 
-  // Process Withdrawal (Approve / Reject)
-  @Post('finance/withdrawals/:id/process')
-  @Post('withdrawals/:id/process')
+  // Process Withdrawal (Approve / Reject) - registered on both /finance/withdrawals and /withdrawals aliases
+  @Post(['finance/withdrawals/:id/process', 'withdrawals/:id/process'])
   @HttpCode(HttpStatus.OK)
   processWithdrawal(
     @Param('id') id: string,
