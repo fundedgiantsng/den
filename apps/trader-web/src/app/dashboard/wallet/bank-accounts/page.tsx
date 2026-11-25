@@ -475,10 +475,10 @@ export default function BankAccountsPage() {
                   <div className="mt-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
                       <Building2 className="w-4 h-4 shrink-0" />
-                      <span>Resolving with: <strong className="text-white">{selectedBank.name}</strong></span>
+                      <span>Selected Institution: <strong className="text-white">{selectedBank.name}</strong></span>
                     </div>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/20">
-                      Code: {selectedBank.code}
+                    <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Active
                     </span>
                   </div>
                 )}

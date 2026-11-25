@@ -1378,6 +1378,14 @@ export class ChallengesService implements OnModuleInit {
 
     // 3. Sync EXACTLY ONCE to WordPress Live Payout Tracker
     try {
+      const requestedAtStr =
+        raw.requestedAt || new Date(Date.now() - (raw.delayMinutes || 25) * 60000).toISOString();
+      const approvedAtStr = new Date().toISOString();
+      const actualTurnaroundMins = Math.max(
+        5,
+        Math.min(45, Math.round((new Date(approvedAtStr).getTime() - new Date(requestedAtStr).getTime()) / 60000))
+      );
+
       await this.certificatesService.syncPayoutToWordPress({
         accountNumber: raw.accountNumber || 'FG-TRADER',
         email: raw.userEmail || '',
@@ -1385,6 +1393,9 @@ export class ChallengesService implements OnModuleInit {
         approvedAmount: payoutAmount,
         certificateId: deterministicCertId,
         certificateUrl: generatedCertificate?.publicUrl || '',
+        requestedAt: requestedAtStr,
+        approvedAt: approvedAtStr,
+        turnaroundMinutes: actualTurnaroundMins,
       });
     } catch (wpErr: any) {
       this.logger.warn(`Could not sync to WordPress payout tracker: ${wpErr.message}`);
