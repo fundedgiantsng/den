@@ -627,10 +627,9 @@ export default function SupportPage() {
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             {[
               'What are the Rhino Rush rules?',
-              'How does the 2% daily profit cap work?',
               'What are the Phoenix Rise rules?',
-              'How fast are payouts processed?',
               'How is daily drawdown calculated?',
+              'How fast are payouts processed?',
               'Speak with a human support agent',
             ].map((chip) => (
               <button

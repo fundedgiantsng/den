@@ -403,8 +403,8 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
 
       <div class="fg-chat-chips-bar">
         <div class="fg-chat-chip" data-q="What are the Rhino Rush rules?">Rhino Rush Rules</div>
-        <div class="fg-chat-chip" data-q="How does the 2% daily profit cap work?">2% Profit Cap</div>
         <div class="fg-chat-chip" data-q="What are the Phoenix Rise rules?">Phoenix Rise</div>
+        <div class="fg-chat-chip" data-q="How is daily drawdown calculated?">Drawdown Limits</div>
         <div class="fg-chat-chip" data-q="How fast are payouts processed?">Payout Speed</div>
         <div class="fg-chat-chip" data-q="What trading platform is used?">SteraTrader</div>
         <div class="fg-chat-chip" data-q="I want to speak with a human support agent">Speak with Human</div>
@@ -412,9 +412,9 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
 
       <div class="fg-chat-body" id="fgChatBody">
         <div class="fg-chat-msg fg-bot">
-          Hello! I am the official <strong>FundedGiants 24/7 AI Support Assistant</strong>. How can I help you today?
+          Hello! I am the official <strong>FundedGiants 24/7 Support Assistant</strong>. How can I help you today?
           <br><br>
-          You can ask me about our <strong>Rhino Rush (1-Step Evaluation)</strong>, <strong>Phoenix Rise (Instant Funding)</strong>, <strong>2% daily profit cap</strong>, drawdown rules, or payout processing.
+          You can ask me about our <strong>Any of Our Account Type</strong>, <strong>drawdown limits and how they are calculated</strong>, or <strong>payout processing</strong>.
           <span class="fg-chat-time">Just now</span>
         </div>
       </div>
