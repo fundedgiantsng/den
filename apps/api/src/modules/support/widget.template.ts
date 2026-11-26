@@ -45,8 +45,8 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 60px;
       height: 60px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #00f59b 0%, #00b371 100%);
-      box-shadow: 0 8px 24px rgba(0, 245, 155, 0.35);
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      box-shadow: 0 8px 24px rgba(34, 197, 94, 0.4);
       border: none;
       cursor: pointer;
       display: flex;
@@ -57,7 +57,8 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
     }
     .fg-chat-btn:hover {
       transform: scale(1.08);
-      box-shadow: 0 12px 30px rgba(0, 245, 155, 0.45);
+      background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+      box-shadow: 0 12px 30px rgba(34, 197, 94, 0.5);
     }
     .fg-chat-btn:active {
       transform: scale(0.96);
@@ -65,7 +66,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
     .fg-chat-btn svg {
       width: 28px;
       height: 28px;
-      fill: #05140d;
+      fill: #041409;
       transition: transform 0.25s ease;
     }
     .fg-chat-badge {
@@ -75,15 +76,15 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 14px;
       height: 14px;
       border-radius: 50%;
-      background: #00f59b;
+      background: #22c55e;
       border: 2px solid #080e0b;
-      box-shadow: 0 0 10px #00f59b;
+      box-shadow: 0 0 10px #22c55e;
       animation: fgPulse 2s infinite;
     }
     @keyframes fgPulse {
-      0% { box-shadow: 0 0 0 0 rgba(0, 245, 155, 0.7); }
-      70% { box-shadow: 0 0 0 8px rgba(0, 245, 155, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(0, 245, 155, 0); }
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
     }
     .fg-chat-window {
       position: fixed;
@@ -94,9 +95,9 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       height: 600px;
       max-height: calc(100vh - 120px);
       background: #080e0b;
-      border: 1px solid rgba(0, 245, 155, 0.25);
+      border: 1px solid rgba(34, 197, 94, 0.28);
       border-radius: 20px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(0, 245, 155, 0.08);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(34, 197, 94, 0.1);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -113,7 +114,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
     }
     .fg-chat-header {
       background: linear-gradient(180deg, #0f1c14 0%, #080e0b 100%);
-      border-bottom: 1px solid rgba(0, 245, 155, 0.15);
+      border-bottom: 1px solid rgba(34, 197, 94, 0.18);
       padding: 16px 18px;
       display: flex;
       align-items: center;
@@ -128,18 +129,18 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 38px;
       height: 38px;
       border-radius: 12px;
-      background: rgba(0, 245, 155, 0.12);
-      border: 1px solid rgba(0, 245, 155, 0.3);
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.35);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #00f59b;
+      color: #22c55e;
       position: relative;
     }
     .fg-chat-avatar svg {
       width: 20px;
       height: 20px;
-      fill: #00f59b;
+      fill: #22c55e;
     }
     .fg-chat-avatar-status {
       position: absolute;
@@ -148,7 +149,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #00f59b;
+      background: #22c55e;
       border: 1.5px solid #080e0b;
     }
     .fg-chat-title {
@@ -200,15 +201,15 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       font-weight: 600;
       padding: 5px 10px;
       border-radius: 20px;
-      background: rgba(0, 245, 155, 0.08);
-      border: 1px solid rgba(0, 245, 155, 0.2);
-      color: #00f59b;
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      color: #22c55e;
       cursor: pointer;
       transition: all 0.2s;
     }
     .fg-chat-chip:hover {
-      background: rgba(0, 245, 155, 0.18);
-      border-color: rgba(0, 245, 155, 0.4);
+      background: rgba(34, 197, 94, 0.2);
+      border-color: rgba(34, 197, 94, 0.5);
     }
     .fg-chat-body {
       flex: 1;
@@ -229,15 +230,15 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
     }
     .fg-chat-msg.fg-user {
       align-self: flex-end;
-      background: #00f59b;
-      color: #05140d;
-      font-weight: 500;
+      background: #22c55e;
+      color: #041409;
+      font-weight: 600;
       border-bottom-right-radius: 3px;
     }
     .fg-chat-msg.fg-bot {
       align-self: flex-start;
       background: #0e1a13;
-      border: 1px solid rgba(0, 245, 155, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.2);
       color: #f1f5f9;
       border-bottom-left-radius: 3px;
     }
@@ -266,7 +267,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #00f59b;
+      background: #22c55e;
       animation: fgDot 1.4s infinite ease-in-out both;
     }
     .fg-chat-typing span:nth-child(1) { animation-delay: -0.32s; }
@@ -325,7 +326,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       transition: border-color 0.2s;
     }
     .fg-chat-input:focus {
-      border-color: #00f59b;
+      border-color: #22c55e;
     }
     .fg-chat-input::placeholder {
       color: #64748b;
@@ -334,7 +335,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       width: 38px;
       height: 38px;
       border-radius: 12px;
-      background: #00f59b;
+      background: #22c55e;
       border: none;
       cursor: pointer;
       display: flex;
@@ -343,7 +344,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
       transition: all 0.2s;
     }
     .fg-chat-send:hover {
-      background: #00d687;
+      background: #16a34a;
     }
     .fg-chat-send:disabled {
       opacity: 0.5;
@@ -352,7 +353,7 @@ export function getChatWidgetScript(apiBaseUrl: string): string {
     .fg-chat-send svg {
       width: 18px;
       height: 18px;
-      fill: #05140d;
+      fill: #041409;
     }
     .fg-chat-disclaimer {
       font-size: 10px;
