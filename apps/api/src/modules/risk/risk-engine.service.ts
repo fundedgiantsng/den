@@ -823,19 +823,39 @@ export class RiskEngineService {
   }
 
   /**
-   * Count distinct trading days for an account (calendar days with opened or closed trades)
+   * Count distinct trading days for an account (calendar days with opened or closed trades, or snapshotted trading sessions)
    */
   async countTradingDays(tradingAccountId: string): Promise<number> {
     try {
+      const uniqueDays = new Set<string>();
+
+      // 1. Calendar days from trade records
       const trades = await prisma.tradeRecord.findMany({
         where: { tradingAccountId },
         select: { openedAt: true, closedAt: true },
       });
-      const uniqueDays = new Set<string>();
       for (const t of trades) {
         if (t.openedAt) uniqueDays.add(new Date(t.openedAt).toISOString().split('T')[0]);
         if (t.closedAt) uniqueDays.add(new Date(t.closedAt).toISOString().split('T')[0]);
       }
+
+      // 2. Calendar days from completed daily reset snapshots with credited trading profit
+      const snapshots = await prisma.riskEvent.findMany({
+        where: {
+          tradingAccountId,
+          eventType: 'DAILY_RESET_SNAPSHOT',
+        },
+        select: { description: true },
+      });
+      for (const snap of snapshots) {
+        try {
+          const parsed = JSON.parse(snap.description);
+          if (parsed.sessionDate && (Number(parsed.cappedCredit || 0) > 0 || Number(parsed.todayRawProfit || 0) > 0)) {
+            uniqueDays.add(parsed.sessionDate);
+          }
+        } catch {}
+      }
+
       return Math.max(1, uniqueDays.size);
     } catch {
       return 1;
@@ -1111,7 +1131,7 @@ export class RiskEngineService {
 
       if (steraRes.success && steraRes.login) {
         const dailyLimit = initialBal * 0.04; // 4% daily drawdown
-        const maxLimit = initialBal * 0.08;   // 8% trailing max drawdown for funded Rhino Rush
+        const maxLimit = initialBal * 0.10;   // 10% static max drawdown for Rhino Rush
         const server = steraRes.server || 'FundedGiants';
 
         const newFundedAccount = await prisma.tradingAccount.create({

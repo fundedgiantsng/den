@@ -1576,7 +1576,7 @@ export class AdminService {
 
         if (!disbursementRes.status) {
           const errMsg = disbursementRes.message || '';
-          if (errMsg.toLowerCase().includes('ip address') || errMsg.toLowerCase().includes('whitelisted') || errMsg.includes('403')) {
+          if (errMsg.toLowerCase().includes('ip address') || errMsg.toLowerCase().includes('whitelisted') || errMsg.toLowerCase().includes('unknown source')) {
             throw new BadRequestException(
               `Nomba automated transfer rejected: Server IP (149.56.211.246) is not whitelisted in your Nomba dashboard. Please whitelist 149.56.211.246 under Nomba Dashboard -> Settings -> API Keys & Webhooks -> IP Whitelist, or use 'Approve (Paid Manually)' to approve settlement.`
             );
