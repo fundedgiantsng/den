@@ -1,10 +1,22 @@
 ﻿import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
+import * as https from 'https';
+import * as http from 'http';
+import { URL } from 'url';
 
 try {
   dns.setDefaultResultOrder('ipv4first');
 } catch {}
+
+export interface NombaFetchResponse {
+  ok: boolean;
+  status: number;
+  statusText?: string;
+  headers: Record<string, string | string[] | undefined>;
+  json: <T = any>() => Promise<T>;
+  text: () => Promise<string>;
+}
 
 export interface NombaVirtualAccountResponse {
   status: boolean;
@@ -76,6 +88,87 @@ export class NombaService {
   constructor() {}
 
   /**
+   * Dedicated IPv4 HTTP request client for Nomba API.
+   * Strictly enforces IPv4 family: 4 so outbound packets use the whitelisted
+   * server IP (149.56.211.246) and avoids IPv6 rejection on dual-stack environments.
+   */
+  private request(
+    urlStr: string,
+    options: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: any;
+      timeout?: number;
+    } = {},
+  ): Promise<NombaFetchResponse> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlStr);
+      const headers = { ...(options.headers || {}) };
+      let bodyData: string | Buffer | null = null;
+
+      if (options.body !== undefined && options.body !== null) {
+        bodyData = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+        if (!headers['Content-Length'] && !headers['content-length']) {
+          headers['Content-Length'] = String(Buffer.byteLength(bodyData));
+        }
+      }
+
+      const reqOptions: https.RequestOptions = {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        method: options.method || 'GET',
+        family: 4, // Strictly enforce IPv4 so Nomba sees 149.56.211.246
+        headers,
+        timeout: options.timeout || 30000,
+      };
+
+      const client = url.protocol === 'https:' ? https : http;
+      const req = client.request(reqOptions, (res) => {
+        let rawData = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          rawData += chunk;
+        });
+        res.on('end', () => {
+          const status = res.statusCode || 500;
+          const ok = status >= 200 && status < 300;
+          resolve({
+            ok,
+            status,
+            statusText: res.statusMessage,
+            headers: res.headers as Record<string, string | string[] | undefined>,
+            text: async () => rawData,
+            json: async <T = any>(): Promise<T> => {
+              if (!rawData) return {} as T;
+              try {
+                return JSON.parse(rawData) as T;
+              } catch {
+                return {} as T;
+              }
+            },
+          });
+        });
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Nomba request to ${urlStr} timed out after ${options.timeout || 30000}ms`));
+      });
+
+      if (bodyData) {
+        req.write(bodyData);
+      }
+      req.end();
+    });
+  }
+
+  /**
    * Issue OAuth 2.0 Access Token via client_credentials
    */
   async getAccessToken(): Promise<string> {
@@ -88,7 +181,7 @@ export class NombaService {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/v1/auth/token/issue`, {
+      const response = await this.request(`${this.baseUrl}/v1/auth/token/issue`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -144,7 +237,7 @@ export class NombaService {
     try {
       const token = await this.getAccessToken();
 
-      const response = await fetch(`${this.baseUrl}/v1/accounts/virtual`, {
+      const response = await this.request(`${this.baseUrl}/v1/accounts/virtual`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -222,7 +315,7 @@ export class NombaService {
         customerName: cleanCustomer,
       };
 
-      const response = await fetch(`${this.baseUrl}/v1/accounts/virtual`, {
+      const response = await this.request(`${this.baseUrl}/v1/accounts/virtual`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -276,7 +369,7 @@ export class NombaService {
 
     try {
       const token = await this.getAccessToken();
-      const response = await fetch(`${this.baseUrl}/v1/transfers/banks`, {
+      const response = await this.request(`${this.baseUrl}/v1/transfers/banks`, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -323,7 +416,7 @@ export class NombaService {
     try {
       const token = await this.getAccessToken();
 
-      const response = await fetch(`${this.baseUrl}/v1/transfers/bank/lookup`, {
+      const response = await this.request(`${this.baseUrl}/v1/transfers/bank/lookup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -384,7 +477,7 @@ export class NombaService {
     try {
       const token = await this.getAccessToken();
 
-      const response = await fetch(`${this.baseUrl}/v2/transfers/bank`, {
+      const response = await this.request(`${this.baseUrl}/v2/transfers/bank`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -486,7 +579,7 @@ export class NombaService {
     try {
       const token = await this.getAccessToken();
       const endpoint = `${this.baseUrl}/v1/accounts/virtual/${encodeURIComponent(accountRef)}`;
-      const res = await fetch(endpoint, {
+      const res = await this.request(endpoint, {
         headers: {
           Authorization: `Bearer ${token}`,
           accountId: this.accountId,
