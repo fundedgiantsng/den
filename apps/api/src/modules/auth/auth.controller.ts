@@ -199,6 +199,23 @@ export class AuthController {
     return this.authService.verifyNinjaBvn({ userId, bvn: dto.bvn });
   }
 
+  @Get('kyc-eligibility')
+  @ApiOperation({ summary: 'Check if user is eligible to initiate KYC verification' })
+  @ApiResponse({ status: 200, description: 'Returns KYC eligibility evaluation' })
+  async getKycEligibility(@Req() req: any) {
+    const token = req.cookies?.fg_session || req.headers['authorization']?.replace('Bearer ', '');
+    const user = token ? await this.authService.getSessionUser(token) : null;
+    const userId = user?.id || req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    const eligibility = await this.authService.checkKycEligibility(userId);
+    return {
+      kycStatus: user?.kycStatus || 'UNVERIFIED',
+      ...eligibility,
+    };
+  }
+
   @Post('ninja-hosted-kyc')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Initiate Ninja.ng Hosted KYC verification session' })

@@ -794,8 +794,150 @@ export class AuthService {
   }
 
   /**
+   * Check if user is eligible to initiate identity verification (KYC).
+   * Rules:
+   * 1. Must have purchased at least one account / challenge.
+   * 2. Evaluation accounts (Rhino Rush, etc.): Must have PASSED the challenge first.
+   * 3. Phoenix Rise / Instant Funded accounts: Must reach the required profit target for payout.
+   */
+  async checkKycEligibility(userId: string): Promise<{
+    eligible: boolean;
+    reason: string;
+    accountsCount: number;
+    passedEvaluationCount: number;
+    payoutEligibleCount: number;
+  }> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User profile not found');
+    }
+
+    // If user is already approved, they are permanently complete
+    if (user.kycStatus === 'APPROVED') {
+      return {
+        eligible: true,
+        reason: 'Identity verification is completed and approved.',
+        accountsCount: 1,
+        passedEvaluationCount: 1,
+        payoutEligibleCount: 1,
+      };
+    }
+
+    // Fetch all challenges and trading accounts belonging to user
+    const [challenges, tradingAccounts] = await Promise.all([
+      prisma.customerChallenge.findMany({
+        where: { userId },
+        include: {
+          tradingAccount: true,
+          product: true,
+        },
+      }),
+      prisma.tradingAccount.findMany({
+        where: { userId },
+        include: {
+          challenge: true,
+        },
+      }),
+    ]);
+
+    const totalAccounts = challenges.length + tradingAccounts.length;
+
+    // Rule 1: Must have purchased at least one account
+    if (totalAccounts === 0) {
+      return {
+        eligible: false,
+        reason:
+          'You have not purchased a trading account yet. Identity verification (KYC) is only required once you pass an evaluation challenge or reach payout profit on your funded account.',
+        accountsCount: 0,
+        passedEvaluationCount: 0,
+        payoutEligibleCount: 0,
+      };
+    }
+
+    // Rule 2: Check for PASSED evaluation challenges
+    const passedEvaluationChallenges = challenges.filter(
+      (c) =>
+        c.type === 'RHINO_RUSH_ONE_STEP' &&
+        (c.status === 'PASSED' || c.status === 'COMPLETED')
+    );
+
+    if (passedEvaluationChallenges.length > 0) {
+      return {
+        eligible: true,
+        reason:
+          'Congratulations on passing your evaluation! Identity verification is now unlocked to activate your funded account and payout vault.',
+        accountsCount: totalAccounts,
+        passedEvaluationCount: passedEvaluationChallenges.length,
+        payoutEligibleCount: 0,
+      };
+    }
+
+    // Rule 3: Check for Phoenix Rise or funded accounts that hit payout profit target
+    let payoutEligibleCount = 0;
+    for (const acc of tradingAccounts) {
+      const isPhoenix =
+        acc.challenge?.type === 'PHOENIX_RISE_INSTANT' ||
+        acc.groupSlug?.toLowerCase().includes('phoenix');
+
+      const isFunded =
+        isPhoenix ||
+        acc.challenge?.status === 'PASSED' ||
+        acc.challenge?.status === 'COMPLETED' ||
+        acc.groupSlug?.toLowerCase().includes('funded');
+
+      if (isFunded && acc.status === 'ACTIVE') {
+        const initialBal = Number(acc.initialBalance || 1000000);
+        const currentBal = Number(acc.currentBalance || initialBal);
+        const currentEq = Number(acc.currentEquity || currentBal);
+        const netProfit = Math.max(0, currentEq - initialBal);
+        const profitPercent = initialBal > 0 ? (netProfit / initialBal) * 100 : 0;
+
+        // Check prior approved payouts for this account
+        const priorPayouts = await prisma.riskEvent.count({
+          where: {
+            tradingAccountId: acc.id,
+            eventType: 'AUTOMATED_PAYOUT_APPROVED',
+          },
+        });
+
+        // 1st payout on Phoenix Rise requires 10% profit; subsequent payouts require 2%
+        const reqPercent = isPhoenix && priorPayouts === 0 ? 10.0 : 2.0;
+
+        if (profitPercent >= reqPercent) {
+          payoutEligibleCount++;
+        }
+      }
+    }
+
+    if (payoutEligibleCount > 0) {
+      return {
+        eligible: true,
+        reason:
+          'You have reached the required profit target for a payout! Identity verification is now unlocked to process your profit disbursement.',
+        accountsCount: totalAccounts,
+        passedEvaluationCount: 0,
+        payoutEligibleCount,
+      };
+    }
+
+    // User has accounts, but not passed evaluation and not reached payout profit
+    return {
+      eligible: false,
+      reason:
+        'Identity verification (KYC) is currently locked. For evaluation accounts, KYC unlocks once you pass the challenge. For Phoenix Rise funded accounts, KYC unlocks once you reach the profit target for your payout.',
+      accountsCount: totalAccounts,
+      passedEvaluationCount: 0,
+      payoutEligibleCount: 0,
+    };
+  }
+
+  /**
    * Initiate Ninja.ng Hosted KYC Verification Session
    * Generates a secure hosted verification URL where the user verifies BVN, liveness, and documents.
+   * Reuses active pending session to prevent duplicate creation and double-billing.
    */
   async initiateHostedKyc(userId: string) {
     const user = await prisma.user.findUnique({
@@ -806,6 +948,45 @@ export class AuthService {
       throw new NotFoundException('User profile not found');
     }
 
+    // 1. If already approved, prevent duplicate verification
+    if (user.kycStatus === 'APPROVED') {
+      throw new BadRequestException('Your identity is already verified and approved. No further verification is needed.');
+    }
+
+    // 2. Strict eligibility gate
+    const eligibility = await this.checkKycEligibility(user.id);
+    if (!eligibility.eligible) {
+      throw new BadRequestException(eligibility.reason);
+    }
+
+    // 3. Prevent duplicate sessions & double charges: reuse active pending session within 4 hours
+    const existingPending = await prisma.kycRecord.findFirst({
+      where: {
+        userId: user.id,
+        provider: 'NinjaKYC',
+        status: 'PENDING',
+        createdAt: { gte: new Date(Date.now() - 4 * 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existingPending) {
+      const existingUrl = (existingPending.providerPayload as any)?.url;
+      if (existingUrl) {
+        this.logger.log(`Reusing active Ninja Hosted KYC session ${existingPending.externalReference} for user ${user.id} to avoid duplicate charge`);
+        return {
+          success: true,
+          message: 'Existing active verification session resumed',
+          data: {
+            id: existingPending.externalReference,
+            url: existingUrl,
+            reference: user.id,
+          },
+        };
+      }
+    }
+
+    // 4. Request new verification session on Ninja
     const sessionRes = await this.ninjaKycService.createVerificationSession({
       userId: user.id,
       email: user.email || `${user.username || user.id}@fundedgiants.ng`,
@@ -877,7 +1058,7 @@ export class AuthService {
     }
 
     let targetSessionId = verificationId?.trim();
-    if (!targetSessionId) {
+    if (!targetSessionId || targetSessionId === 'vs_id' || !targetSessionId.startsWith('vs_')) {
       const pendingKyc = await prisma.kycRecord.findFirst({
         where: { userId: user.id, provider: 'NinjaKYC' },
         orderBy: { createdAt: 'desc' },
@@ -887,7 +1068,7 @@ export class AuthService {
       }
     }
 
-    if (!targetSessionId) {
+    if (!targetSessionId || targetSessionId === 'vs_id') {
       return {
         success: false,
         kycStatus: user.kycStatus,
@@ -904,18 +1085,85 @@ export class AuthService {
       };
     }
 
-    const isVerified =
-      verification.status === 'completed' ||
-      verification.outcome === 'verified' ||
-      verification.status === 'approved';
+    const rawOutcome = String(
+      verification.outcome ||
+      verification.data?.outcome ||
+      ''
+    ).toLowerCase();
 
-    if (!isVerified) {
+    const rawStatus = String(
+      verification.status ||
+      verification.data?.status ||
+      ''
+    ).toLowerCase();
+
+    // Parse field-level verification matches (first_name, last_name, date_of_birth)
+    const fields: any[] =
+      verification.data?.fields ||
+      verification.fields ||
+      [];
+
+    const mismatchReasons: string[] = [];
+
+    for (const f of fields) {
+      const fieldName = String(f.field || '').toLowerCase();
+      const matchType = String(f.match || '').toLowerCase();
+      const score = f.score !== undefined && f.score !== null ? Number(f.score) : undefined;
+
+      if (fieldName === 'date_of_birth' || fieldName === 'dob') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 1)) {
+          mismatchReasons.push('Date of birth does not match government identity record');
+        }
+      } else if (fieldName === 'first_name' || fieldName === 'firstname') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 0.85)) {
+          const pct = score !== undefined ? ` (${Math.round(score * 100)}% match)` : '';
+          mismatchReasons.push(`First name does not match government identity record${pct}`);
+        }
+      } else if (fieldName === 'last_name' || fieldName === 'lastname') {
+        if (matchType === 'mismatch' || (score !== undefined && score < 0.85)) {
+          const pct = score !== undefined ? ` (${Math.round(score * 100)}% match)` : '';
+          mismatchReasons.push(`Last name does not match government identity record${pct}`);
+        }
+      }
+    }
+
+    const isExplicitMismatch =
+      rawOutcome === 'mismatch' ||
+      rawOutcome === 'failed' ||
+      rawOutcome === 'rejected' ||
+      rawStatus === 'failed';
+
+    const isExplicitVerified =
+      (rawOutcome === 'verified' || rawOutcome === 'approved' || rawOutcome === 'matched' || rawOutcome === 'success') ||
+      (rawStatus === 'completed' && !isExplicitMismatch && mismatchReasons.length === 0);
+
+    const isApproved = isExplicitVerified && !isExplicitMismatch && mismatchReasons.length === 0;
+
+    if (!isApproved) {
+      const rejectionReason =
+        mismatchReasons.length > 0
+          ? mismatchReasons.join(', ')
+          : isExplicitMismatch
+          ? 'Identity verification details (names or date of birth) do not match government database.'
+          : 'Identity verification is still in progress or incomplete.';
+
+      if (isExplicitMismatch || mismatchReasons.length > 0) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { kycStatus: 'REJECTED' },
+        });
+        await prisma.kycRecord.updateMany({
+          where: { externalReference: targetSessionId },
+          data: { status: 'REJECTED' },
+        });
+      }
+
       return {
         success: false,
-        kycStatus: user.kycStatus,
-        status: verification.status,
-        outcome: verification.outcome,
-        message: `Verification session ${targetSessionId} is currently ${verification.status || 'pending'} (outcome: ${verification.outcome || 'in_progress'}).`,
+        kycStatus: isExplicitMismatch || mismatchReasons.length > 0 ? 'REJECTED' : user.kycStatus,
+        status: rawStatus,
+        outcome: rawOutcome,
+        message: `Identity verification not approved: ${rejectionReason}`,
       };
     }
 

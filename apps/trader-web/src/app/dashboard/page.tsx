@@ -92,6 +92,7 @@ export default function DashboardOverviewPage() {
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
+  const [kycEligibility, setKycEligibility] = useState<{ eligible: boolean; reason?: string } | null>(null);
 
   const apiUrl = API_BASE_URL;
 
@@ -102,6 +103,12 @@ export default function DashboardOverviewPage() {
     };
     updateBanner();
     const interval = setInterval(updateBanner, 60000);
+
+    // 0. Fetch KYC eligibility status
+    fetch(`${API_BASE_URL}/auth/kyc-eligibility`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setKycEligibility(d))
+      .catch(() => {});
 
     // 1. Fetch current user session
     fetch(`${API_BASE_URL}/auth/me`, {
@@ -274,6 +281,7 @@ export default function DashboardOverviewPage() {
           email: currentUser?.email,
           kycStatus: currentUser?.kycStatus,
         }}
+        eligibility={kycEligibility}
         onSuccess={() => {
           setCurrentUser((prev) => (prev ? { ...prev, kycStatus: 'APPROVED' } : null));
           setIsKycModalOpen(false);
@@ -285,13 +293,13 @@ export default function DashboardOverviewPage() {
         }}
       />
 
-      {/* KYC Alert Banner if unverified */}
-      {currentUser && currentUser.kycStatus !== 'APPROVED' && (
+      {/* KYC Alert Banner: Only shown when user has passed evaluation or reached payout profit on Phoenix Rise */}
+      {currentUser && currentUser.kycStatus !== 'APPROVED' && kycEligibility?.eligible === true && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
             <div>
-              <span className="font-bold text-white">Identity Verification Required:</span> Complete your FundedGiants KYC verification to activate your dedicated bank deposit vault and unlock trading account payouts.
+              <span className="font-bold text-white">Identity Verification Unlocked:</span> Complete your one-time KYC verification to enable trading account payouts and dedicated banking vault.
             </div>
           </div>
           <button

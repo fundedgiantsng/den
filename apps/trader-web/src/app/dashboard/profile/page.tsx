@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncingKyc, setSyncingKyc] = useState(false);
+  const [kycEligibility, setKycEligibility] = useState<{ eligible: boolean; reason?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -67,6 +68,12 @@ export default function ProfilePage() {
           });
         }
       }
+
+      // Fetch KYC eligibility status
+      fetch(`${API_BASE_URL}/auth/kyc-eligibility`, { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d && setKycEligibility(d))
+        .catch(() => {});
     } catch (err: any) {
       console.error('Failed to fetch profile', err);
     } finally {
@@ -184,6 +191,7 @@ export default function ProfilePage() {
           email: profile.email,
           kycStatus: profile.kycStatus,
         }}
+        eligibility={kycEligibility}
         onSuccess={() => {
           fetchProfile();
           setIsKycModalOpen(false);
@@ -450,10 +458,12 @@ export default function ProfilePage() {
             className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
               isKycApproved
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                : kycEligibility?.eligible
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30'
             }`}
           >
-            {profile.kycStatus}
+            {isKycApproved ? 'VERIFIED' : kycEligibility?.eligible ? 'ACTION REQUIRED' : 'LOCKED'}
           </span>
         </div>
 
@@ -488,34 +498,46 @@ export default function ProfilePage() {
         </div>
 
         {!isKycApproved && (
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setIsKycModalOpen(true)}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Complete Identity Verification</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSyncKyc}
-              disabled={syncingKyc}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-semibold text-xs hover:bg-white/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {syncingKyc ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                  <span>Checking Ninja Status...</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 text-emerald-400" />
-                  <span>Sync Verification Status</span>
-                </>
-              )}
-            </button>
-          </div>
+          kycEligibility && !kycEligibility.eligible ? (
+            <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-amber-300 space-y-1">
+              <div className="font-semibold flex items-center gap-2 text-amber-200">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span>KYC Verification Locked</span>
+              </div>
+              <p className="text-fgText-secondary leading-relaxed">
+                {kycEligibility.reason || 'Identity verification unlocks automatically once you pass an evaluation challenge or reach the required profit target on your Phoenix Rise funded account.'}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsKycModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Complete Identity Verification</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSyncKyc}
+                disabled={syncingKyc}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-semibold text-xs hover:bg-white/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {syncingKyc ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                    <span>Checking Ninja Status...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4 text-emerald-400" />
+                    <span>Sync Verification Status</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )
         )}
       </div>
 

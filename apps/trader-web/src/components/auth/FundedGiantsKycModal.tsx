@@ -13,6 +13,10 @@ interface FundedGiantsKycModalProps {
     email?: string;
     kycStatus?: string;
   };
+  eligibility?: {
+    eligible: boolean;
+    reason?: string;
+  } | null;
   onSuccess: () => void;
 }
 
@@ -20,6 +24,7 @@ export function FundedGiantsKycModal({
   isOpen,
   onClose,
   user,
+  eligibility,
   onSuccess,
 }: FundedGiantsKycModalProps) {
   const [launchingHosted, setLaunchingHosted] = useState(false);
@@ -128,45 +133,57 @@ export function FundedGiantsKycModal({
               </p>
             </div>
 
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={handleLaunchHostedKyc}
-                disabled={launchingHosted || syncingStatus}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-semibold text-black hover:bg-emerald-400 transition-all duration-200 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
-              >
-                {launchingHosted ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Connecting to Verification Gateway...
-                  </>
-                ) : (
-                  <>
-                    Complete KYC
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
+            {eligibility && !eligibility.eligible ? (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-200 space-y-2">
+                <p className="font-semibold text-amber-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  Identity Verification Locked
+                </p>
+                <p className="text-neutral-300 leading-relaxed">
+                  {eligibility.reason || 'Identity verification unlocks automatically once you pass an evaluation challenge or reach the required profit target on your Phoenix Rise funded account.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={handleLaunchHostedKyc}
+                  disabled={launchingHosted || syncingStatus}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-semibold text-black hover:bg-emerald-400 transition-all duration-200 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
+                >
+                  {launchingHosted ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Connecting to Verification Gateway...
+                    </>
+                  ) : (
+                    <>
+                      Complete KYC
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
 
-              <button
-                type="button"
-                onClick={handleCheckSync}
-                disabled={syncingStatus || launchingHosted}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 py-2.5 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-white/10 transition-all duration-200 disabled:opacity-50"
-              >
-                {syncingStatus ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
-                    Checking Ninja Verification Status...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />
-                    Already completed on Ninja? Check Status
-                  </>
-                )}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={handleCheckSync}
+                  disabled={syncingStatus || launchingHosted}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 py-2.5 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-white/10 transition-all duration-200 disabled:opacity-50"
+                >
+                  {syncingStatus ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                      Checking Ninja Verification Status...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />
+                      Already completed on Ninja? Check Status
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             <div className="pt-2 text-center text-[11px] text-neutral-500">
               🔒 256-bit Bank-grade encryption. Your data is encrypted and strictly protected.
