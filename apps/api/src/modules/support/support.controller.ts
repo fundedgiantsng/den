@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
   UnauthorizedException,
@@ -19,8 +20,11 @@ import {
   ReplyTicketDto,
   UpdateTicketStatusDto,
   SendLiveChatMessageDto,
+  SendGuestChatMessageDto,
+  BindDeviceDto,
 } from './dto/support.dto';
 import { TicketCategory, TicketPriority, TicketStatus, UserRole } from '@fundedgiants/database';
+import { getChatWidgetScript } from './widget.template';
 
 @ApiTags('Help & Support')
 @Controller('support')
@@ -125,13 +129,13 @@ export class SupportController {
     };
   }
 
-  // 4. Live Chat
+  // 4. Live Chat (Authenticated User)
   @Get('chat')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get live chat messages for user' })
-  async getChatMessages(@Req() req: any) {
+  async getChatMessages(@Req() req: any, @Query('deviceId') deviceId?: string) {
     const user = await this.getSessionUserOrThrow(req);
-    const messages = await this.supportService.getLiveChatMessages(user.id);
+    const messages = await this.supportService.getLiveChatMessages(user.id, deviceId);
     return {
       success: true,
       data: messages,
@@ -148,11 +152,61 @@ export class SupportController {
       senderRole: user.role,
       senderName: `${user.firstName || 'Valued'} ${user.lastName || 'Trader'}`.trim(),
       message: dto.message,
+      deviceId: dto.deviceId,
     });
     return {
       success: true,
       data: message,
     };
+  }
+
+  // 5. Public / Guest Chat (Non-logged in traders on WordPress or Web)
+  @Get('public-chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get live chat messages for a guest device' })
+  async getGuestChat(@Query('deviceId') deviceId: string) {
+    const messages = await this.supportService.getGuestChatMessages(deviceId);
+    return {
+      success: true,
+      data: messages,
+    };
+  }
+
+  @Post('public-chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send message as guest with instant AI concierge support' })
+  async sendGuestChat(@Body() dto: SendGuestChatMessageDto) {
+    const result = await this.supportService.sendGuestChatMessage(dto);
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  // 6. Device / User Binding (Sync pre-login chat history upon login)
+  @Post('bind-device')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bind device chat history to authenticated user account' })
+  async bindDevice(@Body() dto: BindDeviceDto, @Req() req: any) {
+    const user = await this.getSessionUserOrThrow(req);
+    const result = await this.supportService.bindDeviceToUser(user.id, dto.deviceId);
+    return {
+      success: true,
+      message: `Successfully bound device chat history to account.`,
+      data: result,
+    };
+  }
+
+  // 7. Embeddable JavaScript Chat Widget (Served dynamically for WordPress or third-party web pages)
+  @Get('widget.js')
+  @ApiOperation({ summary: 'Get embeddable public chat widget script for WordPress and web pages' })
+  getChatWidget(@Res() res: any) {
+    const apiBaseUrl = process.env.API_BASE_URL || 'https://api.fundedgiants.ng/api/v1';
+    const script = getChatWidgetScript(apiBaseUrl);
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.send(script);
   }
 
   // ================= ADMIN ENDPOINTS ================= //

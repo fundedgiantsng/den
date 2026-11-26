@@ -60,6 +60,7 @@ interface LiveChatMessage {
   senderRole: string;
   senderName: string;
   message: string;
+  isAi?: boolean;
   createdAt: string;
 }
 
@@ -123,6 +124,19 @@ export default function SupportPage() {
       .catch(() => {});
 
     loadTickets();
+
+    // Auto-bind device on mount if guest chatted earlier on this browser/device
+    if (typeof window !== 'undefined') {
+      const deviceId = localStorage.getItem('fg_chat_device_id');
+      if (deviceId) {
+        fetch(`${API_BASE_URL}/support/bind-device`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ deviceId }),
+        }).catch(() => {});
+      }
+    }
   }, []);
 
   const loadTickets = async () => {
@@ -161,7 +175,12 @@ export default function SupportPage() {
     if (activeTab !== 'CHAT') return;
 
     const fetchChat = () => {
-      fetch(`${API_BASE_URL}/support/chat`, {
+      const deviceId = typeof window !== 'undefined' ? localStorage.getItem('fg_chat_device_id') : null;
+      const url = deviceId
+        ? `${API_BASE_URL}/support/chat?deviceId=${encodeURIComponent(deviceId)}`
+        : `${API_BASE_URL}/support/chat`;
+
+      fetch(url, {
         credentials: 'include',
       })
         .then((res) => res.json())
@@ -235,26 +254,34 @@ export default function SupportPage() {
     }
   };
 
-  const handleSendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newChatInput.trim() || sendingChat) return;
+  const handleSendChat = async (e?: React.FormEvent, directMessage?: string) => {
+    if (e) e.preventDefault();
+    const msgToSend = (directMessage || newChatInput).trim();
+    if (!msgToSend || sendingChat) return;
 
     setSendingChat(true);
-    const msg = newChatInput;
-    setNewChatInput('');
+    if (!directMessage) setNewChatInput('');
+
+    const deviceId = typeof window !== 'undefined' ? localStorage.getItem('fg_chat_device_id') : undefined;
 
     try {
       const res = await fetch(`${API_BASE_URL}/support/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ message: msg }),
+        body: JSON.stringify({ message: msgToSend, deviceId }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setChatMessages((prev) => [...prev, data.data]);
-        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (data.data) {
+          if (data.data.aiReply) {
+            setChatMessages((prev) => [...prev, data.data, data.data.aiReply]);
+          } else {
+            setChatMessages((prev) => [...prev, data.data]);
+          }
+          chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
       }
     } catch (e) {
       console.error(e);
@@ -596,6 +623,29 @@ export default function SupportPage() {
             </a>
           </div>
 
+          {/* Quick AI Rule Chips */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              'What are the Rhino Rush rules?',
+              'How does the 2% daily profit cap work?',
+              'What are the Phoenix Rise rules?',
+              'How fast are payouts processed?',
+              'How is daily drawdown calculated?',
+              'Speak with a human support agent',
+            ].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => handleSendChat(undefined, chip)}
+                disabled={sendingChat}
+                className="whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 transition-all flex items-center gap-1.5 flex-shrink-0"
+              >
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>{chip}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Chat Messages Log */}
           <div className="min-h-[380px] max-h-[460px] overflow-y-auto space-y-3 p-4 bg-bg-card rounded-xl border border-fgBorder-subtle">
             {chatMessages.length === 0 ? (
@@ -616,8 +666,17 @@ export default function SupportPage() {
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-bold text-fgText-muted">
-                        {isSupport ? 'Support Concierge' : 'You'}
+                      <span className="text-[10px] font-bold text-fgText-muted flex items-center gap-1.5">
+                        {isSupport ? (
+                          <>
+                            <Sparkles className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">
+                              {msg.isAi ? 'FundedGiants AI Concierge' : 'Support Desk'}
+                            </span>
+                          </>
+                        ) : (
+                          'You'
+                        )}
                       </span>
                       <span className="text-[9px] text-fgText-muted">
                         {new Date(msg.createdAt).toLocaleTimeString([], {

@@ -51,4 +51,33 @@ export class SendLiveChatMessageDto {
   @IsNotEmpty()
   @IsString()
   message!: string;
+
+  @ApiPropertyOptional({ example: 'dev_84f92a10c8e3' })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+}
+
+export class SendGuestChatMessageDto {
+  @ApiProperty({ example: 'dev_84f92a10c8e3' })
+  @IsNotEmpty()
+  @IsString()
+  deviceId!: string;
+
+  @ApiProperty({ example: 'Can I hold trades over the weekend on Rhino Rush?' })
+  @IsNotEmpty()
+  @IsString()
+  message!: string;
+
+  @ApiPropertyOptional({ example: 'Visitor' })
+  @IsOptional()
+  @IsString()
+  guestName?: string;
+}
+
+export class BindDeviceDto {
+  @ApiProperty({ example: 'dev_84f92a10c8e3' })
+  @IsNotEmpty()
+  @IsString()
+  deviceId!: string;
 }

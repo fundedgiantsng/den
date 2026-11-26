@@ -1095,6 +1095,17 @@ add_shortcode('fg_payout_tracker', function ($atts) {
     <?php
     return ob_get_clean();
 });
+
+/**
+ * 6. FundedGiants 24/7 AI Floating Support Chat Widget
+ * Embeds official responsive floating chat bubble with device binding and instant AI concierge
+ */
+add_action('wp_footer', function () {
+    ?>
+    <!-- FundedGiants 24/7 Front-Facing AI Support Chat Widget -->
+    <script src="https://api.fundedgiants.ng/api/v1/support/widget.js" async defer></script>
+    <?php
+}, 999);
 PHP;
 
 $mu_file = $mu_dir . '/fundedgiants-payout-tracker.php';

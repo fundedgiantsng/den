@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '@/lib/api';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopNav } from '@/components/layout/TopNav';
 import {
@@ -32,6 +33,22 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
+
+  // Automatically bind any pre-login guest chat history on this device to the authenticated user account
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const deviceId = localStorage.getItem('fg_chat_device_id');
+      if (deviceId) {
+        fetch(`${API_BASE_URL}/support/bind-device`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ deviceId }),
+        }).catch(() => {});
+      }
+    } catch {}
+  }, []);
 
   // All deployed platform features for the Slide-Up "More" Mobile Drawer (Pure Cards, No Descriptions)
   const allFeatureCards = [

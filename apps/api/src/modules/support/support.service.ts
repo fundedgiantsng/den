@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { prisma, TicketCategory, TicketPriority, TicketStatus, UserRole } from '@fundedgiants/database';
-import { CreateTicketDto, ReplyTicketDto, UpdateTicketStatusDto } from './dto/support.dto';
+import { CreateTicketDto, ReplyTicketDto, UpdateTicketStatusDto, SendGuestChatMessageDto } from './dto/support.dto';
+import { SupportAiService } from './support-ai.service';
 
 @Injectable()
 export class SupportService {
+  constructor(private readonly supportAiService: SupportAiService) {}
   /**
    * Official Knowledge Base & FAQs
    */
@@ -291,58 +293,161 @@ export class SupportService {
   }
 
   /**
-   * Live Chat: Get messages for user
+   * Live Chat: Get messages for user (and optionally unbound guest messages for current device)
    */
-  async getLiveChatMessages(userId: string) {
+  async getLiveChatMessages(userId: string, deviceId?: string) {
+    const where: any = deviceId
+      ? {
+          OR: [
+            { userId },
+            { deviceId, userId: null },
+          ],
+        }
+      : { userId };
+
     return prisma.liveChatMessage.findMany({
-      where: { userId },
+      where,
       orderBy: { createdAt: 'asc' },
       take: 100,
     });
   }
 
   /**
-   * Live Chat: Send a message
+   * Live Chat: Send a message with instant AI concierge support
    */
   async sendLiveChatMessage(params: {
     userId: string;
     senderRole: UserRole;
     senderName: string;
     message: string;
+    deviceId?: string;
   }) {
-    const { userId, senderRole, senderName, message } = params;
+    const { userId, senderRole, senderName, message, deviceId } = params;
 
     const userMessage = await prisma.liveChatMessage.create({
       data: {
         userId,
+        deviceId,
         senderRole,
         senderName,
         message: message.trim(),
+        isAi: false,
       },
     });
 
-    // If customer sends a message and there are few messages, provide an instant concierge acknowledgment
+    // If customer sends a message, generate an authoritative AI answer
     if (senderRole === UserRole.CUSTOMER) {
-      const msgCount = await prisma.liveChatMessage.count({ where: { userId } });
-      if (msgCount <= 2) {
-        setTimeout(async () => {
-          try {
-            await prisma.liveChatMessage.create({
-              data: {
-                userId,
-                senderRole: UserRole.SUPPORT,
-                senderName: 'FundedGiants Concierge',
-                message: `Hello ${senderName.split(' ')[0]}! A dedicated support specialist has received your message and is reviewing your account. You can also reach our assigned WhatsApp concierge anytime.`,
-              },
-            });
-          } catch (e) {
-            // Ignore background error
-          }
-        }, 1500);
-      }
+      const aiReply = await this.supportAiService.generateResponse(message, {
+        traderName: senderName,
+        isLoggedIn: true,
+      });
+
+      const aiMessage = await prisma.liveChatMessage.create({
+        data: {
+          userId,
+          deviceId,
+          senderRole: UserRole.SUPPORT,
+          senderName: 'FundedGiants AI Concierge',
+          message: aiReply.reply,
+          isAi: true,
+        },
+      });
+
+      return {
+        ...userMessage,
+        aiReply: aiMessage,
+      };
     }
 
     return userMessage;
+  }
+
+  /**
+   * Public Guest Chat: Get messages for a guest device
+   */
+  async getGuestChatMessages(deviceId: string) {
+    if (!deviceId) return [];
+    return prisma.liveChatMessage.findMany({
+      where: { deviceId },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+  }
+
+  /**
+   * Public Guest Chat: Send message as guest and receive instant AI assistance
+   */
+  async sendGuestChatMessage(dto: SendGuestChatMessageDto) {
+    const { deviceId, message, guestName } = dto;
+    const senderName = guestName?.trim() || 'Guest Trader';
+
+    const userMessage = await prisma.liveChatMessage.create({
+      data: {
+        deviceId,
+        senderRole: UserRole.CUSTOMER,
+        senderName,
+        message: message.trim(),
+        isAi: false,
+      },
+    });
+
+    const aiReply = await this.supportAiService.generateResponse(message, {
+      traderName: senderName,
+      isLoggedIn: false,
+    });
+
+    const aiMessage = await prisma.liveChatMessage.create({
+      data: {
+        deviceId,
+        senderRole: UserRole.SUPPORT,
+        senderName: 'FundedGiants AI Concierge',
+        message: aiReply.reply,
+        isAi: true,
+      },
+    });
+
+    return {
+      userMessage,
+      aiMessage,
+      reply: aiReply,
+    };
+  }
+
+  /**
+   * Device / User Binding: Link chat history from deviceId to userId upon user login
+   */
+  async bindDeviceToUser(userId: string, deviceId: string) {
+    if (!userId || !deviceId) {
+      return { boundCount: 0 };
+    }
+
+    // Update all guest messages on this device to link to the logged-in user
+    const updateResult = await prisma.liveChatMessage.updateMany({
+      where: {
+        deviceId,
+        userId: null,
+      },
+      data: {
+        userId,
+      },
+    });
+
+    // Also backfill deviceId on any of this user's existing messages if null
+    await prisma.liveChatMessage.updateMany({
+      where: {
+        userId,
+        deviceId: null,
+      },
+      data: {
+        deviceId,
+      },
+    });
+
+    return {
+      boundCount: updateResult.count,
+      deviceId,
+      userId,
+    };
   }
 
   /**
@@ -351,42 +456,50 @@ export class SupportService {
   async getAllLiveChatThreadsAdmin() {
     // Find unique users who have chat messages
     const chatUsers = await prisma.liveChatMessage.findMany({
+      where: { userId: { not: null } },
       distinct: ['userId'],
       select: {
         userId: true,
       },
     });
 
-    const threads = await Promise.all(
-      chatUsers.map(async ({ userId }) => {
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            kycStatus: true,
-          },
-        });
+    const threads = (
+      await Promise.all(
+        chatUsers.map(async ({ userId }) => {
+          if (!userId) return null;
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+              kycStatus: true,
+            },
+          });
 
-        const lastMessage = await prisma.liveChatMessage.findFirst({
-          where: { userId },
-          orderBy: { createdAt: 'desc' },
-        });
+          const lastMessage = await prisma.liveChatMessage.findFirst({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
 
-        const unreadCount = await prisma.liveChatMessage.count({
-          where: { userId, senderRole: UserRole.CUSTOMER, isRead: false },
-        });
+          const unreadCount = await prisma.liveChatMessage.count({
+            where: { userId, senderRole: UserRole.CUSTOMER, isRead: false },
+          });
 
-        return {
-          user,
-          lastMessage,
-          unreadCount,
-        };
-      })
-    );
+          return {
+            user,
+            lastMessage,
+            unreadCount,
+          };
+        })
+      )
+    ).filter(Boolean) as Array<{
+      user: any;
+      lastMessage: any;
+      unreadCount: number;
+    }>;
 
     return threads.sort((a, b) => {
       const timeA = a.lastMessage?.createdAt.getTime() || 0;
