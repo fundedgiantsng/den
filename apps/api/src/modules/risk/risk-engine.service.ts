@@ -290,7 +290,7 @@ export class RiskEngineService {
           currentEquity = openingBalanceTomorrow;
 
           const totalTradingDays = await this.countTradingDays(account.id);
-          const canPromote = cumulativeQualifiedProfit >= profitTarget && totalTradingDays >= 5;
+          const canPromote = cumulativeQualifiedProfit >= profitTarget;
 
           sessionInfo = {
             todayRawProfit,
@@ -298,15 +298,13 @@ export class RiskEngineService {
             excessProfitCleared,
             cumulativeQualifiedProfit,
             totalTradingDays,
-            minTradingDaysRequired: 5,
+            minTradingDaysRequired: 1,
             passed: canPromote,
           };
 
-          // Promotion requires 10% qualified profit AND minimum 5 trading days
+          // Promotion occurs once cumulative qualified profit hits the 10% target under daily 2% cap
           if (canPromote) {
             await this.handlePromotion(account, cumulativeQualifiedProfit, openingBalanceTomorrow);
-          } else if (cumulativeQualifiedProfit >= profitTarget && totalTradingDays < 5) {
-            this.logger.log(`Account ${account.accountNumber} has reached 10% target with ₦${cumulativeQualifiedProfit.toLocaleString()}, but has traded ${totalTradingDays}/5 required minimum trading days.`);
           }
         }
 
@@ -812,8 +810,7 @@ export class RiskEngineService {
       const todayCreditedTowardsTarget = Math.min(todayRawProfit, dailyCap);
       const totalQualifiedProfit = bankedQualifiedProfit + todayCreditedTowardsTarget;
 
-      const totalTradingDays = await this.countTradingDays(account.id);
-      if (totalQualifiedProfit >= profitTarget && totalTradingDays >= 5) {
+      if (totalQualifiedProfit >= profitTarget) {
         await this.handlePromotion(account, totalQualifiedProfit, currentEquity);
         return { status: 'promoted', profit: totalQualifiedProfit };
       }

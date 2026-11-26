@@ -217,7 +217,7 @@ export default function AccountAnalyticsTerminalPage() {
   };
 
   const isPhoenix = account.planType === 'PHOENIX_RISE';
-  const isFundedAccount = isPhoenix || account.currentPhase === 'Funded' || account.currentPhase === 'Instant Funding';
+  const isFundedAccount = isPhoenix || account.currentPhase === 'Funded' || account.groupSlug === 'fg-rr-funded';
   const dailyDdPercent = account.dailyDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.dailyDrawdownNgn / account.dailyDrawdownLimitNgn) * 100)) : 0;
   const maxDdPercent = account.maxDrawdownLimitNgn > 0 ? Math.min(100, Math.round((account.maxDrawdownNgn / account.maxDrawdownLimitNgn) * 100)) : 0;
 
@@ -247,15 +247,26 @@ export default function AccountAnalyticsTerminalPage() {
                   className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
                     account.currentPhase === 'Funded'
                       ? 'bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b]'
-                      : 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
+                      : 'bg-blue-500/15 border border-blue-500/30 text-blue-400'
                   }`}
                 >
-                  {account.currentPhase}
+                  {account.currentPhase.toUpperCase()}
                 </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-400 font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  LIVE STREAM
-                </span>
+                {account.status === 'Passed' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-mono text-emerald-300 font-bold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    EVALUATION PASSED (CLOSED)
+                  </span>
+                ) : account.status === 'Active' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-400 font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    LIVE STREAM
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-[10px] font-mono text-rose-400 font-bold">
+                    BREACHED
+                  </span>
+                )}
                 <span className="text-xs text-fgText-secondary font-mono">
                   {account.platform} &bull; Leverage {account.leverage}
                 </span>
@@ -281,7 +292,8 @@ export default function AccountAnalyticsTerminalPage() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
               </button>
 
-              {isFundedAccount && (
+              {/* Funded Account: Show Request Payout button if Active */}
+              {isFundedAccount && account.status === 'Active' && (
                 <div className="flex flex-col items-start sm:items-end gap-1">
                   <button
                     type="button"
@@ -301,6 +313,22 @@ export default function AccountAnalyticsTerminalPage() {
                       {account.payoutIneligibilityReason}
                     </span>
                   )}
+                </div>
+              )}
+
+              {/* Evaluation Account that has Passed: Show Certificate Link, no withdrawal button */}
+              {!isFundedAccount && account.status === 'Passed' && (
+                <div className="flex flex-col items-start sm:items-end gap-1">
+                  <Link
+                    href="/dashboard/certificates"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-heading font-extrabold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center gap-1.5"
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>View Completion Certificate</span>
+                  </Link>
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    Evaluation Passed &bull; Funded Account Issued
+                  </span>
                 </div>
               )}
             </div>

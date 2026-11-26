@@ -34,7 +34,7 @@ interface AccountItem {
   planName: 'Rhino Rush' | 'Phoenix Rise';
   stage: 'Funded' | 'Evaluation';
   sizeNgn: number;
-  status: 'Active' | 'Suspended' | 'Closed';
+  status: 'Active' | 'Passed' | 'Suspended' | 'Closed' | 'Breached';
   platform: string;
   leverage: string;
 }
@@ -180,14 +180,27 @@ export default function DashboardOverviewPage() {
           if (Array.isArray(accData)) {
             const mapped: AccountItem[] = accData.map((a: any) => {
               const isPhoenix = a.planName === 'Phoenix Rise' || a.planType === 'PHOENIX_RISE';
-              const isFunded = isPhoenix || a.currentPhase === 'Funded' || a.currentPhase === 'Instant Funding';
+              const isFunded = isPhoenix || a.currentPhase === 'Funded' || a.groupSlug === 'fg-rr-funded';
+              const stage = isFunded ? 'Funded' : 'Evaluation';
+              let status: 'Active' | 'Passed' | 'Suspended' | 'Closed' | 'Breached' = 'Active';
+              if (a.status === 'Breached' || a.status === 'Failed' || a.status === 'FAILED') {
+                status = 'Breached';
+              } else if (a.status === 'Passed' || a.status === 'PASSED') {
+                status = 'Passed';
+              } else if (a.status === 'Closed' || a.status === 'CLOSED') {
+                status = stage === 'Evaluation' ? 'Passed' : 'Closed';
+              } else if (a.status === 'Suspended' || a.status === 'SUSPENDED') {
+                status = 'Suspended';
+              } else {
+                status = 'Active';
+              }
               return {
                 id: a.loginNumber || a.id,
                 loginId: `#${a.loginNumber || a.id}`,
                 planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
-                stage: isFunded ? 'Funded' : 'Evaluation',
+                stage,
                 sizeNgn: a.sizeNgn || 0,
-                status: a.status === 'Breached' ? 'Closed' : 'Active',
+                status,
                 platform: a.platform || 'SteraTrader',
                 leverage: a.leverage || (isPhoenix ? '1:30' : '1:100'),
               };
@@ -495,10 +508,10 @@ export default function DashboardOverviewPage() {
                           className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full ${
                             acc.stage === 'Funded'
                               ? 'bg-emerald-500/15 text-[#00f59b] border border-emerald-500/30'
-                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                              : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
                           }`}
                         >
-                          {acc.stage}
+                          {acc.stage.toUpperCase()}
                         </span>
                       </div>
 
@@ -518,11 +531,30 @@ export default function DashboardOverviewPage() {
                       </span>
                     </div>
 
-                    {/* Right Edge: Status Active + Chevron */}
+                    {/* Right Edge: Status Badge + Chevron */}
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-[#00f59b] font-semibold flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>{acc.status}</span>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 ${
+                          acc.status === 'Passed'
+                            ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                            : acc.status === 'Active'
+                            ? 'bg-emerald-500/15 border border-emerald-500/25 text-[#00f59b]'
+                            : 'bg-rose-500/15 border border-rose-500/30 text-rose-400'
+                        }`}
+                      >
+                        {acc.status === 'Passed' ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>PASSED</span>
+                          </>
+                        ) : acc.status === 'Active' ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>ACTIVE</span>
+                          </>
+                        ) : (
+                          <span>{acc.status.toUpperCase()}</span>
+                        )}
                       </span>
                       <ChevronRight className="w-4 h-4 text-fgText-muted group-hover:text-white group-hover:translate-x-0.5 transition" />
                     </div>

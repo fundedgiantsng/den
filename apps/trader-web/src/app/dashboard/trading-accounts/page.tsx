@@ -94,17 +94,30 @@ export default function TradingAccountsPage() {
             setAccounts(
               data.map((item: any) => {
                 const isPhoenix = item.planName === 'Phoenix Rise' || item.planType === 'PHOENIX_RISE';
-                const isFunded = isPhoenix || item.currentPhase === 'Funded' || item.currentPhase === 'Instant Funding';
+                const isFunded = isPhoenix || item.currentPhase === 'Funded' || item.groupSlug === 'fg-rr-funded';
+                const stage = isFunded ? 'Funded' : 'Evaluation';
+
+                let status: 'Active' | 'Passed' | 'Failed' | 'Suspended' | 'Closed' = 'Active';
+                if (item.status === 'Breached' || item.status === 'Failed' || item.status === 'FAILED') {
+                  status = 'Failed';
+                } else if (item.status === 'Passed' || item.status === 'PASSED') {
+                  status = 'Passed';
+                } else if (item.status === 'Closed' || item.status === 'CLOSED') {
+                  status = stage === 'Evaluation' ? 'Passed' : 'Closed';
+                } else {
+                  status = 'Active';
+                }
+
                 return {
                   id: item.loginNumber || item.id,
                   loginNumber: item.loginNumber || item.id,
                   server: item.server || 'FundedGiants',
-                  groupSlug: item.groupSlug || (isPhoenix ? 'fg-pr-funded' : 'fg-rr-eval'),
+                  groupSlug: item.groupSlug || (isPhoenix ? 'fg-pr-funded' : (isFunded ? 'fg-rr-funded' : 'fg-rr-eval')),
                   masterPassword: item.masterPassword || null,
                   investorPassword: item.investorPassword || null,
                   planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
-                  stage: isFunded ? 'Funded' : 'Evaluation',
-                  status: item.status === 'Breached' ? 'Failed' : 'Active',
+                  stage,
+                  status,
                   sizeNgn: item.sizeNgn || 10000000,
                   balanceNgn: item.currentBalanceNgn || item.sizeNgn,
                   equityNgn: item.currentEquityNgn || item.sizeNgn,
@@ -249,17 +262,32 @@ export default function TradingAccountsPage() {
               >
                 {/* Top Row: Stage Badge + Login ID */}
                 <div className="flex items-center justify-between border-b border-white/[0.04] pb-2.5">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Stage Badge: FUNDED vs EVALUATION */}
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1.5 ${
                         acc.stage === 'Funded'
                           ? 'bg-emerald-500/15 border border-emerald-500/30 text-[#00f59b]'
-                          : 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
+                          : 'bg-blue-500/15 border border-blue-500/30 text-blue-400'
                       }`}
                     >
                       <CheckCircle2 className="w-3 h-3" />
                       <span>{acc.stage.toUpperCase()}</span>
                     </span>
+
+                    {/* Status Badge: Active, Passed, Failed */}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${
+                        acc.status === 'Passed'
+                          ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                          : acc.status === 'Active'
+                          ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                          : 'bg-rose-500/15 border border-rose-500/30 text-rose-400'
+                      }`}
+                    >
+                      {acc.status === 'Passed' ? 'PASSED (CLOSED)' : acc.status.toUpperCase()}
+                    </span>
+
                     <span className="text-xs text-white font-semibold">{acc.planName}</span>
                   </div>
 

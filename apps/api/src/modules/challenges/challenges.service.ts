@@ -685,12 +685,27 @@ export class ChallengesService implements OnModuleInit {
       const maxDrawdownNgn = Math.max(0, initialSize - equity);
       const dailyDrawdownNgn = Math.max(0, initialSize - equity);
 
-      // Current Phase determination (Phoenix Rise = Funded, Rhino Rush = Evaluation or Funded)
-      let currentPhase = 'Evaluation';
-      if (isPhoenix) {
-        currentPhase = 'Funded';
-      } else if (isRhino) {
-        currentPhase = ch.status === 'PASSED' || ch.status === 'FUNDED' ? 'Funded' : 'Evaluation';
+      // Determine stage and badges cleanly without mixing:
+      // Phoenix Rise is always Funded.
+      // Rhino Rush:
+      // - If groupSlug is 'fg-rr-funded' OR challengeNumber starts with 'FG-FUNDED-', it is a FUNDED account.
+      // - Otherwise, it is an EVALUATION account (even if ch.status === 'PASSED', because this specific account is the evaluation account that has completed).
+      const isFundedAccount = isPhoenix || tradingAcc?.groupSlug === 'fg-rr-funded' || ch.challengeNumber?.startsWith('FG-FUNDED-');
+      const currentPhase = isFundedAccount ? 'Funded' : 'Evaluation';
+
+      // Status determination:
+      // If challenge failed or trading account suspended -> Failed
+      // If evaluation passed or trading account closed -> Passed (no longer active)
+      // Otherwise -> Active
+      let status: 'Active' | 'Passed' | 'Failed' | 'Suspended' | 'Closed' = 'Active';
+      if (ch.status === 'FAILED' || tradingAcc?.status === 'SUSPENDED') {
+        status = 'Failed';
+      } else if (ch.status === 'PASSED' || (!isFundedAccount && tradingAcc?.status === 'CLOSED')) {
+        status = 'Passed';
+      } else if (tradingAcc?.status === 'CLOSED') {
+        status = 'Closed';
+      } else {
+        status = 'Active';
       }
 
       return {
@@ -709,10 +724,10 @@ export class ChallengesService implements OnModuleInit {
         dailyDrawdownLimitNgn,
         maxDrawdownNgn,
         maxDrawdownLimitNgn,
-        status: ch.status === 'FAILED' ? 'Breached' : 'Active',
+        status,
         platform: 'SteraTrader',
         server: tradingAcc?.server || 'FundedGiants',
-        groupSlug: tradingAcc?.groupSlug || (isPhoenix ? 'fg-pr-funded' : (ch.status === 'PASSED' ? 'fg-rr-funded' : 'fg-rr-eval')),
+        groupSlug: tradingAcc?.groupSlug || (isPhoenix ? 'fg-pr-funded' : (isFundedAccount ? 'fg-rr-funded' : 'fg-rr-eval')),
         masterPassword: tradingAcc?.masterPassword || null,
         investorPassword: tradingAcc?.investorPassword || null,
         leverage: isPhoenix ? '1:30' : '1:100',
@@ -803,13 +818,26 @@ export class ChallengesService implements OnModuleInit {
       }
 
       const isPhoenix = acc.challenge.type === 'PHOENIX_RISE_INSTANT';
-      const isEvaluation = acc.groupSlug?.includes('eval') || (acc.challenge.status !== 'PASSED' && acc.challenge.status !== 'COMPLETED' && !isPhoenix);
+      const isFundedAccount = isPhoenix || acc.groupSlug === 'fg-rr-funded' || acc.challenge.challengeNumber?.startsWith('FG-FUNDED-');
+      const isEvaluation = !isFundedAccount;
       const initialSize = Number(acc.initialBalance);
       const balance = riskStatus?.currentBalanceNgn ?? Number(acc.currentBalance);
       const equity = riskStatus?.currentEquityNgn ?? Number(acc.currentEquity);
-      const isFundedPhase = !isEvaluation && (isPhoenix || acc.groupSlug === 'fg-rr-funded' || acc.challenge.status === 'PASSED' || acc.challenge.status === 'COMPLETED');
+      const isFundedPhase = isFundedAccount;
       const profitNgn = Math.max(0, equity - initialSize);
       const profitPercent = ((profitNgn / initialSize) * 100);
+
+      // Status determination
+      let displayStatus: 'Active' | 'Passed' | 'Failed' | 'Suspended' | 'Closed' = 'Active';
+      if (acc.challenge.status === 'FAILED' || acc.status === 'SUSPENDED') {
+        displayStatus = 'Failed';
+      } else if (acc.challenge.status === 'PASSED' || (!isFundedAccount && acc.status === 'CLOSED')) {
+        displayStatus = 'Passed';
+      } else if (acc.status === 'CLOSED') {
+        displayStatus = 'Closed';
+      } else {
+        displayStatus = 'Active';
+      }
 
       const dailyDrawdownLimitNgn = riskStatus?.dailyDrawdown?.dailyLimitNgn ?? (initialSize * 0.04);
       const maxDrawdownLimitNgn = riskStatus?.maximumDrawdown?.limitNgn ?? (isPhoenix ? initialSize * 0.07 : initialSize * 0.10);
@@ -847,11 +875,13 @@ export class ChallengesService implements OnModuleInit {
       // Tiered payout split & eligibility (Evaluation accounts strictly ineligible)
       const payoutNumber = riskStatus?.payoutEligibility?.payoutNumber ?? 1;
       const traderSplitPercent = riskStatus?.payoutEligibility?.traderSplitPercent ?? (isPhoenix ? 60 : 50);
-      const isPayoutEligible = !isEvaluation && isFundedPhase && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0 && !queuedPayout;
+      const isPayoutEligible = isFundedPhase && displayStatus === 'Active' && (riskStatus?.payoutEligibility?.eligible ?? false) && profitNgn > 0 && !queuedPayout;
       const payoutIneligibilityReason = queuedPayout
         ? `A payout request of ₦${queuedPayout.amountNgn.toLocaleString()} is currently queued. Automated approval is scheduled in approximately ${queuedPayout.remainingMinutes} minutes.`
         : isEvaluation
-        ? 'Evaluation challenge accounts are not eligible for profit withdrawals. You must reach the 10% profit target to pass into the funded stage.'
+        ? (displayStatus === 'Passed'
+            ? 'This evaluation account has passed and is closed. Payout requests and withdrawals are available on your active Funded account.'
+            : 'Evaluation challenge accounts are not eligible for profit withdrawals. You must reach the 10% profit target to pass into the funded stage.')
         : !isPayoutEligible
         ? (riskStatus?.payoutEligibility?.reason || (profitNgn <= 0 ? 'Account has no withdrawable profits.' : undefined))
         : undefined;
@@ -932,12 +962,12 @@ export class ChallengesService implements OnModuleInit {
         loginNumber: acc.accountNumber,
         server: acc.server || 'FundedGiants',
         platform: 'SteraTrader',
-        groupSlug: acc.groupSlug || (isPhoenix ? 'fg-pr-funded' : isFundedPhase ? 'fg-rr-funded' : 'fg-rr-eval'),
+        groupSlug: acc.groupSlug || (isPhoenix ? 'fg-pr-funded' : isFundedAccount ? 'fg-rr-funded' : 'fg-rr-eval'),
         masterPassword: acc.masterPassword || null,
         investorPassword: acc.investorPassword || null,
         planName: isPhoenix ? 'Phoenix Rise' : 'Rhino Rush',
         planType: isPhoenix ? 'PHOENIX_RISE' : 'RHINO_RUSH',
-        currentPhase: isPhoenix ? 'Funded' : isFundedPhase ? 'Funded' : 'Evaluation',
+        currentPhase: isFundedAccount ? 'Funded' : 'Evaluation',
         sizeNgn: initialSize,
         currentBalanceNgn: balance,
         currentEquityNgn: equity,
@@ -962,7 +992,7 @@ export class ChallengesService implements OnModuleInit {
         traderProfitSplitNgn,
         firmProfitSplitNgn,
         tradingDays: 1,
-        status: acc.status,
+        status: displayStatus,
         leverage: isPhoenix ? '1:30' : '1:100',
         trades: combinedTrades,
       };
