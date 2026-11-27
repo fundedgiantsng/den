@@ -1576,11 +1576,20 @@ export class AdminService {
 
         if (!disbursementRes.status) {
           const errMsg = disbursementRes.message || '';
-          if (errMsg.toLowerCase().includes('ip address') || errMsg.toLowerCase().includes('whitelisted') || errMsg.toLowerCase().includes('unknown source')) {
+          const lowerMsg = errMsg.toLowerCase();
+          
+          if (lowerMsg.includes('unknown source') || (lowerMsg.includes('ip') && lowerMsg.includes('whitelist'))) {
             throw new BadRequestException(
-              `Nomba automated transfer rejected: Server IP (149.56.211.246) is not whitelisted in your Nomba dashboard. Please whitelist 149.56.211.246 under Nomba Dashboard -> Settings -> API Keys & Webhooks -> IP Whitelist, or use 'Approve (Paid Manually)' to approve settlement.`
+              `Nomba IP Whitelist Error: Server IP (149.56.211.246) was rejected by Nomba firewall. Please ensure 149.56.211.246 is added under Nomba Dashboard -> Settings -> API Keys & Webhooks -> IP Whitelist, or use 'Approve (Paid Manually)' to approve settlement.`
             );
           }
+
+          if (lowerMsg.includes('not whitelisted to access this resource') || lowerMsg.includes('access this resource')) {
+            throw new BadRequestException(
+              `Nomba Transfer Feature Disabled: Your server IP (149.56.211.246) is recognized and whitelisted, but Nomba has not enabled the automated Transfers/Payout API for your merchant account (ID: 1d11d154-3ab9-4e91-9c94-b0b9017734ed). Please contact Nomba Support (support@nomba.com) to activate "Transfers API" on your merchant account, or click 'Approve (Paid Manually)' to settle this payout manually.`
+            );
+          }
+
           throw new BadRequestException(`Nomba transfer failed: ${errMsg || 'Unknown provider error'}`);
         }
 
